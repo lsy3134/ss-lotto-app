@@ -115,23 +115,73 @@ if(isValid(arr)) return arr;
 return null;
 }
 
+function generateBalanced(){
+while(true){
+let nums = generateOne();
+if(!nums) continue;
+
+let odd = nums.filter(n=>n%2).length;
+if(odd<2 || odd>4) continue;
+
+return nums;
+}
+}
+
+function generateGreedy(){
+while(true){
+let nums = generateOne();
+if(!nums) continue;
+
+let high = nums.filter(n=>n>=31).length;
+if(high < 4) continue;
+
+let last = new Set(nums.map(n=>n%10));
+if(last.size < 6) continue;
+
+return nums;
+}
+}
+
+function generateFinalSet(){
+let result = [];
+
+// 균형형 3개
+for(let i=0;i<3;i++){
+result.push({
+type:"균형형",
+nums: generateBalanced()
+});
+}
+
+// 독식형 2개
+for(let i=0;i<2;i++){
+result.push({
+type:"독식형",
+nums: generateGreedy()
+});
+}
+
+return result;
+}
+
 function generateMultipleGames(){
 const result = document.getElementById('result');
 const log = document.getElementById('log');
 
 result.innerHTML='';
-let success=0;
 
-for(let i=0;i<5;i++){
-const nums = generateOne();
-if(!nums) continue;
+const games = generateFinalSet();
 
-success++;
-
+games.forEach(game=>{
 const row = document.createElement('div');
 row.className='row';
 
-nums.forEach(n=>{
+const label = document.createElement('span');
+label.style.cssText='font-size:0.75rem;color:#888;width:40px;text-align:right;line-height:40px;margin-right:4px;';
+label.innerText = game.type;
+row.appendChild(label);
+
+game.nums.forEach(n=>{
 const b=document.createElement('div');
 b.className='ball';
 b.style.background=getColor(n);
@@ -140,9 +190,9 @@ row.appendChild(b);
 });
 
 result.appendChild(row);
-}
+});
 
-log.innerText = `완료: ${success}게임 생성`;
+log.innerText = `완료: ${games.length}게임 생성 (균형형 3 + 독식형 2)`;
 }
 
 loadExcel();
