@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>로또 당첨번호 필터링 추출기</title>
+  <title>로또 2단계 추천기</title>
   <style>
     * {
       box-sizing: border-box;
@@ -27,7 +27,7 @@
       border-radius: 24px;
       box-shadow: 0 20px 60px rgba(0,0,0,0.2);
       width: 100%;
-      max-width: 460px;
+      max-width: 500px;
     }
     h1 {
       color: #1a1a2e;
@@ -39,7 +39,7 @@
     .subtitle {
       color: #888;
       font-size: 0.85rem;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
     }
     .status-box {
       background: #f8f9fa;
@@ -48,7 +48,7 @@
       padding: 10px 16px;
       font-size: 0.88rem;
       color: #555;
-      margin-bottom: 24px;
+      margin-bottom: 16px;
       transition: all 0.3s;
     }
     .status-box.success {
@@ -66,26 +66,51 @@
       border-color: #90caf9;
       color: #1565c0;
     }
-    #numbers {
+    .hot-box {
+      background: #fff8e1;
+      border: 1px solid #ffe082;
+      border-radius: 12px;
+      padding: 10px 16px;
+      font-size: 0.88rem;
+      color: #e65100;
+      margin-bottom: 16px;
+      font-weight: 600;
+      display: none;
+    }
+    #result {
+      margin: 16px 0;
       display: flex;
+      flex-direction: column;
       gap: 10px;
-      margin: 24px 0;
-      min-height: 56px;
-      justify-content: center;
-      flex-wrap: wrap;
+    }
+    .game-row {
+      display: flex;
       align-items: center;
+      gap: 8px;
+      justify-content: center;
+    }
+    .game-label {
+      font-size: 0.78rem;
+      color: #aaa;
+      width: 28px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+    .balls-wrap {
+      display: flex;
+      gap: 8px;
     }
     .ball {
-      width: 50px;
-      height: 50px;
+      width: 46px;
+      height: 46px;
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
       color: white;
       font-weight: 800;
-      font-size: 1.15rem;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      font-size: 1.05rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.18);
       animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
     }
     @keyframes popIn {
@@ -94,7 +119,13 @@
     }
     .placeholder-text {
       color: #ccc;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
+      padding: 16px 0;
+    }
+    hr.divider {
+      border: none;
+      border-top: 1px solid #f0f0f0;
+      margin: 18px 0;
     }
     .btn-generate {
       width: 100%;
@@ -123,7 +154,7 @@
       cursor: not-allowed;
     }
     #log {
-      margin-top: 18px;
+      margin-top: 14px;
       font-size: 0.82rem;
       color: #888;
       line-height: 1.7;
@@ -131,7 +162,6 @@
       border-radius: 10px;
       padding: 12px;
       text-align: left;
-      min-height: 60px;
       border: 1px solid #f0f0f0;
     }
     .spinner {
@@ -148,47 +178,44 @@
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
-    .divider {
-      border: none;
-      border-top: 1px solid #f0f0f0;
-      margin: 20px 0;
-    }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>🎱 스마트 번호 추출기</h1>
-    <p class="subtitle">과거 당첨 조합 제외 · 새로운 번호 추천</p>
+    <h1>🎱 스마트 2단계 추천기</h1>
+    <p class="subtitle">과거 당첨 제외 · 끝자리·연속·홀짝 필터 적용</p>
 
     <div class="status-box loading" id="status">
       <span class="spinner"></span>엑셀 데이터 불러오는 중...
     </div>
 
-    <div id="numbers">
-      <span class="placeholder-text">번호가 여기에 표시됩니다</span>
+    <div class="hot-box" id="hot"></div>
+
+    <div id="result">
+      <p class="placeholder-text">번호가 여기에 표시됩니다</p>
     </div>
 
     <hr class="divider" />
 
-    <button class="btn-generate" id="generateBtn" onclick="generateUniqueNumbers()" disabled>
-      번호 생성하기
+    <button class="btn-generate" id="generateBtn" onclick="generateMultipleGames()" disabled>
+      5게임 생성하기
     </button>
 
     <div id="log">엑셀 로딩이 완료되면 번호를 생성할 수 있습니다.</div>
   </div>
 
-  <!-- SheetJS CDN -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 
   <script>
     const pastWinners = new Set();
+    let recentHotNumbers = [];
     let isDataLoaded = false;
 
-    function getColor(num) {
-      if (num <= 10) return '#f9a825';
-      if (num <= 20) return '#29b6f6';
-      if (num <= 30) return '#ef5350';
-      if (num <= 40) return '#78909c';
+    function getColor(n) {
+      if (n <= 10) return '#f9a825';
+      if (n <= 20) return '#29b6f6';
+      if (n <= 30) return '#ef5350';
+      if (n <= 40) return '#78909c';
       return '#66bb6a';
     }
 
@@ -198,116 +225,142 @@
       el.innerHTML = text;
     }
 
-    async function loadExcelData() {
+    async function loadExcel() {
       const button = document.getElementById('generateBtn');
-
       try {
         setStatus('<span class="spinner"></span>엑셀 데이터 불러오는 중...', 'loading');
 
-        const response = await fetch('./lotto.xlsx');
-        if (!response.ok) {
-          throw new Error('lotto.xlsx 파일을 서버에서 찾을 수 없습니다. (HTTP ' + response.status + ')');
-        }
+        const res = await fetch('./lotto.xlsx');
+        if (!res.ok) throw new Error('lotto.xlsx 파일을 찾을 수 없습니다. (HTTP ' + res.status + ')');
 
-        const arrayBuffer = await response.arrayBuffer();
-        const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+        const buf = await res.arrayBuffer();
+        const wb = XLSX.read(buf, { type: 'array' });
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: null });
 
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const rows = XLSX.utils.sheet_to_json(worksheet, { defval: null });
-
+        let recent = [];
         let validCount = 0;
 
-        rows.forEach((row) => {
+        rows.forEach((r, i) => {
           const nums = [
-            row['당첨번호'],
-            row['Unnamed: 3'],
-            row['Unnamed: 4'],
-            row['Unnamed: 5'],
-            row['Unnamed: 6'],
-            row['Unnamed: 7']
-          ]
-          .map(v => Number(v))
-          .filter(v => Number.isInteger(v) && v >= 1 && v <= 45)
-          .sort((a, b) => a - b);
+            r['당첨번호'], r['Unnamed: 3'], r['Unnamed: 4'],
+            r['Unnamed: 5'], r['Unnamed: 6'], r['Unnamed: 7']
+          ].map(Number).filter(v => Number.isInteger(v) && v >= 1 && v <= 45).sort((a, b) => a - b);
 
           if (nums.length === 6) {
             pastWinners.add(nums.join(','));
             validCount++;
+            if (i < 10) recent.push(...nums);
           }
         });
 
+        const freq = {};
+        recent.forEach(n => freq[n] = (freq[n] || 0) + 1);
+        recentHotNumbers = Object.entries(freq)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 6)
+          .map(x => Number(x[0]));
+
+        const hotEl = document.getElementById('hot');
+        hotEl.style.display = 'block';
+        hotEl.textContent = '🔥 최근 핫번호: ' + recentHotNumbers.join(', ');
+
         isDataLoaded = true;
         button.disabled = false;
-        setStatus('✅ 과거 당첨번호 <strong>' + validCount + '개</strong> 조합 로딩 완료 · 중복 제외 준비됨', 'success');
+        setStatus('✅ 과거 당첨번호 <strong>' + validCount + '개</strong> 조합 로딩 완료', 'success');
         document.getElementById('log').textContent = '엑셀 대조 준비 완료\n이제 과거 당첨 조합을 제외하고 번호를 생성합니다.';
       } catch (error) {
         console.error(error);
         setStatus('❌ 엑셀 로딩 실패: ' + error.message, 'error');
-        document.getElementById('log').textContent = '오류: ' + error.message + '\n관리자에게 문의하세요.';
+        document.getElementById('log').textContent = '오류: ' + error.message;
       }
     }
 
-    function generateUniqueNumbers() {
-      const container = document.getElementById('numbers');
-      const log = document.getElementById('log');
+    function isValid(nums) {
+      if (pastWinners.has(nums.join(','))) return false;
 
-      if (!isDataLoaded) {
-        log.textContent = '아직 엑셀 데이터를 불러오지 못했습니다.';
-        return;
-      }
-
-      let attempts = 0;
-      let selectedNumbers = [];
-      let isUnique = false;
-
-      while (!isUnique && attempts < 10000) {
-        attempts++;
-
-        const temp = [];
-        while (temp.length < 6) {
-          const num = Math.floor(Math.random() * 45) + 1;
-          if (!temp.includes(num)) temp.push(num);
-        }
-
-        temp.sort((a, b) => a - b);
-        const comboKey = temp.join(',');
-
-        if (!pastWinners.has(comboKey)) {
-          selectedNumbers = temp;
-          isUnique = true;
-        }
-      }
-
-      container.innerHTML = '';
-
-      if (!isUnique) {
-        log.textContent = '⚠️ 생성 실패: 10,000회 시도 후에도 새로운 조합을 찾지 못했습니다.';
-        return;
-      }
-
-      selectedNumbers.forEach((num, index) => {
-        setTimeout(() => {
-          const ball = document.createElement('div');
-          ball.className = 'ball';
-          ball.style.backgroundColor = getColor(num);
-          ball.style.animationDelay = (index * 0.05) + 's';
-          ball.innerText = num;
-          container.appendChild(ball);
-        }, index * 80);
+      const last = {};
+      nums.forEach(n => {
+        const d = n % 10;
+        last[d] = (last[d] || 0) + 1;
       });
+      if (Object.values(last).some(v => v >= 3)) return false;
 
-      const totalCombinations = 8145060;
-      const usedPercent = ((pastWinners.size / totalCombinations) * 100).toFixed(4);
+      let cnt = 1;
+      for (let i = 1; i < nums.length; i++) {
+        if (nums[i] === nums[i - 1] + 1) {
+          cnt++;
+          if (cnt >= 3) return false;
+        } else {
+          cnt = 1;
+        }
+      }
 
-      log.textContent =
-        '추천 번호: ' + selectedNumbers.join(', ') + '\n' +
-        '검증 완료: 과거 당첨 조합과 중복 없음\n' +
-        '시도 횟수: ' + attempts + '회\n' +
-        '제외된 조합 수: ' + pastWinners.size + '개 (' + usedPercent + '% / 전체 8,145,060가지)';
+      const odd = nums.filter(n => n % 2).length;
+      if (odd < 2 || odd > 4) return false;
+
+      return true;
     }
 
-    loadExcelData();
+    function generateOne() {
+      let tries = 0;
+      while (tries < 5000) {
+        tries++;
+        const arr = [];
+        while (arr.length < 6) {
+          const n = Math.floor(Math.random() * 45) + 1;
+          if (!arr.includes(n)) arr.push(n);
+        }
+        arr.sort((a, b) => a - b);
+        if (isValid(arr)) return arr;
+      }
+      return null;
+    }
+
+    function generateMultipleGames() {
+      if (!isDataLoaded) return;
+
+      const result = document.getElementById('result');
+      const log = document.getElementById('log');
+      result.innerHTML = '';
+
+      let success = 0;
+      const labels = ['A', 'B', 'C', 'D', 'E'];
+
+      for (let i = 0; i < 5; i++) {
+        const nums = generateOne();
+        if (!nums) continue;
+        success++;
+
+        const row = document.createElement('div');
+        row.className = 'game-row';
+
+        const label = document.createElement('span');
+        label.className = 'game-label';
+        label.textContent = labels[i];
+        row.appendChild(label);
+
+        const ballsWrap = document.createElement('div');
+        ballsWrap.className = 'balls-wrap';
+
+        nums.forEach((n, idx) => {
+          setTimeout(() => {
+            const b = document.createElement('div');
+            b.className = 'ball';
+            b.style.backgroundColor = getColor(n);
+            b.style.animationDelay = (idx * 0.05) + 's';
+            b.innerText = n;
+            ballsWrap.appendChild(b);
+          }, i * 120 + idx * 60);
+        });
+
+        row.appendChild(ballsWrap);
+        result.appendChild(row);
+      }
+
+      log.textContent = '완료: ' + success + '게임 생성\n필터: 과거 당첨 제외 · 끝자리 중복 3개↑ 제외 · 연속 3개↑ 제외 · 홀짝 2~4개 유지';
+    }
+
+    loadExcel();
   </script>
 </body>
 </html>

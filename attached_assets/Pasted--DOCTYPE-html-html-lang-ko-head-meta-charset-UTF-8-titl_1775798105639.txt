@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>로또 2단계 추천기</title>
+<style>
+body { font-family: sans-serif; text-align:center; background:#f4f7f9; }
+.container { background:white; padding:20px; border-radius:15px; margin-top:50px; display:inline-block;}
+.row { display:flex; justify-content:center; gap:8px; margin:10px 0;}
+.ball { width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:white; font-weight:bold;}
+button { padding:12px; margin-top:15px; width:100%; background:#222; color:white; border:none; border-radius:8px;}
+</style>
+</head>
+<body>
+
+<div class="container">
+<h2>🚀 스마트 2단계 추천기</h2>
+<div id="hot"></div>
+<div id="result"></div>
+<button onclick="generateMultipleGames()">5게임 생성</button>
+<div id="log"></div>
+</div>
+
+<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+
+<script>
+const pastWinners = new Set();
+let recentHotNumbers = [];
+
+function getColor(n){
+if(n<=10)return '#fbc400';
+if(n<=20)return '#69c8f2';
+if(n<=30)return '#ff7272';
+if(n<=40)return '#aaa';
+return '#b0d840';
+}
+
+async function loadExcel(){
+const res = await fetch('./lotto.xlsx');
+const buf = await res.arrayBuffer();
+const wb = XLSX.read(buf,{type:'array'});
+const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+
+let recent = [];
+
+rows.forEach((r,i)=>{
+const nums = [
+r['당첨번호'], r['Unnamed: 3'], r['Unnamed: 4'],
+r['Unnamed: 5'], r['Unnamed: 6'], r['Unnamed: 7']
+].map(Number).sort((a,b)=>a-b);
+
+if(nums.length===6){
+pastWinners.add(nums.join(','));
+if(i<10) recent.push(...nums);
+}
+});
+
+// 최근 10회 빈도
+const freq = {};
+recent.forEach(n=>freq[n]=(freq[n]||0)+1);
+recentHotNumbers = Object.entries(freq)
+.sort((a,b)=>b[1]-a[1])
+.slice(0,6)
+.map(x=>Number(x[0]));
+
+document.getElementById('hot').innerText =
+"🔥 최근 핫번호: " + recentHotNumbers.join(', ');
+}
+
+function isValid(nums){
+
+// 과거 당첨 제외
+if(pastWinners.has(nums.join(','))) return false;
+
+// 끝자리 중복
+let last = {};
+nums.forEach(n=>{
+let d=n%10;
+last[d]=(last[d]||0)+1;
+});
+if(Object.values(last).some(v=>v>=3)) return false;
+
+// 연속번호
+let cnt=1;
+for(let i=1;i<nums.length;i++){
+if(nums[i]===nums[i-1]+1){
+cnt++;
+if(cnt>=3) return false;
+}else cnt=1;
+}
+
+// 홀짝
+let odd = nums.filter(n=>n%2).length;
+if(odd<2 || odd>4) return false;
+
+return true;
+}
+
+function generateOne(){
+let tries=0;
+
+while(tries<5000){
+tries++;
+
+let arr=[];
+while(arr.length<6){
+let n=Math.floor(Math.random()*45)+1;
+if(!arr.includes(n)) arr.push(n);
+}
+arr.sort((a,b)=>a-b);
+
+if(isValid(arr)) return arr;
+}
+
+return null;
+}
+
+function generateMultipleGames(){
+const result = document.getElementById('result');
+const log = document.getElementById('log');
+
+result.innerHTML='';
+let success=0;
+
+for(let i=0;i<5;i++){
+const nums = generateOne();
+if(!nums) continue;
+
+success++;
+
+const row = document.createElement('div');
+row.className='row';
+
+nums.forEach(n=>{
+const b=document.createElement('div');
+b.className='ball';
+b.style.background=getColor(n);
+b.innerText=n;
+row.appendChild(b);
+});
+
+result.appendChild(row);
+}
+
+log.innerText = `완료: ${success}게임 생성`;
+}
+
+loadExcel();
+</script>
+
+</body>
+</html>
