@@ -2986,7 +2986,7 @@ export default function SchedulePage() {
                 const effS = effectiveStatus(name, dayOfWeek);
                 const isAutoHumu = !(name in manualStatuses) && effS === "휴무";
                 const slotLabel = getSlotLabel(name);
-                const isWeekendOnWeekday = person?.group === "주말" && isAutoOff("주말", dayOfWeek) && !(name in manualStatuses);
+                const isWeekendOnWeekday = person != null && isAutoOff(person.group, dayOfWeek) && !(name in manualStatuses);
                 const daegeunType: DaegeunType | undefined = currentDaegeun[name];
 
                 rows.push(
