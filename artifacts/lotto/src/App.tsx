@@ -66,10 +66,13 @@ export default function App() {
       .filter((n) => n >= 1 && n <= 45)
       .sort((a, b) => a - b);
 
-    if (nums.length !== 6) {
-      alert("입력 오류");
+    if (nums.length < 6 || nums.length > 7) {
+      alert("6개 또는 7개(보너스 포함) 숫자를 입력해주세요.");
       return;
     }
+
+    // 보너스 번호는 제외하고 6개만 사용
+    nums.splice(6);
 
     const key = nums.join(",");
 
@@ -190,7 +193,7 @@ export default function App() {
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="이번주 번호 입력 (예: 3,11,15,29,35,44)"
+          placeholder="번호 입력 (예: 3 11 15 29 35 44 또는 보너스 포함 7자리)"
           style={{ padding: "10px", width: "80%", marginTop: "10px", border: "1px solid #ccc", borderRadius: "6px" }}
         />
         <button
