@@ -3306,7 +3306,7 @@ export default function SchedulePage() {
               padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6,
             }}>
               <div style={{ fontWeight: 700, fontSize: "0.78rem", color: "#3949ab", marginBottom: 2 }}>
-                🔍 배정 경계선 미리보기
+                🔍예상 스페어
               </div>
 
               {mode === "2부제" ? (<>
