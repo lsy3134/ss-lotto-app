@@ -323,13 +323,28 @@ export default function SchedulePage() {
   const [, setLocation] = useLocation();
   const { excelDays, loading: xlLoading, error: xlError } = useExcelData();
 
-  // 설정
-  const [mode, setMode] = useState<Mode>("단부제");
+  // 설정 (localStorage 영구 저장)
+  const savedTeams = (() => {
+    try { return JSON.parse(localStorage.getItem("lotto_teamSettings") ?? "{}"); } catch { return {}; }
+  })();
+  const [mode, setMode] = useState<Mode>(savedTeams.mode ?? "단부제");
   // 2부제: totalSize = 총팀수, shift1Size = 1부팀수, shift2Size = 총팀수 - 1부팀수
-  const [totalSize, setTotalSize] = useState(70);
-  const [shift1Size, setShift1Size] = useState(35);
+  const [totalSize, setTotalSize] = useState<number>(savedTeams.totalSize ?? 70);
+  const [shift1Size, setShift1Size] = useState<number>(savedTeams.shift1Size ?? 35);
   const shift2Size = Math.max(0, totalSize - shift1Size);
-  const [singleSize, setSingleSize] = useState(60);
+  const [singleSize, setSingleSize] = useState<number>(savedTeams.singleSize ?? 60);
+  // 팀수 설정 잠금 (저장 완료 상태)
+  const [teamsLocked, setTeamsLocked] = useState<boolean>(savedTeams.locked ?? false);
+
+  // 팀수 설정 변경 시 localStorage 저장
+  function saveTeamSettings() {
+    localStorage.setItem("lotto_teamSettings", JSON.stringify({ mode, totalSize, shift1Size, singleSize, locked: true }));
+    setTeamsLocked(true);
+  }
+  function unlockTeamSettings() {
+    localStorage.setItem("lotto_teamSettings", JSON.stringify({ mode, totalSize, shift1Size, singleSize, locked: false }));
+    setTeamsLocked(false);
+  }
   const [nameText, setNameText] = useState("");
   const [dayOfWeek, setDayOfWeek] = useState(0);
 
@@ -773,7 +788,7 @@ export default function SchedulePage() {
           <label style={S.label}>운영 방식</label>
           <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
             {(["2부제", "단부제"] as Mode[]).map((m) => (
-              <button key={m} onClick={() => setMode(m)}
+              <button key={m} onClick={() => { setMode(m); if (teamsLocked) setTeamsLocked(false); }}
                 style={{ ...S.modeBtn, background: mode === m ? "#1a1a2e" : "#f0f0f0", color: mode === m ? "#fff" : "#555" }}>
                 {m}
               </button>
@@ -1002,38 +1017,89 @@ export default function SchedulePage() {
             </div>
           )}
 
-          {/* 팀수 입력 */}
-          {mode === "2부제" ? (
-            <div style={{ marginBottom: "14px", marginTop: "14px" }}>
-              <div style={{ display: "flex", gap: "10px", marginBottom: "8px" }}>
-                <div style={{ flex: 1 }}>
-                  <label style={S.label}>총 팀수</label>
-                  <input type="number" value={totalSize} min={1}
-                    onChange={(e) => setTotalSize(Number(e.target.value))} style={S.numInput} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={S.label}>1부 팀수</label>
-                  <input type="number" value={shift1Size} min={1} max={totalSize}
-                    onChange={(e) => setShift1Size(Number(e.target.value))} style={S.numInput} />
-                </div>
+          {/* 팀수 입력 / 저장 */}
+          {teamsLocked ? (
+            /* ── 저장된 팀수 요약 카드 ── */
+            <div style={{
+              marginTop: "14px", marginBottom: "14px",
+              background: "#f0f7ff", borderRadius: "12px",
+              padding: "12px 14px", border: "1.5px solid #90caf9",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", marginBottom: "8px" }}>
+                <span style={{ fontWeight: 800, fontSize: "0.85rem", color: "#1565c0" }}>
+                  ✅ 팀수 저장됨 ({mode})
+                </span>
+                <button
+                  onClick={unlockTeamSettings}
+                  style={{
+                    marginLeft: "auto", padding: "4px 12px", borderRadius: "8px",
+                    border: "1.5px solid #1565c0", background: "#fff",
+                    color: "#1565c0", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer",
+                  }}>
+                  ✏ 수정
+                </button>
               </div>
-              {/* 자동 계산 결과 표시 */}
-              <div style={S.calcBox}>
-                <span style={{ color: "#1565c0" }}>1부 {shift1Size}팀</span>
-                <span style={{ color: "#aaa" }}>+</span>
-                <span style={{ color: "#2e7d32" }}>2부 {shift2Size}팀</span>
-                <span style={{ color: "#aaa" }}>=</span>
-                <span style={{ fontWeight: 700 }}>총 {totalSize}팀</span>
-                <span style={{ color: "#aaa", margin: "0 4px" }}>│</span>
-                <span style={{ color: "#e65100", fontSize: "0.75rem" }}>1부스페어: {shift1Size + 1}번째</span>
-                <span style={{ color: "#6a1b9a", fontSize: "0.75rem" }}>2부스페어: {totalSize + 2}번째~</span>
-              </div>
+              {mode === "2부제" ? (
+                <div style={S.calcBox}>
+                  <span style={{ color: "#1565c0" }}>1부 {shift1Size}팀</span>
+                  <span style={{ color: "#aaa" }}>+</span>
+                  <span style={{ color: "#2e7d32" }}>2부 {shift2Size}팀</span>
+                  <span style={{ color: "#aaa" }}>=</span>
+                  <span style={{ fontWeight: 700 }}>총 {totalSize}팀</span>
+                  <span style={{ color: "#aaa", margin: "0 4px" }}>│</span>
+                  <span style={{ color: "#e65100", fontSize: "0.75rem" }}>1부스페어: {shift1Size + 1}번째</span>
+                </div>
+              ) : (
+                <div style={{ fontSize: "0.88rem", fontWeight: 700, color: "#333" }}>
+                  팀수 {singleSize}팀
+                </div>
+              )}
             </div>
           ) : (
-            <div style={{ marginBottom: "14px", marginTop: "14px" }}>
-              <label style={S.label}>팀수</label>
-              <input type="number" value={singleSize} min={1}
-                onChange={(e) => setSingleSize(Number(e.target.value))} style={S.numInput} />
+            /* ── 팀수 입력 폼 ── */
+            <div style={{ marginBottom: "4px", marginTop: "14px" }}>
+              {mode === "2부제" ? (
+                <>
+                  <div style={{ display: "flex", gap: "10px", marginBottom: "8px" }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={S.label}>총 팀수</label>
+                      <input type="number" value={totalSize} min={1}
+                        onChange={(e) => setTotalSize(Number(e.target.value))} style={S.numInput} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={S.label}>1부 팀수</label>
+                      <input type="number" value={shift1Size} min={1} max={totalSize}
+                        onChange={(e) => setShift1Size(Number(e.target.value))} style={S.numInput} />
+                    </div>
+                  </div>
+                  <div style={S.calcBox}>
+                    <span style={{ color: "#1565c0" }}>1부 {shift1Size}팀</span>
+                    <span style={{ color: "#aaa" }}>+</span>
+                    <span style={{ color: "#2e7d32" }}>2부 {shift2Size}팀</span>
+                    <span style={{ color: "#aaa" }}>=</span>
+                    <span style={{ fontWeight: 700 }}>총 {totalSize}팀</span>
+                    <span style={{ color: "#aaa", margin: "0 4px" }}>│</span>
+                    <span style={{ color: "#e65100", fontSize: "0.75rem" }}>1부스페어: {shift1Size + 1}번째</span>
+                    <span style={{ color: "#6a1b9a", fontSize: "0.75rem" }}>2부스페어: {totalSize + 2}번째~</span>
+                  </div>
+                </>
+              ) : (
+                <div style={{ marginBottom: "8px" }}>
+                  <label style={S.label}>팀수</label>
+                  <input type="number" value={singleSize} min={1}
+                    onChange={(e) => setSingleSize(Number(e.target.value))} style={S.numInput} />
+                </div>
+              )}
+              <button
+                onClick={saveTeamSettings}
+                style={{
+                  width: "100%", marginTop: "10px", padding: "11px",
+                  borderRadius: "12px", border: "none",
+                  background: "#2e7d32", color: "#fff",
+                  fontWeight: 800, fontSize: "0.9rem", cursor: "pointer",
+                }}>
+                💾 저장하기
+              </button>
             </div>
           )}
 
