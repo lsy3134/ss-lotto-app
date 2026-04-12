@@ -142,18 +142,14 @@ export default function SchedulePage() {
     setWeekly([]);
   }
 
-  // 일주일 생성
+  // 일주일 생성 — 같은 순번·상태 7일 반복 (스페어 회전 없음)
   function generateWeek() {
     const DAY_LABELS = ["월", "화", "수", "목", "금", "토", "일"];
     const results: { day: string; result: DayResult }[] = [];
-    let currentNames = [...names];
 
     for (let d = 0; d < 7; d++) {
-      // 첫날만 수동 상태 적용, 이후는 자동 배정
-      const dayStatuses = d === 0 ? statuses : {};
-      const res = assignShifts(currentNames, dayStatuses, teamSize);
+      const res = assignShifts(names, statuses, teamSize);
       results.push({ day: DAY_LABELS[d], result: res });
-      currentNames = rotateByLastSpare(currentNames, res.spares);
     }
 
     setWeekly(results);
@@ -236,13 +232,22 @@ export default function SchedulePage() {
               );
             })}
 
-            <button onClick={assign} style={{ ...S.primaryBtn, marginTop: "16px" }}>
-              배정하기
-            </button>
+            {/* 배정 / 일주일 버튼 */}
+            <div style={{ display: "flex", gap: "8px", marginTop: "16px" }}>
+              <button onClick={assign} style={{ ...S.primaryBtn, flex: 1 }}>
+                배정하기
+              </button>
+              <button
+                onClick={generateWeek}
+                style={{ ...S.primaryBtn, flex: 1, background: "#374151" }}
+              >
+                일주일 생성
+              </button>
+            </div>
           </div>
 
           {/* 1일 결과 */}
-          {dayResult && (
+          {dayResult && weekly.length === 0 && (
             <div style={S.card}>
               <div style={S.sectionTitle}>📋 오늘 배정 결과</div>
               <ResultBlock label="1부" names={dayResult.shift1} color="#1565c0" />
@@ -250,10 +255,6 @@ export default function SchedulePage() {
               {dayResult.excluded.length > 0 && (
                 <ResultBlock label="제외" names={dayResult.excluded} color="#9e9e9e" />
               )}
-
-              <button onClick={generateWeek} style={{ ...S.primaryBtn, background: "#333", marginTop: "16px" }}>
-                일주일 자동 생성
-              </button>
             </div>
           )}
 
@@ -265,19 +266,29 @@ export default function SchedulePage() {
                 <div key={day} style={S.weekRow}>
                   <div style={S.dayLabel}>{day}</div>
                   <div style={S.weekShifts}>
-                    <span style={S.shiftChip}>
-                      <b style={{ color: "#1565c0" }}>1부</b> {r.shift1.join(" · ")}
-                    </span>
-                    <span style={S.shiftChip}>
-                      <b style={{ color: "#2e7d32" }}>2부</b> {r.shift2.join(" · ")}
-                      {r.spares.length > 0 && (
-                        <span style={{ color: "#7b1fa2" }}> (스페어: {r.spares.join(", ")})</span>
-                      )}
-                    </span>
-                    {r.excluded.length > 0 && (
-                      <span style={{ ...S.shiftChip, color: "#999" }}>
-                        제외: {r.excluded.join(", ")}
+                    {/* 1부 */}
+                    <div style={S.weekShiftLine}>
+                      <span style={{ ...S.shiftBadge, background: "#e3f2fd", color: "#1565c0" }}>1부</span>
+                      <span style={S.shiftNames}>{r.shift1.join("  ·  ") || "–"}</span>
+                    </div>
+                    {/* 2부 */}
+                    <div style={S.weekShiftLine}>
+                      <span style={{ ...S.shiftBadge, background: "#e8f5e9", color: "#2e7d32" }}>2부</span>
+                      <span style={S.shiftNames}>
+                        {r.shift2.map((n) => (
+                          <span key={n} style={{ marginRight: "6px" }}>
+                            {n}{r.spares.includes(n) ? <span style={{ color: "#7b1fa2", fontSize: "0.7rem" }}>★</span> : ""}
+                          </span>
+                        ))}
+                        {r.shift2.length === 0 && "–"}
                       </span>
+                    </div>
+                    {/* 제외 */}
+                    {r.excluded.length > 0 && (
+                      <div style={S.weekShiftLine}>
+                        <span style={{ ...S.shiftBadge, background: "#f5f5f5", color: "#9e9e9e" }}>제외</span>
+                        <span style={{ ...S.shiftNames, color: "#bbb" }}>{r.excluded.join("  ·  ")}</span>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -482,7 +493,27 @@ const S: Record<string, React.CSSProperties> = {
   weekShifts: {
     display: "flex",
     flexDirection: "column",
-    gap: "4px",
+    gap: "5px",
+    flex: 1,
+  },
+  weekShiftLine: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: "6px",
+  },
+  shiftBadge: {
+    display: "inline-block",
+    padding: "1px 7px",
+    borderRadius: "10px",
+    fontSize: "0.72rem",
+    fontWeight: 700,
+    flexShrink: 0,
+    marginTop: "1px",
+  },
+  shiftNames: {
+    fontSize: "0.82rem",
+    color: "#333",
+    lineHeight: 1.5,
     flex: 1,
   },
   shiftChip: {
