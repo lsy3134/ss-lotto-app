@@ -959,7 +959,6 @@ export default function SchedulePage() {
   // 상태 버튼 목록
   const STATUS_BTNS: { st: StatusType; label: string; color: string; bg: string }[] = [
     { st: "휴무",  label: "휴무",  color: "#757575", bg: "#f5f5f5" },
-    { st: "병가",  label: "병가",  color: "#c62828", bg: "#ffebee" },
     { st: "당번",  label: "당번",  color: "#e65100", bg: "#fff3e0" },
     { st: "대기",  label: "1부대기", color: "#9d174d", bg: "#fce7f3" },
     { st: "조출",  label: "조출",  color: "#1565c0", bg: "#e3f2fd" },
@@ -1437,6 +1436,32 @@ export default function SchedulePage() {
                       <span style={{ fontSize: "0.65rem", fontWeight: 700, color: "#92400e" }}>대근</span>
                       <span style={{ fontSize: "1rem", fontWeight: 700, color: activeDaegeun.length > 0 ? "#f59e0b" : "#d1d5db" }}>
                         {activeDaegeun.length > 0 ? activeDaegeun.length : daegeunCandidates.length}
+                      </span>
+                    </button>
+                  );
+                })()}
+                {/* 병가 버튼 (대근 버튼 옆) */}
+                {(() => {
+                  const baseNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
+                  const sickCnt = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "병가").length;
+                  const active = sickCnt > 0;
+                  return (
+                    <button
+                      onClick={() => openStatusPicker("병가")}
+                      style={{
+                        display: "flex", flexDirection: "column",
+                        alignItems: "center", justifyContent: "center",
+                        padding: "6px 10px",
+                        borderRadius: "8px",
+                        border: active ? "1.5px solid #c62828" : "1px solid #c6282855",
+                        background: active ? "#ffebee" : "#fff5f515",
+                        cursor: "pointer",
+                        minWidth: "52px",
+                        WebkitTapHighlightColor: "transparent",
+                      }}>
+                      <span style={{ fontSize: "0.65rem", fontWeight: 700, color: "#b71c1c" }}>병가</span>
+                      <span style={{ fontSize: "1rem", fontWeight: 700, color: active ? "#c62828" : "#d1d5db" }}>
+                        {active ? sickCnt : "–"}
                       </span>
                     </button>
                   );
