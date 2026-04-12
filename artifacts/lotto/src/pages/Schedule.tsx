@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
 import * as XLSX from "xlsx";
-import { ROSTER, ROSTER_MAP, isAutoOff, type GroupType } from "../data/roster";
+import { ROSTER, isAutoOff, type GroupType, type PersonData } from "../data/roster";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -248,27 +248,7 @@ function buildNextDayQueue(
   return [...spares, ...twoRndOrdered, ...workers];
 }
 
-// ── 자동 휴무 적용 ──────────────────────────────────
-function applyAutoOff(
-  names: string[],
-  manualStatuses: Record<string, StatusType>,
-  dayIdx: number
-): Record<string, StatusType> {
-  const result: Record<string, StatusType> = { ...manualStatuses };
-  names.forEach((name) => {
-    const person = ROSTER_MAP[name];
-    if (person && !(name in manualStatuses) && isAutoOff(person.group, dayIdx)) {
-      result[name] = "휴무";
-    }
-  });
-  return result;
-}
 
-// ── 조 순서로 정렬된 순번표 ────────────────────────
-const SORTED_ROSTER = [...ROSTER].sort((a, b) => {
-  if (a.조 !== b.조) return a.조 - b.조;
-  return a.no - b.no;
-});
 
 // ── 메인 컴포넌트 ─────────────────────────────────
 export default function SchedulePage() {
@@ -304,10 +284,37 @@ export default function SchedulePage() {
   const [modalStatus, setModalStatus] = useState<StatusType | null>(null);
   const [modalSearch, setModalSearch] = useState("");
 
+  // ── 사용자 정의 순번표 (localStorage 영구 저장) ──
+  const [customRoster, setCustomRoster] = useState<PersonData[]>(() => {
+    try {
+      const saved = localStorage.getItem("lotto_customRoster");
+      return saved ? (JSON.parse(saved) as PersonData[]) : ROSTER;
+    } catch { return ROSTER; }
+  });
+  // 저장
+  useEffect(() => {
+    localStorage.setItem("lotto_customRoster", JSON.stringify(customRoster));
+  }, [customRoster]);
+  // 조 순 정렬
+  const sortedCustomRoster = useMemo(() =>
+    [...customRoster].sort((a, b) => a.조 !== b.조 ? a.조 - b.조 : a.no - b.no),
+    [customRoster]
+  );
+  // 이름 → PersonData 맵
+  const customRosterMap = useMemo(() =>
+    Object.fromEntries(customRoster.map(p => [p.name, p])),
+    [customRoster]
+  );
+
+  // ── 순번표 편집 모달 ──
+  const [rosterEditorOpen, setRosterEditorOpen] = useState(false);
+  const [rosterEditorSearch, setRosterEditorSearch] = useState("");
+  const [rosterForm, setRosterForm] = useState<{ mode: "add"|"edit"; orig?: PersonData; name: string; 조: 1|2|3|4; group: GroupType } | null>(null);
+
   // 현재 요일의 유효 상태 반환
   function effectiveStatus(name: string, dayIdx: number = dayOfWeek): StatusType {
     if (name in manualStatuses) return manualStatuses[name];
-    const person = ROSTER_MAP[name];
+    const person = customRosterMap[name];
     if (person && isAutoOff(person.group, dayIdx)) return "휴무";
     return null;
   }
@@ -343,7 +350,7 @@ export default function SchedulePage() {
 
   // 순번표 불러오기 (1조→2조→3조→4조 순서)
   function loadRoster() {
-    const loaded = SORTED_ROSTER.map((p) => p.name);
+    const loaded = sortedCustomRoster.map((p) => p.name);
     setNames(loaded);
     setRosterLoaded(true);
     setManualStatuses({});
@@ -362,6 +369,48 @@ export default function SchedulePage() {
     setDayResult(null);
     setWeekly([]);
     setView("assign");
+  }
+
+  // ── 순번표 편집 함수들 ──────────────────────────
+  function openAddForm() {
+    setRosterForm({ mode: "add", name: "", 조: 1, group: "하우스" });
+  }
+  function openEditForm(p: PersonData) {
+    setRosterForm({ mode: "edit", orig: p, name: p.name, 조: p.조, group: p.group });
+  }
+  function deletePerson(p: PersonData) {
+    if (!confirm(`"${p.name}"을(를) 순번표에서 삭제할까요?`)) return;
+    setCustomRoster(prev => prev.filter(x => x.name !== p.name));
+  }
+  function savePerson() {
+    if (!rosterForm) return;
+    const trimName = rosterForm.name.trim();
+    if (!trimName) { alert("이름을 입력하세요."); return; }
+    if (rosterForm.mode === "add") {
+      // 같은 이름 중복 체크
+      if (customRoster.some(x => x.name === trimName)) {
+        alert("이미 같은 이름이 있습니다."); return;
+      }
+      // 해당 조에서 가장 큰 no + 1
+      const sameJo = customRoster.filter(x => x.조 === rosterForm.조);
+      const maxNo = sameJo.length > 0 ? Math.max(...sameJo.map(x => x.no)) : 0;
+      const newPerson: PersonData = {
+        no: maxNo + 1, name: trimName,
+        조: rosterForm.조, group: rosterForm.group,
+      };
+      setCustomRoster(prev => [...prev, newPerson]);
+    } else {
+      // 수정 모드 (이름 변경 중복 체크)
+      if (trimName !== rosterForm.orig?.name && customRoster.some(x => x.name === trimName)) {
+        alert("이미 같은 이름이 있습니다."); return;
+      }
+      setCustomRoster(prev => prev.map(x =>
+        x.name === rosterForm.orig?.name
+          ? { ...x, name: trimName, 조: rosterForm.조, group: rosterForm.group }
+          : x
+      ));
+    }
+    setRosterForm(null);
   }
 
   function getEffective(dayIdx: number = dayOfWeek) {
@@ -642,11 +691,256 @@ export default function SchedulePage() {
             </div>
           )}
 
-          {/* 순번표 불러오기 */}
-          <button onClick={loadRoster} style={{ ...S.primaryBtn, background: "#1565c0", marginBottom: "12px" }}>
-            📋 순번표 불러오기 (63명)
-          </button>
+          {/* 순번표 불러오기 + 편집 */}
+          <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+            <button onClick={loadRoster} style={{ ...S.primaryBtn, background: "#1565c0", flex: 1, marginBottom: 0 }}>
+              📋 순번표 불러오기 ({customRoster.length}명)
+            </button>
+            <button
+              onClick={() => { setRosterEditorSearch(""); setRosterForm(null); setRosterEditorOpen(true); }}
+              style={{
+                padding: "12px 14px", borderRadius: "12px",
+                border: "1.5px solid #1565c0", background: "#fff",
+                color: "#1565c0", fontWeight: 700, fontSize: "0.85rem",
+                cursor: "pointer", whiteSpace: "nowrap",
+              }}>
+              ✏ 편집
+            </button>
+          </div>
 
+        </div>
+      )}
+
+      {/* ── 순번표 편집 모달 ── */}
+      {rosterEditorOpen && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 300,
+          background: "rgba(0,0,0,0.5)",
+          display: "flex", flexDirection: "column", justifyContent: "flex-end",
+        }}
+          onClick={(e) => { if (e.target === e.currentTarget && !rosterForm) setRosterEditorOpen(false); }}
+        >
+          <div style={{
+            background: "#fff", borderRadius: "18px 18px 0 0",
+            maxHeight: "92vh", display: "flex", flexDirection: "column", overflow: "hidden",
+          }}>
+            {/* 헤더 */}
+            <div style={{
+              display: "flex", alignItems: "center", padding: "14px 16px",
+              borderBottom: "1px solid #f0f0f0", background: "#1a1a2e",
+            }}>
+              <span style={{ fontWeight: 800, fontSize: "1rem", color: "#fff" }}>
+                📋 순번표 편집
+              </span>
+              <span style={{ marginLeft: "8px", fontSize: "0.78rem", color: "#aaa" }}>
+                총 {customRoster.length}명
+              </span>
+              <button onClick={() => { setRosterEditorOpen(false); setRosterForm(null); }}
+                style={{
+                  marginLeft: "auto", background: "rgba(255,255,255,0.15)", border: "none",
+                  borderRadius: "50%", width: "30px", height: "30px",
+                  cursor: "pointer", fontSize: "1rem", color: "#fff", fontWeight: 700,
+                }}>✕</button>
+            </div>
+
+            {rosterForm ? (
+              /* ── 추가/수정 폼 ── */
+              <div style={{ padding: "20px 18px", overflowY: "auto" }}>
+                <div style={{ fontWeight: 700, fontSize: "1rem", marginBottom: "16px", color: "#1a1a2e" }}>
+                  {rosterForm.mode === "add" ? "새 직원 추가" : `"${rosterForm.orig?.name}" 수정`}
+                </div>
+
+                {/* 이름 */}
+                <div style={{ marginBottom: "14px" }}>
+                  <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 700, color: "#555", marginBottom: "5px" }}>이름</label>
+                  <input
+                    value={rosterForm.name}
+                    onChange={e => setRosterForm(f => f ? { ...f, name: e.target.value } : f)}
+                    placeholder="이름 입력"
+                    style={{
+                      width: "100%", padding: "10px 12px", borderRadius: "10px",
+                      border: "1.5px solid #e0e0e0", fontSize: "0.95rem",
+                      outline: "none", boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+
+                {/* 조 선택 */}
+                <div style={{ marginBottom: "14px" }}>
+                  <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 700, color: "#555", marginBottom: "8px" }}>조</label>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    {([1, 2, 3, 4] as const).map(jo => {
+                      const JO_C = [
+                        { bg: "#fce4ec", color: "#c62828" },
+                        { bg: "#e8f5e9", color: "#2e7d32" },
+                        { bg: "#e3f2fd", color: "#1565c0" },
+                        { bg: "#fff8e1", color: "#f57f17" },
+                      ][jo - 1];
+                      const active = rosterForm.조 === jo;
+                      return (
+                        <button key={jo}
+                          onClick={() => setRosterForm(f => f ? { ...f, 조: jo } : f)}
+                          style={{
+                            flex: 1, padding: "10px 0", borderRadius: "10px",
+                            border: `2px solid ${active ? JO_C.color : "#e0e0e0"}`,
+                            background: active ? JO_C.bg : "#fff",
+                            color: active ? JO_C.color : "#aaa",
+                            fontWeight: 700, fontSize: "0.9rem", cursor: "pointer",
+                          }}>
+                          {jo}조
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 반 선택 */}
+                <div style={{ marginBottom: "20px" }}>
+                  <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 700, color: "#555", marginBottom: "8px" }}>반</label>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    {(["하우스", "주중", "주말"] as const).map(grp => {
+                      const gc = GROUP_STYLE[grp];
+                      const active = rosterForm.group === grp;
+                      return (
+                        <button key={grp}
+                          onClick={() => setRosterForm(f => f ? { ...f, group: grp } : f)}
+                          style={{
+                            flex: 1, padding: "10px 0", borderRadius: "10px",
+                            border: `2px solid ${active ? gc.color : "#e0e0e0"}`,
+                            background: active ? gc.bg : "#fff",
+                            color: active ? gc.color : "#aaa",
+                            fontWeight: 700, fontSize: "0.85rem", cursor: "pointer",
+                          }}>
+                          {gc.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div style={{ fontSize: "0.7rem", color: "#999", marginTop: "6px" }}>
+                    주중반: 토·일 자동 휴무 / 주말반: 월~목 자동 휴무 / 하우스: 항상 근무
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button onClick={() => setRosterForm(null)}
+                    style={{
+                      flex: 1, padding: "13px", borderRadius: "12px",
+                      border: "1.5px solid #e0e0e0", background: "#fff",
+                      color: "#555", fontWeight: 700, fontSize: "0.95rem", cursor: "pointer",
+                    }}>취소</button>
+                  <button onClick={savePerson}
+                    style={{
+                      flex: 2, padding: "13px", borderRadius: "12px", border: "none",
+                      background: "#1a1a2e", color: "#fff",
+                      fontWeight: 700, fontSize: "0.95rem", cursor: "pointer",
+                    }}>
+                    {rosterForm.mode === "add" ? "추가" : "수정 완료"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* 검색 */}
+                <div style={{ padding: "10px 14px", borderBottom: "1px solid #f0f0f0" }}>
+                  <input
+                    value={rosterEditorSearch}
+                    onChange={e => setRosterEditorSearch(e.target.value)}
+                    placeholder="🔍 이름 검색..."
+                    style={{
+                      width: "100%", padding: "8px 12px", borderRadius: "10px",
+                      border: "1.5px solid #e0e0e0", fontSize: "0.9rem",
+                      outline: "none", boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+
+                {/* 인원 목록 */}
+                <div style={{ overflowY: "auto", flex: 1, padding: "4px 0" }}>
+                  {(() => {
+                    const q = rosterEditorSearch.trim().toLowerCase();
+                    const filtered = sortedCustomRoster.filter(p =>
+                      !q || p.name.includes(q) || p.조.toString().includes(q) || p.group.includes(q)
+                    );
+                    const JO_COLORS: Record<number, { bg: string; color: string }> = {
+                      1: { bg: "#fce4ec", color: "#c62828" },
+                      2: { bg: "#e8f5e9", color: "#2e7d32" },
+                      3: { bg: "#e3f2fd", color: "#1565c0" },
+                      4: { bg: "#fff8e1", color: "#f57f17" },
+                    };
+                    let lastJo: number | null = null;
+                    const items: React.ReactNode[] = [];
+
+                    filtered.forEach(p => {
+                      if (!q && p.조 !== lastJo) {
+                        lastJo = p.조;
+                        const jc = JO_COLORS[p.조] ?? { bg: "#f5f5f5", color: "#555" };
+                        items.push(
+                          <div key={`jh-${p.조}`} style={{
+                            display: "flex", alignItems: "center", gap: "8px",
+                            padding: "6px 14px 3px",
+                          }}>
+                            <span style={{
+                              background: jc.bg, color: jc.color, fontWeight: 700,
+                              fontSize: "0.72rem", padding: "1px 10px", borderRadius: "20px",
+                              border: `1px solid ${jc.color}44`,
+                            }}>{p.조}조</span>
+                            <div style={{ flex: 1, height: "1px", background: jc.color + "33" }} />
+                          </div>
+                        );
+                      }
+
+                      const gc = GROUP_STYLE[p.group];
+                      items.push(
+                        <div key={p.name} style={{
+                          display: "flex", alignItems: "center", gap: "8px",
+                          padding: "9px 14px", borderBottom: "1px solid #f9f9f9",
+                        }}>
+                          <div style={{ flex: 1 }}>
+                            <span style={{ fontWeight: 600, fontSize: "0.92rem" }}>{p.name}</span>
+                            <span style={{
+                              marginLeft: "7px", fontSize: "0.65rem",
+                              color: gc.color, fontWeight: 600,
+                            }}>{gc.label}</span>
+                          </div>
+                          <button
+                            onClick={() => openEditForm(p)}
+                            style={{
+                              padding: "4px 10px", borderRadius: "8px",
+                              border: "1.5px solid #e0e0e0", background: "#fff",
+                              color: "#555", fontSize: "0.78rem", fontWeight: 600, cursor: "pointer",
+                            }}>✏ 수정</button>
+                          <button
+                            onClick={() => deletePerson(p)}
+                            style={{
+                              padding: "4px 10px", borderRadius: "8px",
+                              border: "1.5px solid #ffcdd2", background: "#fff9f9",
+                              color: "#e53935", fontSize: "0.78rem", fontWeight: 600, cursor: "pointer",
+                            }}>🗑</button>
+                        </div>
+                      );
+                    });
+
+                    if (items.length === 0) {
+                      return <div style={{ textAlign: "center", color: "#bbb", padding: "30px" }}>검색 결과 없음</div>;
+                    }
+                    return items;
+                  })()}
+                </div>
+
+                {/* 추가 버튼 */}
+                <div style={{ padding: "10px 14px", borderTop: "1px solid #f0f0f0" }}>
+                  <button onClick={openAddForm}
+                    style={{
+                      width: "100%", padding: "13px", borderRadius: "12px", border: "none",
+                      background: "#1565c0", color: "#fff",
+                      fontWeight: 700, fontSize: "0.95rem", cursor: "pointer",
+                    }}>
+                    + 새 직원 추가
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
 
@@ -726,7 +1020,7 @@ export default function SchedulePage() {
                 const query = modalSearch.trim().toLowerCase();
                 const filtered = names.filter(n =>
                   !query || n.toLowerCase().includes(query) ||
-                  (ROSTER_MAP[n]?.조?.toString() ?? "").includes(query)
+                  (customRosterMap[n]?.조?.toString() ?? "").includes(query)
                 );
                 const JO_COLORS: Record<number, { bg: string; color: string }> = {
                   1: { bg: "#fce4ec", color: "#c62828" },
@@ -738,7 +1032,7 @@ export default function SchedulePage() {
                 const items: React.ReactNode[] = [];
 
                 filtered.forEach((name) => {
-                  const person = ROSTER_MAP[name];
+                  const person = customRosterMap[name];
                   const joNum = person?.조;
                   const effS = effectiveStatus(name);
                   const isSelected = effS === modalStatus;
@@ -999,7 +1293,7 @@ export default function SchedulePage() {
                 4: { bg: "#fff8e1", color: "#f57f17" },
               };
               names.forEach((name, idx) => {
-                const person = ROSTER_MAP[name];
+                const person = customRosterMap[name];
                 const joNum = person?.조;
                 // 조 구분 헤더
                 if (rosterLoaded && joNum !== undefined && joNum !== lastGroup) {
