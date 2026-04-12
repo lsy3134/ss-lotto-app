@@ -8,21 +8,22 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 // ── 타입 ──────────────────────────────────────────
 type StatusType =
-  | "조출" | "후출" | "찾근"
+  | "조출" | "후출" | "찾근" | "대기"
   | "당번" | "병가" | "휴무" | "하우스"
   | null;
 
 type Mode = "2부제" | "단부제";
 
 const STATUS_BUTTONS: StatusType[] = [
-  "조출", "후출", "찾근", "당번", "병가", "휴무", "하우스",
+  "대기", "조출", "후출", "찾근", "당번", "병가", "휴무", "하우스",
 ];
 
 const EXCLUDED_SET = new Set(["당번", "병가", "휴무", "하우스"]);
 
 const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
-  조출:   { bg: "#fed7aa", color: "#9a3412" },  // 주황 (주의)
-  후출:   { bg: "#ddd6fe", color: "#5b21b6" },  // 연보라 (구분)
+  대기:   { bg: "#fce7f3", color: "#9d174d" },  // 분홍 (1부 출근대기 = spare1)
+  조출:   { bg: "#fed7aa", color: "#9a3412" },  // 주황 (조출)
+  후출:   { bg: "#ddd6fe", color: "#5b21b6" },  // 연보라 (속수대기)
   찾근:   { bg: "#cffafe", color: "#164e63" },  // 하늘 (투라운드)
   당번:   { bg: "#fecaca", color: "#991b1b" },  // 연빨 (주의)
   병가:   { bg: "#e5e7eb", color: "#4b5563" },  // 회색 (비활성)
@@ -174,13 +175,17 @@ function assignDouble(
   const twoRound: string[] = [];   // 찾근 (1부+2부 투라운드)
   const 조출List: string[] = [];   // 조출 (1부 앞 고정, 최대 4명)
   const 후출List: string[] = [];   // 후출 (2부 뒤에서 3번째, 최대 4명)
+  const 대기List: string[] = [];   // 대기 (1부 출근대기 → spare1로 2부 첫번째 고정)
   const excluded: string[] = [];
   const autoQueue: string[] = [];  // 일반 순번 대기열
 
   for (const name of names) {
     const s = statuses[name] ?? null;
     if (s === "찾근")  { twoRound.push(name); }
-    else if (s === "조출") {
+    else if (s === "대기") {
+      // 1부 출근대기: spare1 고정 (1부 미포함, 2부 첫번째로 나감)
+      대기List.push(name);
+    } else if (s === "조출") {
       if (조출List.length < 4) 조출List.push(name); else autoQueue.push(name);
     } else if (s === "후출") {
       if (후출List.length < 4) 후출List.push(name); else autoQueue.push(name);
@@ -188,12 +193,17 @@ function assignDouble(
     else { autoQueue.push(name); }
   }
 
-  // ── 1부 배치: 찾근 → 조출 → 일반순번 ──
+  // ── 1부 배치: 찾근 → 조출 → 일반순번 ── (대기자는 1부 미포함)
   const fixed1 = [...twoRound, ...조출List];
   const avail1 = Math.max(0, shift1Size - fixed1.length);
   const shift1 = [...fixed1, ...autoQueue.slice(0, avail1)];
-  const spare1 = autoQueue.slice(avail1, avail1 + 1); // 1부스페어 1명 (2부 첫번째로 나감)
-  const remaining = autoQueue.slice(avail1 + 1);       // 2부 후보 대기열
+  // spare1: 명시적 대기자 우선, 없으면 autoQueue에서 순번상 다음번호
+  const spare1 = 대기List.length > 0
+    ? 대기List.slice(0, 1)
+    : autoQueue.slice(avail1, avail1 + 1);
+  const remaining = 대기List.length > 0
+    ? autoQueue.slice(avail1)      // 대기자가 있으면 avail1 이후부터 remaining
+    : autoQueue.slice(avail1 + 1); // 대기자 없으면 기존 로직
 
   // ── 2부 배치 ────────────────────────────────────────
   // 규정:
@@ -864,6 +874,7 @@ export default function SchedulePage() {
     { st: "휴무",  label: "휴무",  color: "#757575", bg: "#f5f5f5" },
     { st: "병가",  label: "병가",  color: "#c62828", bg: "#ffebee" },
     { st: "당번",  label: "당번",  color: "#e65100", bg: "#fff3e0" },
+    { st: "대기",  label: "1부대기", color: "#9d174d", bg: "#fce7f3" },
     { st: "조출",  label: "조출",  color: "#1565c0", bg: "#e3f2fd" },
     { st: "후출",  label: "후출",  color: "#6a1b9a", bg: "#f3e5f5" },
     { st: "찾근",  label: "찾근",  color: "#2e7d32", bg: "#e8f5e9" },
