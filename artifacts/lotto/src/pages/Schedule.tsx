@@ -536,10 +536,69 @@ export default function SchedulePage() {
               <div style={S.excelStatRow}>
                 <StatBadge label="가용인원" value={selectedDate.가용인원} color="#1565c0" />
                 <StatBadge label="예약팀수" value={selectedDate.예약팀수 || "미입력"} color={selectedDate.예약팀수 > 0 ? "#2e7d32" : "#9e9e9e"} />
-                <StatBadge label="당번" value={selectedDate.당번} color="#e53935" />
-                <StatBadge label="휴무" value={selectedDate.휴무} color="#757575" />
-                <StatBadge label="병가" value={selectedDate.병가} color="#9e9e9e" />
+                {/* 클릭 가능한 상태 뱃지 */}
+                {(["당번", "휴무", "병가"] as const).map((st) => {
+                  const sc = STATUS_COLOR[st];
+                  const assigned = names.filter(n => effectiveStatus(n) === st).length;
+                  const canClick = names.length > 0;
+                  return (
+                    <div key={st}
+                      onClick={() => { if (canClick) { setModalStatus(st); setModalSearch(""); } }}
+                      title={canClick ? `${st} 배정 클릭` : "순번표를 먼저 불러오세요"}
+                      style={{
+                        display: "flex", flexDirection: "column", alignItems: "center",
+                        background: assigned > 0 ? sc.bg + "22" : sc.bg + "12",
+                        borderRadius: "8px", padding: "6px 10px",
+                        border: `1.5px solid ${assigned > 0 ? sc.bg : sc.bg + "55"}`,
+                        minWidth: "52px", cursor: canClick ? "pointer" : "default",
+                        position: "relative",
+                      }}>
+                      <span style={{ fontSize: "0.65rem", color: sc.bg, fontWeight: 700 }}>{st}</span>
+                      <span style={{ fontSize: "1rem", fontWeight: 700, color: sc.bg }}>
+                        {assigned > 0 ? assigned : selectedDate[st as "당번"|"휴무"|"병가"]}
+                      </span>
+                      {canClick && (
+                        <span style={{
+                          position: "absolute", top: "2px", right: "3px",
+                          fontSize: "0.5rem", color: sc.bg + "99",
+                        }}>▼</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
+
+              {/* 조출·후출·찾근 빠른 배정 버튼 (순번표 로드 후 표시) */}
+              {names.length > 0 && mode === "2부제" && (
+                <div style={{ display: "flex", gap: "6px", marginTop: "8px", flexWrap: "wrap" }}>
+                  {([
+                    { st: "조출" as const, icon: "⬆", sub: "1부 앞", disabled: !cho가능, hint: !cho가능 ? "1부 6팀+" : `${cho현재수}/4명` },
+                    { st: "후출" as const, icon: "⬇", sub: "2부 뒤", disabled: false, hint: `${hu현재수}/4명` },
+                    { st: "찾근" as const, icon: "🔄", sub: "투라운드", disabled: !cho가능, hint: !cho가능 ? "1부 6팀+" : `${checkedCounts.찾근 ?? 0}명` },
+                  ]).map(({ st, icon, sub, disabled, hint }) => {
+                    const sc = STATUS_COLOR[st];
+                    const assigned = names.filter(n => effectiveStatus(n) === st).length;
+                    return (
+                      <button key={st}
+                        onClick={() => { if (!disabled) { setModalStatus(st); setModalSearch(""); } }}
+                        disabled={disabled}
+                        style={{
+                          display: "flex", alignItems: "center", gap: "5px",
+                          padding: "5px 10px", borderRadius: "20px", border: "none",
+                          background: disabled ? "#f0f0f0" : (assigned > 0 ? sc.bg : sc.bg + "22"),
+                          color: disabled ? "#bbb" : (assigned > 0 ? "#fff" : sc.bg),
+                          fontWeight: 700, fontSize: "0.78rem",
+                          cursor: disabled ? "not-allowed" : "pointer",
+                          opacity: disabled ? 0.6 : 1,
+                        }}>
+                        <span>{icon}</span>
+                        <span>{st}</span>
+                        <span style={{ fontSize: "0.68rem", opacity: 0.8 }}>{hint}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
               {selectedDate.예약팀수 === 0 && (
                 <div style={{ fontSize: "0.72rem", color: "#ff8f00", marginTop: "4px" }}>
                   ⚠ 예약팀수 미입력 — 아래에서 직접 팀수를 입력해 주세요
@@ -597,202 +656,192 @@ export default function SchedulePage() {
         </div>
       )}
 
+      {/* ── 상태 선택 모달 (전역, 어느 화면에서나 열림) ── */}
+      {modalStatus && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 200,
+          background: "rgba(0,0,0,0.45)",
+          display: "flex", flexDirection: "column", justifyContent: "flex-end",
+        }}
+          onClick={(e) => { if (e.target === e.currentTarget) setModalStatus(null); }}
+        >
+          <div style={{
+            background: "#fff", borderRadius: "18px 18px 0 0",
+            maxHeight: "88vh", display: "flex", flexDirection: "column",
+            overflow: "hidden",
+          }}>
+            {/* 헤더 */}
+            <div style={{
+              display: "flex", alignItems: "center", padding: "14px 16px",
+              borderBottom: "1px solid #f0f0f0",
+              background: (STATUS_COLOR[modalStatus] ?? { bg: "#f5f5f5" }).bg,
+            }}>
+              <span style={{ fontWeight: 800, fontSize: "1rem", color: (STATUS_COLOR[modalStatus] ?? { color: "#333" }).color }}>
+                {modalStatus} 배정
+              </span>
+              <span style={{ marginLeft: "8px", fontSize: "0.78rem", color: (STATUS_COLOR[modalStatus] ?? { color: "#fff" }).color + "cc" }}>
+                현재 {names.filter(n => effectiveStatus(n) === modalStatus).length}명 선택됨
+              </span>
+              <button onClick={() => setModalStatus(null)}
+                style={{
+                  marginLeft: "auto", background: "rgba(255,255,255,0.25)", border: "none",
+                  borderRadius: "50%", width: "30px", height: "30px",
+                  cursor: "pointer", fontSize: "1rem", fontWeight: 700,
+                  color: (STATUS_COLOR[modalStatus] ?? { color: "#333" }).color,
+                }}>✕</button>
+            </div>
+
+            {/* 검색창 */}
+            <div style={{ padding: "10px 14px", borderBottom: "1px solid #f0f0f0" }}>
+              <input
+                value={modalSearch}
+                onChange={(e) => setModalSearch(e.target.value)}
+                placeholder="🔍 이름 검색..."
+                autoFocus
+                style={{
+                  width: "100%", padding: "8px 12px", borderRadius: "10px",
+                  border: "1.5px solid #e0e0e0", fontSize: "0.9rem",
+                  outline: "none", boxSizing: "border-box",
+                }}
+              />
+            </div>
+
+            {/* 선택된 사람 칩 */}
+            {names.filter(n => effectiveStatus(n) === modalStatus).length > 0 && (
+              <div style={{ padding: "8px 14px 6px", display: "flex", flexWrap: "wrap", gap: "5px", borderBottom: "1px solid #f0f0f0" }}>
+                {names.filter(n => effectiveStatus(n) === modalStatus).map(n => (
+                  <span key={n}
+                    onClick={() => toggleStatus(n, modalStatus)}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: "4px",
+                      padding: "4px 10px", borderRadius: "20px",
+                      background: (STATUS_COLOR[modalStatus] ?? { bg: "#eee" }).bg,
+                      color: (STATUS_COLOR[modalStatus] ?? { color: "#333" }).color,
+                      fontWeight: 700, fontSize: "0.8rem", cursor: "pointer",
+                      border: `1.5px solid ${(STATUS_COLOR[modalStatus] ?? { color: "#888" }).color}55`,
+                    }}>
+                    {n} <span style={{ fontSize: "0.7rem" }}>✕</span>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* 순번표 목록 */}
+            <div style={{ overflowY: "auto", flex: 1, padding: "6px 0 16px" }}>
+              {(() => {
+                const query = modalSearch.trim().toLowerCase();
+                const filtered = names.filter(n =>
+                  !query || n.toLowerCase().includes(query) ||
+                  (ROSTER_MAP[n]?.조?.toString() ?? "").includes(query)
+                );
+                const JO_COLORS: Record<number, { bg: string; color: string }> = {
+                  1: { bg: "#fce4ec", color: "#c62828" },
+                  2: { bg: "#e8f5e9", color: "#2e7d32" },
+                  3: { bg: "#e3f2fd", color: "#1565c0" },
+                  4: { bg: "#fff8e1", color: "#f57f17" },
+                };
+                let lastJo: number | null = null;
+                const items: React.ReactNode[] = [];
+
+                filtered.forEach((name) => {
+                  const person = ROSTER_MAP[name];
+                  const joNum = person?.조;
+                  const effS = effectiveStatus(name);
+                  const isSelected = effS === modalStatus;
+                  const isDifferent = effS !== null && effS !== modalStatus;
+
+                  if (!query && rosterLoaded && joNum !== undefined && joNum !== lastJo) {
+                    lastJo = joNum;
+                    const jc = JO_COLORS[joNum] ?? { bg: "#f5f5f5", color: "#555" };
+                    items.push(
+                      <div key={`h-${joNum}`} style={{ padding: "5px 14px 3px", display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span style={{
+                          background: jc.bg, color: jc.color, fontWeight: 700,
+                          fontSize: "0.72rem", padding: "1px 10px", borderRadius: "20px",
+                          border: `1px solid ${jc.color}44`,
+                        }}>{joNum}조</span>
+                        <div style={{ flex: 1, height: "1px", background: jc.color + "33" }} />
+                      </div>
+                    );
+                  }
+
+                  const isDisabled = (() => {
+                    if (isSelected) return false;
+                    if (modalStatus === "찾근") return !canChakgeun(name);
+                    if (modalStatus === "조출") return !cho가능 || cho현재수 >= 4;
+                    if (modalStatus === "후출") return hu현재수 >= 4;
+                    return false;
+                  })();
+
+                  const sc = STATUS_COLOR[modalStatus] ?? { bg: "#eee", color: "#333" };
+                  items.push(
+                    <div key={name}
+                      onClick={() => !isDisabled && toggleStatus(name, modalStatus)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: "10px",
+                        padding: "10px 14px",
+                        background: isSelected ? sc.bg + "33" : "transparent",
+                        borderLeft: isSelected ? `3px solid ${sc.color}` : "3px solid transparent",
+                        cursor: isDisabled ? "not-allowed" : "pointer",
+                        opacity: isDisabled ? 0.38 : 1,
+                      }}
+                    >
+                      <div style={{
+                        width: "22px", height: "22px", borderRadius: "6px", flexShrink: 0,
+                        border: `2px solid ${isSelected ? sc.color : "#ddd"}`,
+                        background: isSelected ? sc.bg : "#fff",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>
+                        {isSelected && <span style={{ fontSize: "0.9rem", color: sc.color, fontWeight: 900 }}>✓</span>}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontWeight: 600, fontSize: "0.92rem" }}>{name}</span>
+                        {person && (
+                          <span style={{ marginLeft: "6px", fontSize: "0.65rem", color: GROUP_STYLE[person.group].color, fontWeight: 600 }}>
+                            {person.조}조 · {GROUP_STYLE[person.group].label}
+                          </span>
+                        )}
+                      </div>
+                      {isDifferent && (
+                        <span style={{
+                          padding: "2px 8px", borderRadius: "12px", fontSize: "0.7rem", fontWeight: 700,
+                          background: (STATUS_COLOR[effS!] ?? { bg: "#eee" }).bg,
+                          color: (STATUS_COLOR[effS!] ?? { color: "#555" }).color,
+                        }}>{effS}</span>
+                      )}
+                      {isDisabled && !isSelected && (
+                        <span style={{ fontSize: "0.65rem", color: "#bbb" }}>불가</span>
+                      )}
+                    </div>
+                  );
+                });
+
+                if (items.length === 0) {
+                  return <div style={{ textAlign: "center", color: "#bbb", padding: "30px" }}>검색 결과 없음</div>;
+                }
+                return items;
+              })()}
+            </div>
+
+            {/* 완료 버튼 */}
+            <div style={{ padding: "10px 14px", borderTop: "1px solid #f0f0f0" }}>
+              <button onClick={() => setModalStatus(null)}
+                style={{
+                  width: "100%", padding: "13px", borderRadius: "12px", border: "none",
+                  background: (STATUS_COLOR[modalStatus] ?? { bg: "#1a1a2e" }).bg,
+                  color: (STATUS_COLOR[modalStatus] ?? { color: "#fff" }).color,
+                  fontWeight: 700, fontSize: "0.95rem", cursor: "pointer",
+                }}>
+                완료 — {names.filter(n => effectiveStatus(n) === modalStatus).length}명 선택됨
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ─── 배정 단계 ─── */}
       {view === "assign" && (
         <>
-          {/* ── 상태 선택 모달 ── */}
-          {modalStatus && (
-            <div style={{
-              position: "fixed", inset: 0, zIndex: 200,
-              background: "rgba(0,0,0,0.45)",
-              display: "flex", flexDirection: "column", justifyContent: "flex-end",
-            }}
-              onClick={(e) => { if (e.target === e.currentTarget) setModalStatus(null); }}
-            >
-              <div style={{
-                background: "#fff", borderRadius: "18px 18px 0 0",
-                maxHeight: "88vh", display: "flex", flexDirection: "column",
-                overflow: "hidden",
-              }}>
-                {/* 모달 헤더 */}
-                <div style={{
-                  display: "flex", alignItems: "center", padding: "14px 16px",
-                  borderBottom: "1px solid #f0f0f0",
-                  background: (STATUS_COLOR[modalStatus!] ?? { bg: "#f5f5f5" }).bg,
-                }}>
-                  <span style={{ fontWeight: 800, fontSize: "1rem", color: (STATUS_COLOR[modalStatus!] ?? { color: "#333" }).color }}>
-                    {modalStatus} 배정
-                  </span>
-                  <span style={{ marginLeft: "8px", fontSize: "0.78rem", color: "#666" }}>
-                    현재 {names.filter(n => effectiveStatus(n) === modalStatus).length}명 선택됨
-                  </span>
-                  <button onClick={() => setModalStatus(null)}
-                    style={{
-                      marginLeft: "auto", background: "rgba(0,0,0,0.08)", border: "none",
-                      borderRadius: "50%", width: "30px", height: "30px",
-                      cursor: "pointer", fontSize: "1rem", fontWeight: 700, color: "#555",
-                    }}>✕</button>
-                </div>
-
-                {/* 검색창 */}
-                <div style={{ padding: "10px 14px", borderBottom: "1px solid #f0f0f0" }}>
-                  <input
-                    value={modalSearch}
-                    onChange={(e) => setModalSearch(e.target.value)}
-                    placeholder="🔍 이름 검색..."
-                    autoFocus
-                    style={{
-                      width: "100%", padding: "8px 12px", borderRadius: "10px",
-                      border: "1.5px solid #e0e0e0", fontSize: "0.9rem",
-                      outline: "none", boxSizing: "border-box",
-                    }}
-                  />
-                </div>
-
-                {/* 현재 선택된 사람 칩 */}
-                {names.filter(n => effectiveStatus(n) === modalStatus).length > 0 && (
-                  <div style={{ padding: "8px 14px 4px", display: "flex", flexWrap: "wrap", gap: "5px", borderBottom: "1px solid #f0f0f0" }}>
-                    {names.filter(n => effectiveStatus(n) === modalStatus).map(n => (
-                      <span key={n}
-                        onClick={() => toggleStatus(n, modalStatus!)}
-                        style={{
-                          display: "inline-flex", alignItems: "center", gap: "4px",
-                          padding: "3px 10px", borderRadius: "20px",
-                          background: (STATUS_COLOR[modalStatus!] ?? { bg: "#eee" }).bg,
-                          color: (STATUS_COLOR[modalStatus!] ?? { color: "#333" }).color,
-                          fontWeight: 700, fontSize: "0.8rem", cursor: "pointer",
-                          border: `1.5px solid ${(STATUS_COLOR[modalStatus!] ?? { color: "#888" }).color}44`,
-                        }}>
-                        {n} <span style={{ fontSize: "0.75rem" }}>✕</span>
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {/* 순번표 목록 */}
-                <div style={{ overflowY: "auto", flex: 1, padding: "6px 0 16px" }}>
-                  {(() => {
-                    const query = modalSearch.trim().toLowerCase();
-                    const filtered = names.filter(n =>
-                      !query || n.toLowerCase().includes(query) ||
-                      (ROSTER_MAP[n]?.조?.toString() ?? "").includes(query)
-                    );
-                    const JO_COLORS: Record<number, { bg: string; color: string }> = {
-                      1: { bg: "#fce4ec", color: "#c62828" },
-                      2: { bg: "#e8f5e9", color: "#2e7d32" },
-                      3: { bg: "#e3f2fd", color: "#1565c0" },
-                      4: { bg: "#fff8e1", color: "#f57f17" },
-                    };
-                    let lastJo: number | null = null;
-                    const items: React.ReactNode[] = [];
-
-                    filtered.forEach((name) => {
-                      const person = ROSTER_MAP[name];
-                      const joNum = person?.조;
-                      const effS = effectiveStatus(name);
-                      const isSelected = effS === modalStatus;
-                      const isDifferent = effS !== null && effS !== modalStatus;
-
-                      // 조 헤더 (검색 없을 때만)
-                      if (!query && rosterLoaded && joNum !== undefined && joNum !== lastJo) {
-                        lastJo = joNum;
-                        const jc = JO_COLORS[joNum] ?? { bg: "#f5f5f5", color: "#555" };
-                        items.push(
-                          <div key={`h-${joNum}`} style={{
-                            padding: "5px 14px 3px",
-                            display: "flex", alignItems: "center", gap: "8px",
-                          }}>
-                            <span style={{
-                              background: jc.bg, color: jc.color, fontWeight: 700,
-                              fontSize: "0.72rem", padding: "1px 10px", borderRadius: "20px",
-                              border: `1px solid ${jc.color}44`,
-                            }}>{joNum}조</span>
-                            <div style={{ flex: 1, height: "1px", background: jc.color + "33" }} />
-                          </div>
-                        );
-                      }
-
-                      // 개별 사람 항목
-                      // 찾근: canChakgeun / 조출: cho가능 + count < 4 / 후출: count < 4 검사
-                      const isDisabled = (() => {
-                        if (isSelected) return false; // 해제는 항상 가능
-                        if (modalStatus === "찾근") return !canChakgeun(name);
-                        if (modalStatus === "조출") return !cho가능 || (cho현재수 >= 4);
-                        if (modalStatus === "후출") return hu현재수 >= 4;
-                        return false;
-                      })();
-
-                      items.push(
-                        <div key={name}
-                          onClick={() => !isDisabled && toggleStatus(name, modalStatus!)}
-                          style={{
-                            display: "flex", alignItems: "center", gap: "10px",
-                            padding: "9px 14px",
-                            background: isSelected ? (STATUS_COLOR[modalStatus!] ?? { bg: "#eee" }).bg + "55" : "transparent",
-                            borderLeft: isSelected ? `3px solid ${(STATUS_COLOR[modalStatus!] ?? { color: "#888" }).color}` : "3px solid transparent",
-                            cursor: isDisabled ? "not-allowed" : "pointer",
-                            opacity: isDisabled ? 0.4 : 1,
-                          }}
-                        >
-                          {/* 체크박스 */}
-                          <div style={{
-                            width: "22px", height: "22px", borderRadius: "6px", flexShrink: 0,
-                            border: `2px solid ${isSelected ? (STATUS_COLOR[modalStatus!] ?? { color: "#888" }).color : "#ddd"}`,
-                            background: isSelected ? (STATUS_COLOR[modalStatus!] ?? { bg: "#eee" }).bg : "#fff",
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                          }}>
-                            {isSelected && <span style={{ fontSize: "0.85rem", color: (STATUS_COLOR[modalStatus!] ?? { color: "#333" }).color, fontWeight: 900 }}>✓</span>}
-                          </div>
-                          {/* 이름 + 조 */}
-                          <div style={{ flex: 1 }}>
-                            <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>{name}</span>
-                            {person && (
-                              <span style={{
-                                marginLeft: "6px", fontSize: "0.65rem",
-                                color: GROUP_STYLE[person.group].color, fontWeight: 600,
-                              }}>
-                                {person.조}조 · {GROUP_STYLE[person.group].label}
-                              </span>
-                            )}
-                          </div>
-                          {/* 현재 다른 상태 배지 */}
-                          {isDifferent && (
-                            <span style={{
-                              padding: "2px 8px", borderRadius: "12px", fontSize: "0.7rem", fontWeight: 700,
-                              background: (STATUS_COLOR[effS!] ?? { bg: "#eee" }).bg,
-                              color: (STATUS_COLOR[effS!] ?? { color: "#555" }).color,
-                            }}>{effS}</span>
-                          )}
-                          {isDisabled && !isSelected && (
-                            <span style={{ fontSize: "0.65rem", color: "#bbb" }}>불가</span>
-                          )}
-                        </div>
-                      );
-                    });
-
-                    if (items.length === 0) {
-                      return <div style={{ textAlign: "center", color: "#bbb", padding: "30px" }}>검색 결과 없음</div>;
-                    }
-                    return items;
-                  })()}
-                </div>
-
-                {/* 하단 완료 버튼 */}
-                <div style={{ padding: "10px 14px", borderTop: "1px solid #f0f0f0" }}>
-                  <button onClick={() => setModalStatus(null)}
-                    style={{
-                      width: "100%", padding: "12px", borderRadius: "12px", border: "none",
-                      background: (STATUS_COLOR[modalStatus!] ?? { bg: "#1a1a2e" }).bg,
-                      color: (STATUS_COLOR[modalStatus!] ?? { color: "#fff" }).color,
-                      fontWeight: 700, fontSize: "0.95rem", cursor: "pointer",
-                    }}>
-                    완료 ({names.filter(n => effectiveStatus(n) === modalStatus).length}명 선택됨)
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
           <div style={S.card}>
             {/* 요일 선택 */}
             <label style={{ ...S.label, marginBottom: "8px" }}>오늘 요일</label>
