@@ -565,6 +565,25 @@ export default function SchedulePage() {
                         {d.예약팀수}팀
                       </span>
                     )}
+                    {/* 당번·휴무 자동 표시 */}
+                    {d.당번 > 0 && (
+                      <span style={{
+                        fontSize: "0.55rem", fontWeight: 700,
+                        color: isSelected ? "#90caf9" : "#1565c0",
+                        lineHeight: 1,
+                      }}>
+                        당{d.당번}
+                      </span>
+                    )}
+                    {d.휴무 > 0 && (
+                      <span style={{
+                        fontSize: "0.55rem", fontWeight: 700,
+                        color: isSelected ? "#ccc" : "#9e9e9e",
+                        lineHeight: 1,
+                      }}>
+                        휴{d.휴무}
+                      </span>
+                    )}
                   </button>
                 );
               })}
