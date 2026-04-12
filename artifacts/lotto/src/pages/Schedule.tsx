@@ -154,40 +154,58 @@ function assignDouble(
   }
 
   // ── 1부 배치: 찾근 → 조출 → 일반순번 ──
-  const fixed1 = [...twoRound, ...조출List];           // 고정 1부 인원
+  const fixed1 = [...twoRound, ...조출List];
   const avail1 = Math.max(0, shift1Size - fixed1.length);
   const shift1 = [...fixed1, ...autoQueue.slice(0, avail1)];
-  const spare1 = autoQueue.slice(avail1, avail1 + 1); // 1부스페어 1명
+  const spare1 = autoQueue.slice(avail1, avail1 + 1); // 1부스페어 1명 (2부 첫번째로 나감)
   const remaining = autoQueue.slice(avail1 + 1);       // 2부 후보 대기열
 
-  // ── 2부 배치: 일반순번 + 후출자 뒤에서 3번째 위치 ──
-  // 찾근자는 투라운드이므로 2부에도 참여 (twoRound 표시로 커버)
-  // 후출자: 2부 팀수 기준 뒤에서 3번째 고정
-  // 예) 2부 35팀 → 33번째 위치에 후출자 삽입
-  const avail2 = Math.max(0, shift2Size - 후출List.length);
-  const normalFor2 = remaining.slice(0, avail2);
-  const restQueue = remaining.slice(avail2);
+  // ── 2부 배치 ────────────────────────────────────────
+  // 규정:
+  //   - 1부스페어(spare1)가 2부 제일 앞(첫번째)으로 나감
+  //   - 찾근자(twoRound)는 1부 근무 후 2부에도 배정 (2부의 약 1/4 지점에 삽입)
+  //   - 일반순번: twoRound 삽입 전/후로 분할
+  //   - 후출자: 2부 뒤에서 3번째 위치 삽입
+  //   - 2부스페어: 나머지 → 다음날 첫번호!
+  // ── 2부 인원 계산 ──────────────────────────────────
+  // 규정: shift2Size = spare1 + twoRound + remaining + extra투라운드(1부 앞순번)
+  // extra투라운드: shift2Size에서 spare1/twoRound/remaining/후출을 빼고 남은 인원 수만큼
+  //               shift1 regular 배정 인원의 앞번호부터 추가로 2부에도 나감
+  const shift1Regular = autoQueue.slice(0, avail1); // 1부에 배정된 regular 인원
+  const avail2Normal = Math.max(0, shift2Size - spare1.length - twoRound.length - 후출List.length);
+  const normalFor2 = remaining.slice(0, avail2Normal);
+  const spare2 = remaining.slice(avail2Normal);              // ★ 2부스페어 → 다음날 첫번호
 
+  // 1부 앞순번에서 추가로 2부에 나가는 인원 (찾근자 제외 regular shift1의 앞번호)
+  const extra2부Count = Math.max(0, shift2Size - spare1.length - twoRound.length - normalFor2.length - 후출List.length);
+  const extra2부 = shift1Regular.slice(0, extra2부Count);
+
+  // twoRound 삽입 위치: 2부의 약 1/4 지점 (spare1 뒤)
+  const twoRoundInsertAt = Math.max(0, Math.floor(shift2Size / 4) - spare1.length);
+  const normalBefore = normalFor2.slice(0, twoRoundInsertAt);
+  const normalAfter  = normalFor2.slice(twoRoundInsertAt);
+
+  // 후출자: normalAfter + extra2부 뒤에서 3번째 위치
+  const afterTwoRound = [...normalAfter, ...extra2부];
   let shift2: string[];
-  if (후출List.length > 0 && normalFor2.length >= 2) {
-    // 뒤에서 3번째 = 끝에서 2개 자리를 막팀(1번째, 2번째)으로 남기고 후출자 삽입
-    const insertAt = Math.max(0, normalFor2.length - 2);
+  if (후출List.length > 0 && afterTwoRound.length >= 2) {
+    const insertAt = Math.max(0, afterTwoRound.length - 2);
     shift2 = [
-      ...normalFor2.slice(0, insertAt),
+      ...spare1,
+      ...normalBefore,
+      ...twoRound,
+      ...afterTwoRound.slice(0, insertAt),
       ...후출List,
-      ...normalFor2.slice(insertAt),
+      ...afterTwoRound.slice(insertAt),
     ];
   } else {
-    // 일반순번이 2명 미만이면 그냥 뒤에 추가
-    shift2 = [...normalFor2, ...후출List];
+    shift2 = [...spare1, ...normalBefore, ...twoRound, ...afterTwoRound, ...후출List];
   }
 
-  const spare2 = restQueue;
-
-  // ── 다음날 예상 순번 계산 ──────────────────────────
-  // 규정: [오늘 스페어 앞번호순] → [오늘 찾근자] → [오늘 근무자 순서]
-  // 스페어를 선 앞번호(= 낮은 큐번호)가 다음날 첫 대기가 됨
-  const nextDayQueue = buildNextDayQueue(names, spare1, spare2, twoRound, excluded);
+  // ── 다음날 예상 순번 ──────────────────────────────────
+  // 규정: 2부스페어(앞번호 우선) → 찾근자 → 오늘 근무자 순서
+  // 1부스페어는 2부를 나갔으므로 다음날 대기에 포함되지 않음
+  const nextDayQueue = buildNextDayQueue(names, [], spare2, twoRound, excluded);
 
   return { twoRound, shift1, spare1, shift2, spare2, excluded, 조출List, 후출List, nextDayQueue };
 }
@@ -684,10 +702,11 @@ export default function SchedulePage() {
     const map: Record<string, "1부" | "1부스페어" | "2부" | "2부스페어" | "스페어" | "단부" | "찾근" | "제외"> = {};
     livePreview.twoRound?.forEach((n: string) => { map[n] = "찾근"; });
     livePreview.shift1?.forEach((n: string) => { map[n] = mode === "2부제" ? "1부" : "단부"; });
-    livePreview.spare1?.forEach((n: string) => { map[n] = "1부스페어"; });
     livePreview.shift2?.forEach((n: string) => { map[n] = "2부"; });
     livePreview.spare2?.forEach((n: string) => { map[n] = mode === "2부제" ? "2부스페어" : "스페어"; });
     livePreview.excluded?.forEach((n: string) => { map[n] = "제외"; });
+    // spare1(1부스페어)은 shift2에도 포함되므로 마지막에 덮어써야 "1부스페어" 표시 유지
+    livePreview.spare1?.forEach((n: string) => { map[n] = "1부스페어"; });
     return map;
   }, [livePreview, mode]);
 
@@ -2709,12 +2728,12 @@ function StatBadge({ label, value, color, small = false }: {
 
 // ── 결과 표시 컴포넌트 ─────────────────────────────
 const CATS_DOUBLE = [
-  { key: "twoRound" as const, label: "투라운드", badge: { bg: "#e0f7fa", color: "#00838f" } },
-  { key: "shift1"   as const, label: "1부",      badge: { bg: "#e3f2fd", color: "#1565c0" } },
-  { key: "spare1"   as const, label: "1부 스페어", badge: { bg: "#fff3e0", color: "#e65100" } },
-  { key: "shift2"   as const, label: "2부",      badge: { bg: "#e8f5e9", color: "#2e7d32" } },
-  { key: "spare2"   as const, label: "2부 스페어", badge: { bg: "#f3e5f5", color: "#6a1b9a" } },
-  { key: "excluded" as const, label: "휴무/제외", badge: { bg: "#f5f5f5", color: "#9e9e9e" } },
+  { key: "twoRound" as const, label: "투라운드",          badge: { bg: "#e0f7fa", color: "#00838f" } },
+  { key: "shift1"   as const, label: "1부",               badge: { bg: "#e3f2fd", color: "#1565c0" } },
+  { key: "spare1"   as const, label: "1부스페어→2부1번째", badge: { bg: "#fff3e0", color: "#e65100" } },
+  { key: "shift2"   as const, label: "2부",               badge: { bg: "#e8f5e9", color: "#2e7d32" } },
+  { key: "spare2"   as const, label: "2부 스페어",         badge: { bg: "#f3e5f5", color: "#6a1b9a" } },
+  { key: "excluded" as const, label: "휴무/제외",          badge: { bg: "#f5f5f5", color: "#9e9e9e" } },
 ];
 const CATS_SINGLE = [
   { key: "twoRound" as const, label: "투라운드", badge: { bg: "#e0f7fa", color: "#00838f" } },
@@ -2729,23 +2748,24 @@ function DayResultView({ result, mode, compact = false }: {
   const cats = mode === "2부제" ? CATS_DOUBLE : CATS_SINGLE;
   const 조출Set = new Set(result.조출List ?? []);
   const 후출Set = new Set(result.후출List ?? []);
+  const spare1Set = new Set(result.spare1 ?? []); // 1부스페어는 shift2 앞에 이미 배정 → 중복 제거용
 
   function renderPeople(people: string[], key: string) {
     if (compact) return people.join("  ·  ");
-    // 2부 목록에서 후출자·조출자 강조 표시
     return (
       <span style={{ fontSize: "0.88rem", color: "#333", lineHeight: 1.7 }}>
         {people.map((n, i) => {
-          const isCho = (key === "shift1") && 조출Set.has(n);
-          const isHu = (key === "shift2") && 후출Set.has(n);
-          const isTwoR = key === "twoRound";
-          const suffix = isCho ? " [조출]" : isHu ? " [후출]" : "";
+          const isCho   = (key === "shift1") && 조출Set.has(n);
+          const isHu    = (key === "shift2") && 후출Set.has(n);
+          const isSpare1= (key === "shift2") && spare1Set.has(n); // 1부스페어가 2부 앞에 배정됨
+          const isTwoR  = key === "twoRound";
+          const suffix  = isCho ? " [조출]" : isHu ? " [후출]" : isSpare1 ? " [1부스페어]" : "";
           return (
             <span key={n}>
               {i > 0 && <span style={{ color: "#ccc" }}> · </span>}
               <span style={{
-                fontWeight: (isCho || isHu || isTwoR) ? 700 : 400,
-                color: isCho ? "#ff6b35" : isHu ? "#2196f3" : isTwoR ? "#00838f" : "#333",
+                fontWeight: (isCho || isHu || isTwoR || isSpare1) ? 700 : 400,
+                color: isCho ? "#ff6b35" : isHu ? "#2196f3" : isTwoR ? "#00838f" : isSpare1 ? "#e65100" : "#333",
               }}>
                 {n}{suffix}
               </span>
@@ -2761,7 +2781,9 @@ function DayResultView({ result, mode, compact = false }: {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: compact ? "4px" : "10px" }}>
       {cats.map(({ key, label, badge }) => {
-        const people = result[key];
+        // shift2에서 spare1 중복 제거 (1부스페어는 별도 행에 표시되므로)
+        const rawPeople = result[key];
+        const people = key === "shift2" ? rawPeople.filter(n => !spare1Set.has(n)) : rawPeople;
         if (!people.length) return null;
         // 2부 항목에 후출 위치 안내 추가
         const posNote = !compact && mode === "2부제" && key === "shift2" && (result.후출List?.length ?? 0) > 0
@@ -2838,7 +2860,7 @@ function NextDayQueueView({
       <div style={{ fontWeight: 700, fontSize: "0.78rem", color: "#3f51b5", marginBottom: "8px" }}>
         📅 다음날 예상 첫 순번
         <span style={{ fontWeight: 400, color: "#888", marginLeft: "6px", fontSize: "0.72rem" }}>
-          (스페어 앞번호 → 찾근 → 근무자 순)
+          (2부스페어 앞번호 → 찾근 → 근무자 순)
         </span>
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
@@ -2874,10 +2896,10 @@ function NextDayQueueView({
       </div>
       {/* 규칙 설명 */}
       <div style={{ marginTop: "6px", fontSize: "0.7rem", color: "#666" }}>
-        ▶ 뒷번호가 스페어를 서면 앞번호가 다음날 첫 대기
+        ▶ 2부스페어가 다음날 앞번호(첫 대기)
         {spare1.length > 0 && (
           <span style={{ marginLeft: "8px", color: "#e65100", fontWeight: 600 }}>
-            오늘 1부스페어: {spare1.join(", ")}
+            오늘 1부스페어: {spare1.join(", ")} (2부 1번째로 나감)
           </span>
         )}
         {spare2.length > 0 && (
