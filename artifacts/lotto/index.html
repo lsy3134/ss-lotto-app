@@ -1,15 +1,42 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
-    <title>로또 번호 추출기</title>
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Viewport: notch/safe-area 대응 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover" />
+
+    <!-- PWA: color-scheme (라이트 전용) -->
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#1a1a2e" />
+
+    <!-- PWA: Web App Manifest -->
+    <link rel="manifest" href="manifest.json" />
+
+    <!-- iOS PWA 대응 -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="CheckBite" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
+
+    <!-- Windows Tile -->
+    <meta name="msapplication-TileColor" content="#1a1a2e" />
+    <meta name="msapplication-TileImage" content="icons/icon-192.png" />
+
+    <!-- SEO / OG -->
+    <title>Check:Bite — 캐디 근무표</title>
+    <meta name="description" content="캐디 근무표 & 스마트 배정 도우미" />
+
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+
+    <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
     <style>
+      /* ── 라이트 모드 강제 ── */
       :root {
+        color-scheme: light;
         --bg-dark:      #1a1a2e;
         --bg-mid:       #16213e;
         --accent-blue:  #4e89ae;
@@ -22,9 +49,29 @@
         --radius-lg:    16px;
         --radius-md:    10px;
         --shadow-card:  0 2px 12px rgba(26,26,46,0.08);
+        /* iOS Safe Area */
+        --sat: env(safe-area-inset-top, 0px);
+        --sab: env(safe-area-inset-bottom, 0px);
+        --sal: env(safe-area-inset-left, 0px);
+        --sar: env(safe-area-inset-right, 0px);
+      }
+      /* 다크모드 비활성화 */
+      @media (prefers-color-scheme: dark) {
+        :root { color-scheme: light; }
+        html { background: #eef2f7; color: #1a1a2e; }
       }
       * { box-sizing: border-box; }
-      body { margin: 0; background: var(--page-bg); font-family: 'Inter', sans-serif; }
+      html, body { margin: 0; height: 100%; overflow-x: hidden; }
+      body {
+        background: var(--page-bg);
+        font-family: 'Inter', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        /* iOS standalone 하단 여백 */
+        padding-bottom: var(--sab);
+      }
+      #root { min-height: 100vh; }
+
+      /* ── Animations ── */
       @keyframes floatBob {
         0%,100% { transform: translateY(0px); }
         50%      { transform: translateY(-6px); }
@@ -37,16 +84,146 @@
         0%   { background-position: -200% center; }
         100% { background-position: 200% center; }
       }
+      @keyframes slideUp {
+        from { transform: translateY(100%); opacity: 0; }
+        to   { transform: translateY(0);    opacity: 1; }
+      }
+
+      /* ── 설치 배너 ── */
+      #pwa-install-banner {
+        display: none;
+        position: fixed;
+        bottom: calc(16px + var(--sab));
+        left: 50%;
+        transform: translateX(-50%);
+        background: linear-gradient(135deg, #1a1a2e, #4e89ae);
+        color: white;
+        padding: 12px 20px;
+        border-radius: 14px;
+        font-family: 'Inter', sans-serif;
+        font-size: 0.9rem;
+        font-weight: 600;
+        box-shadow: 0 6px 24px rgba(26,26,46,0.4);
+        z-index: 9999;
+        align-items: center;
+        gap: 12px;
+        white-space: nowrap;
+        animation: slideUp 0.3s ease;
+        cursor: pointer;
+      }
+      #pwa-install-banner.visible { display: flex; }
+      #pwa-install-banner button {
+        background: #f8b400;
+        border: none;
+        color: #1a1a2e;
+        padding: 7px 14px;
+        border-radius: 8px;
+        font-weight: 800;
+        font-size: 0.82rem;
+        cursor: pointer;
+      }
+      #pwa-install-close {
+        background: none !important;
+        color: rgba(255,255,255,0.6) !important;
+        padding: 4px 6px !important;
+        border-radius: 4px !important;
+        font-size: 1rem !important;
+      }
+
       @media print {
         body * { visibility: hidden; }
         #print-area, #print-area * { visibility: visible; }
         #print-area { position: absolute; left: 0; top: 0; width: 100%; }
         button { display: none !important; }
+        #pwa-install-banner { display: none !important; }
       }
     </style>
   </head>
   <body>
+    <!-- PWA 설치 배너 (beforeinstallprompt) -->
+    <div id="pwa-install-banner" aria-label="앱 설치 배너">
+      <span>📲 홈 화면에 추가</span>
+      <button id="pwa-install-btn">설치</button>
+      <button id="pwa-install-close">✕</button>
+    </div>
+
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+
+    <!-- Service Worker 등록 + beforeinstallprompt 처리 -->
+    <script>
+      (function () {
+        'use strict';
+
+        // ── Service Worker 등록 ──────────────────────────────
+        if ('serviceWorker' in navigator) {
+          window.addEventListener('load', function () {
+            const swPath = (document.querySelector('link[rel="manifest"]')
+              ? document.querySelector('link[rel="manifest"]').href.replace('manifest.json', '')
+              : './') + 'sw.js';
+            navigator.serviceWorker
+              .register(swPath, { scope: './' })
+              .then(function (reg) {
+                console.log('[SW] registered, scope:', reg.scope);
+              })
+              .catch(function (err) {
+                console.warn('[SW] registration failed:', err);
+              });
+          });
+        }
+
+        // ── beforeinstallprompt (설치 배너) ─────────────────
+        var deferredPrompt = null;
+        var banner = document.getElementById('pwa-install-banner');
+        var installBtn = document.getElementById('pwa-install-btn');
+        var closeBtn = document.getElementById('pwa-install-close');
+
+        // 이미 설치됐거나 standalone이면 숨김
+        var isStandalone =
+          window.matchMedia('(display-mode: standalone)').matches ||
+          window.navigator.standalone === true;
+
+        if (!isStandalone) {
+          window.addEventListener('beforeinstallprompt', function (e) {
+            e.preventDefault();
+            deferredPrompt = e;
+            // 3초 후 배너 표시
+            setTimeout(function () {
+              banner.classList.add('visible');
+            }, 3000);
+          });
+        }
+
+        if (installBtn) {
+          installBtn.addEventListener('click', function () {
+            if (!deferredPrompt) return;
+            deferredPrompt.prompt();
+            deferredPrompt.userChoice.then(function (result) {
+              if (result.outcome === 'accepted') {
+                console.log('[PWA] 설치 완료');
+                localStorage.setItem('pwa_installed', '1');
+              }
+              deferredPrompt = null;
+              banner.classList.remove('visible');
+            });
+          });
+        }
+
+        if (closeBtn) {
+          closeBtn.addEventListener('click', function () {
+            banner.classList.remove('visible');
+            // 하루 동안 배너 비활성화
+            localStorage.setItem('pwa_banner_dismissed', Date.now().toString());
+          });
+        }
+
+        // ── 앱 설치 완료 감지 ────────────────────────────────
+        window.addEventListener('appinstalled', function () {
+          console.log('[PWA] 앱 설치됨');
+          localStorage.setItem('pwa_installed', '1');
+          banner.classList.remove('visible');
+        });
+      })();
+    </script>
   </body>
 </html>
