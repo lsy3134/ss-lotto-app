@@ -381,7 +381,7 @@ export default function SchedulePage() {
 
   // VIP 날짜별 저장 (localStorage)
   type VipRound = "1부" | "2부" | null;
-  interface VipEntry { count: number; round: VipRound }
+  interface VipEntry { count: number; round: VipRound; members: string[] }
   const [vipData, setVipData] = useState<Record<string, VipEntry>>(() => {
     try {
       const saved = localStorage.getItem("lotto_vipData");
@@ -393,20 +393,22 @@ export default function SchedulePage() {
   }, [vipData]);
 
   const [vipPickerOpen, setVipPickerOpen] = useState(false);
+  const [vipMemberPickerOpen, setVipMemberPickerOpen] = useState(false);
+  const [vipMemberSearch, setVipMemberSearch] = useState("");
 
   // 현재 선택 날짜 키 (e.g. "04.01 (수)")
   const currentDateKey = selectedDate?.dateLabel ?? "";
 
   const currentVip: VipEntry = useMemo(
-    () => vipData[currentDateKey] ?? { count: 0, round: null },
+    () => vipData[currentDateKey] ?? { count: 0, round: null, members: [] },
     [vipData, currentDateKey]
   );
   function setCurrentVip(v: Partial<VipEntry>) {
     if (!currentDateKey) return;
     setVipData(prev => {
-      const cur = prev[currentDateKey] ?? { count: 0, round: null };
+      const cur = prev[currentDateKey] ?? { count: 0, round: null, members: [] };
       const next = { ...cur, ...v };
-      if (next.count === 0 && !next.round) {
+      if (next.count === 0 && !next.round && (!next.members || next.members.length === 0)) {
         const upd = { ...prev };
         delete upd[currentDateKey];
         return upd;
@@ -996,6 +998,11 @@ export default function SchedulePage() {
                       {currentVip.count}팀 {currentVip.round ? `(${currentVip.round})` : ""}
                     </span>
                   )}
+                  {currentVip.members && currentVip.members.length > 0 && (
+                    <span style={{ fontSize: "0.75rem", color: "#9c27b0", fontWeight: 600 }}>
+                      · {currentVip.members.join(", ")}
+                    </span>
+                  )}
                   <button
                     onClick={() => setVipPickerOpen(v => !v)}
                     style={{
@@ -1004,6 +1011,7 @@ export default function SchedulePage() {
                       background: vipPickerOpen ? "#7b1fa2" : "#fce4ec",
                       color: vipPickerOpen ? "#fff" : "#7b1fa2",
                       fontWeight: 700, fontSize: "0.78rem", cursor: "pointer",
+                      flexShrink: 0,
                     }}>
                     {vipPickerOpen ? "닫기" : (currentVip.count > 0 ? "수정" : "+ 추가")}
                   </button>
@@ -1038,9 +1046,9 @@ export default function SchedulePage() {
                             border: "1.5px solid #ce93d8", background: "#fff",
                             color: "#7b1fa2", fontSize: "1.2rem", fontWeight: 700, cursor: "pointer",
                           }}>＋</button>
-                        {currentVip.count > 0 && (
+                        {(currentVip.count > 0 || (currentVip.members && currentVip.members.length > 0)) && (
                           <button
-                            onClick={() => { setCurrentVip({ count: 0, round: null }); setVipPickerOpen(false); }}
+                            onClick={() => { setCurrentVip({ count: 0, round: null, members: [] }); setVipPickerOpen(false); }}
                             style={{
                               marginLeft: "auto", padding: "4px 10px", borderRadius: "8px",
                               border: "1px solid #ef9a9a", background: "#ffebee",
@@ -1052,7 +1060,7 @@ export default function SchedulePage() {
 
                     {/* 1부 / 2부 선택 */}
                     {currentVip.count > 0 && (
-                      <div>
+                      <div style={{ marginBottom: "10px" }}>
                         <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#555", display: "block", marginBottom: "5px" }}>
                           나가는 부
                         </label>
@@ -1079,6 +1087,54 @@ export default function SchedulePage() {
                         )}
                       </div>
                     )}
+
+                    {/* VIP 인원 선택 */}
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", marginBottom: "6px" }}>
+                        <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#555", flex: 1 }}>
+                          VIP 담당 인원
+                        </label>
+                        <button
+                          onClick={() => { setVipMemberSearch(""); setVipMemberPickerOpen(true); }}
+                          style={{
+                            padding: "4px 10px", borderRadius: "8px", border: "none",
+                            background: "#ce93d8", color: "#fff",
+                            fontWeight: 700, fontSize: "0.72rem", cursor: "pointer",
+                          }}>
+                          + 인원 선택
+                        </button>
+                      </div>
+
+                      {/* 선택된 인원 칩 */}
+                      {currentVip.members && currentVip.members.length > 0 ? (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+                          {currentVip.members.map(name => (
+                            <span
+                              key={name}
+                              style={{
+                                display: "inline-flex", alignItems: "center", gap: "4px",
+                                padding: "4px 8px", borderRadius: "20px",
+                                background: "#7b1fa2", color: "#fff",
+                                fontSize: "0.76rem", fontWeight: 700,
+                              }}
+                            >
+                              {name}
+                              <button
+                                onClick={() => setCurrentVip({ members: currentVip.members.filter(n => n !== name) })}
+                                style={{
+                                  background: "none", border: "none", color: "#e1bee7",
+                                  cursor: "pointer", fontSize: "0.85rem", lineHeight: 1, padding: 0,
+                                }}
+                              >×</button>
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: "0.75rem", color: "#bbb", fontStyle: "italic" }}>
+                          선택된 인원 없음
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -1474,6 +1530,149 @@ export default function SchedulePage() {
                     )}
                   </button>
                 ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── VIP 인원 선택 모달 ── */}
+      {vipMemberPickerOpen && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 400,
+          background: "rgba(0,0,0,0.55)",
+          display: "flex", flexDirection: "column", justifyContent: "flex-end",
+        }}>
+          <div style={{
+            background: "#fff", borderRadius: "18px 18px 0 0",
+            maxHeight: "72vh", display: "flex", flexDirection: "column",
+            boxShadow: "0 -4px 24px rgba(0,0,0,0.18)",
+          }}>
+            {/* 헤더 */}
+            <div style={{
+              padding: "16px 18px 10px", borderBottom: "1px solid #f3e5f5",
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+            }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 16, color: "#7b1fa2" }}>👑 VIP 담당 인원 선택</div>
+                <div style={{ fontSize: 12, color: "#9c27b0", marginTop: 2 }}>
+                  탭하면 선택/해제됩니다 ({(currentVip.members ?? []).length}명 선택됨)
+                </div>
+              </div>
+              <button
+                onClick={() => setVipMemberPickerOpen(false)}
+                style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#888" }}
+              >×</button>
+            </div>
+
+            {/* 선택된 인원 미리보기 */}
+            {(currentVip.members ?? []).length > 0 && (
+              <div style={{ padding: "8px 14px", display: "flex", flexWrap: "wrap", gap: 5, borderBottom: "1px solid #f3e5f5" }}>
+                {(currentVip.members ?? []).map(name => (
+                  <span key={name} style={{
+                    display: "inline-flex", alignItems: "center", gap: 4,
+                    padding: "4px 8px", borderRadius: 20,
+                    background: "#7b1fa2", color: "#fff",
+                    fontSize: "0.76rem", fontWeight: 700,
+                  }}>
+                    {name}
+                    <button
+                      onClick={() => setCurrentVip({ members: (currentVip.members ?? []).filter(n => n !== name) })}
+                      style={{ background: "none", border: "none", color: "#e1bee7", cursor: "pointer", fontSize: "0.85rem", padding: 0 }}
+                    >×</button>
+                  </span>
+                ))}
+                <button
+                  onClick={() => setCurrentVip({ members: [] })}
+                  style={{
+                    padding: "4px 10px", borderRadius: 20, border: "none",
+                    background: "#ffebee", color: "#c62828",
+                    fontSize: "0.72rem", fontWeight: 700, cursor: "pointer",
+                  }}
+                >전체 해제</button>
+              </div>
+            )}
+
+            {/* 검색 */}
+            <div style={{ padding: "8px 14px" }}>
+              <input
+                value={vipMemberSearch}
+                onChange={e => setVipMemberSearch(e.target.value)}
+                placeholder="이름 검색..."
+                style={{
+                  width: "100%", padding: "9px 12px", borderRadius: 10,
+                  border: "1.5px solid #ce93d8", fontSize: 14, boxSizing: "border-box",
+                  outline: "none",
+                }}
+              />
+            </div>
+
+            {/* 인원 목록 */}
+            <div style={{ overflowY: "auto", flex: 1, paddingBottom: 16 }}>
+              {(() => {
+                const roster = (names.length > 0 ? names : sortedCustomRoster.map(p => p.name));
+                const filtered = vipMemberSearch
+                  ? roster.filter(name => name.includes(vipMemberSearch))
+                  : roster;
+                const vipMembers = currentVip.members ?? [];
+                return filtered.map(name => {
+                  const person = customRosterMap[name];
+                  const selected = vipMembers.includes(name);
+                  return (
+                    <button
+                      key={name}
+                      onClick={() => {
+                        const cur = currentVip.members ?? [];
+                        setCurrentVip({
+                          members: selected ? cur.filter(n => n !== name) : [...cur, name],
+                        });
+                      }}
+                      style={{
+                        display: "flex", width: "100%", padding: "11px 18px",
+                        alignItems: "center", gap: 10, border: "none",
+                        background: selected ? "#f3e5f5" : "transparent",
+                        cursor: "pointer", textAlign: "left",
+                        borderLeft: selected ? "3px solid #7b1fa2" : "3px solid transparent",
+                      }}
+                    >
+                      {person && (
+                        <span style={{
+                          background: selected ? "#7b1fa2" : "#e8eaf6",
+                          borderRadius: 8, padding: "2px 8px",
+                          fontSize: 11, color: selected ? "#fff" : "#5c6bc0",
+                          fontWeight: 700, minWidth: 44,
+                        }}>
+                          {person.조}조 {person.no}번
+                        </span>
+                      )}
+                      <span style={{ fontWeight: 600, fontSize: 15, flex: 1 }}>{name}</span>
+                      {person && (
+                        <span style={{
+                          fontSize: 11, color: "#888",
+                          background: "#f5f5f5", borderRadius: 6, padding: "2px 8px",
+                        }}>
+                          {person.group}
+                        </span>
+                      )}
+                      {selected && (
+                        <span style={{ color: "#7b1fa2", fontWeight: 800, fontSize: 16 }}>✓</span>
+                      )}
+                    </button>
+                  );
+                });
+              })()}
+            </div>
+
+            {/* 확인 버튼 */}
+            <div style={{ padding: "12px 16px", borderTop: "1px solid #f3e5f5" }}>
+              <button
+                onClick={() => setVipMemberPickerOpen(false)}
+                style={{
+                  width: "100%", padding: "13px", borderRadius: 12, border: "none",
+                  background: "#7b1fa2", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer",
+                }}
+              >
+                완료 ({(currentVip.members ?? []).length}명 선택)
+              </button>
             </div>
           </div>
         </div>
