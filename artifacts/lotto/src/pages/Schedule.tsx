@@ -3191,20 +3191,31 @@ export default function SchedulePage() {
 
                 if (sp2.length > 0) {
                   cutRows.push(
-                    <div key="sp2" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div key="sp2" style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
                       <span style={{
                         fontSize: "0.7rem", fontWeight: 800, color: "#92400e",
                         background: "#fef3c7", borderRadius: 6, padding: "2px 8px",
-                        minWidth: 76, textAlign: "center", flexShrink: 0,
+                        minWidth: 76, textAlign: "center", flexShrink: 0, marginTop: 2,
                       }}>2부 스페어</span>
-                      <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#b45309" }}>
-                        {sp2.slice(0, 2).join("  ·  ")}
-                      </span>
-                      <span style={{
-                        marginLeft: "auto", fontSize: "0.68rem", fontWeight: 700,
-                        color: "#92400e", background: "#fcd34d", borderRadius: 5,
-                        padding: "1px 6px", flexShrink: 0,
-                      }}>→ 내일 첫번호</span>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
+                        {sp2.slice(0, 2).map((n, i) => (
+                          <div key={n} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                            <span style={{
+                              fontSize: "0.62rem", fontWeight: 700, color: "#92400e",
+                              background: "#fcd34d", borderRadius: 4, padding: "1px 5px",
+                              flexShrink: 0,
+                            }}>{i + 1}번</span>
+                            <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#b45309" }}>{n}</span>
+                            {i === 0 && (
+                              <span style={{
+                                marginLeft: "auto", fontSize: "0.68rem", fontWeight: 700,
+                                color: "#92400e", background: "#fcd34d", borderRadius: 5,
+                                padding: "1px 6px", flexShrink: 0,
+                              }}>→ 내일 첫번호</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   );
                 }
