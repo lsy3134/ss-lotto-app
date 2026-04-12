@@ -51,6 +51,28 @@ interface ExcelDayData {
   예약팀수: number;
 }
 
+// ── 월 달력 생성 헬퍼 (엑셀 없이도 달력 표시) ──────
+const KR_DAY = ["월", "화", "수", "목", "금", "토", "일"];
+function generateMonthDays(mm: string, year: number): ExcelDayData[] {
+  const m = parseInt(mm, 10);
+  const daysInMonth = new Date(year, m, 0).getDate();
+  const result: ExcelDayData[] = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const date = new Date(year, m - 1, d);
+    const dayIdx = (date.getDay() + 6) % 7; // Mon=0 … Sun=6
+    const dayName = KR_DAY[dayIdx];
+    const dd = String(d).padStart(2, "0");
+    result.push({
+      dateLabel: `${mm}.${dd} (${dayName})`,
+      dayName,
+      dayIdx,
+      당번: 0, 휴무: 0, 병가: 0,
+      가용인원: 0, 예약팀수: 0,
+    });
+  }
+  return result;
+}
+
 interface DayResult {
   twoRound: string[];
   shift1: string[];
@@ -388,17 +410,30 @@ export default function SchedulePage() {
     return String(now.getMonth() + 1).padStart(2, "0");
   });
 
-  // 엑셀에 존재하는 월 목록 (정렬)
-  const availableMonths = useMemo(() => {
-    const set = new Set<string>();
-    excelDays.forEach(d => {
-      const m = d.dateLabel.substring(0, 2);
-      if (m) set.add(m);
-    });
-    return Array.from(set).sort();
-  }, [excelDays]);
+  // 기준 연도: 엑셀이 있으면 거기서 추출, 없으면 현재 연도
+  const viewYear = useMemo(() => new Date().getFullYear(), []);
 
-  // 엑셀 로드 완료 시 오늘 날짜 자동 선택 + viewMonth 맞춤
+  // 엑셀이 있는 달 목록 ── 자동 선택 시 참고용
+  // (월 네비게이션 자체는 viewMonth 기반으로 엑셀과 무관하게 동작)
+
+  // ── viewDays: 현재 월 전체 날짜 생성 + 엑셀 데이터 오버레이 ──
+  const viewDays = useMemo(() => {
+    const generated = generateMonthDays(viewMonth, viewYear);
+    const excelMap = new Map(excelDays.map(d => [d.dateLabel, d]));
+    return generated.map(d => excelMap.get(d.dateLabel) ?? d);
+  }, [viewMonth, viewYear, excelDays]);
+
+  // ── 월 네비게이션 (01-12 범위, 엑셀 무관) ──
+  const prevMonthStr = useMemo(() => {
+    const n = parseInt(viewMonth, 10);
+    return n > 1 ? String(n - 1).padStart(2, "0") : null;
+  }, [viewMonth]);
+  const nextMonthStr = useMemo(() => {
+    const n = parseInt(viewMonth, 10);
+    return n < 12 ? String(n + 1).padStart(2, "0") : null;
+  }, [viewMonth]);
+
+  // 엑셀 로드 완료 시 오늘 날짜 자동 선택
   useEffect(() => {
     if (excelDays.length > 0 && !selectedDate) {
       const now = new Date();
@@ -409,8 +444,6 @@ export default function SchedulePage() {
       if (today) {
         selectExcelDate(today);
         setViewMonth(mm);
-      } else if (availableMonths.length > 0) {
-        setViewMonth(availableMonths[0]);
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -423,13 +456,6 @@ export default function SchedulePage() {
       setViewMonth(m);
     }
   }, [selectedDate]);
-
-  // ★ Bug4 수정: viewMonth가 엑셀에 없는 달이면 첫 번째 존재하는 달로 자동 이동
-  useEffect(() => {
-    if (availableMonths.length > 0 && !availableMonths.includes(viewMonth)) {
-      setViewMonth(availableMonths[0]);
-    }
-  }, [availableMonths, viewMonth]);
 
   // 인원
   const [names, setNames] = useState<string[]>([]);
@@ -1108,113 +1134,116 @@ export default function SchedulePage() {
             </label>
           </div>
 
-          {excelDays.length > 0 && (() => {
-            const monthIdx = availableMonths.indexOf(viewMonth);
-            const prevMonth = monthIdx > 0 ? availableMonths[monthIdx - 1] : null;
-            const nextMonth = monthIdx < availableMonths.length - 1 ? availableMonths[monthIdx + 1] : null;
-            const viewDays = excelDays.filter(d => d.dateLabel.startsWith(viewMonth + "."));
-            const monthName = parseInt(viewMonth, 10) + "월";
-            return (
-              <>
-                {/* ── 캐릭터 + 월 네비게이션 ── */}
-                <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
-                  <img
-                    src={`${BASE}/char_cloud.png`}
-                    alt="cloud"
-                    style={{ width: 44, height: 44, objectFit: "contain", animation: "floatBob 3s ease-in-out infinite" }}
-                  />
-                  <div style={{ flex: 1 }}>
-                    {todayFirstHint && (
-                      <div style={{ fontSize: "0.72rem", color: "#92400e", background: "#fef3c7", borderRadius: "6px", padding: "3px 8px", marginBottom: "4px" }}>
-                        🔢 오늘 첫번호: <strong>{todayFirstHint}</strong>
-                      </div>
-                    )}
+          {/* ── 캐릭터 + 월 네비게이션 (엑셀 유무와 무관하게 항상 표시) ── */}
+          <>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+              <img
+                src={`${BASE}/char_cloud.png`}
+                alt="cloud"
+                style={{ width: 44, height: 44, objectFit: "contain", animation: "floatBob 3s ease-in-out infinite" }}
+              />
+              <div style={{ flex: 1 }}>
+                {todayFirstHint && (
+                  <div style={{ fontSize: "0.72rem", color: "#92400e", background: "#fef3c7", borderRadius: "6px", padding: "3px 8px", marginBottom: "4px" }}>
+                    🔢 오늘 첫번호: <strong>{todayFirstHint}</strong>
                   </div>
-                </div>
-                <div style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                  marginBottom: "8px",
-                  background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)",
-                  borderRadius: "12px", padding: "8px 12px",
-                  boxShadow: "0 2px 8px rgba(26,26,46,0.25)",
-                }}>
-                  <button
-                    onClick={() => prevMonth && setViewMonth(prevMonth)}
-                    disabled={!prevMonth}
-                    style={{
-                      background: "none", border: "none", color: prevMonth ? "#fff" : "rgba(255,255,255,0.25)",
-                      fontSize: "1.1rem", cursor: prevMonth ? "pointer" : "default", padding: "2px 8px",
-                    }}
-                  >‹</button>
-                  <span style={{ color: "#fff", fontWeight: 700, fontSize: "0.95rem" }}>
-                    {monthName}
-                    <span style={{ fontWeight: 400, fontSize: "0.75rem", marginLeft: "6px", opacity: 0.6 }}>
-                      ({viewDays.length}일)
-                    </span>
-                  </span>
-                  <button
-                    onClick={() => nextMonth && setViewMonth(nextMonth)}
-                    disabled={!nextMonth}
-                    style={{
-                      background: "none", border: "none", color: nextMonth ? "#fff" : "rgba(255,255,255,0.25)",
-                      fontSize: "1.1rem", cursor: nextMonth ? "pointer" : "default", padding: "2px 8px",
-                    }}
-                  >›</button>
-                </div>
+                )}
+                {excelDays.length === 0 && (
+                  <div style={{ fontSize: "0.7rem", color: "#6b7280" }}>
+                    엑셀 없이 달력 이동 가능 · 날짜를 선택해 배정하세요
+                  </div>
+                )}
+              </div>
+            </div>
+            {/* 월 네비게이션 바 */}
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              marginBottom: "8px",
+              background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)",
+              borderRadius: "12px", padding: "8px 12px",
+              boxShadow: "0 2px 8px rgba(26,26,46,0.25)",
+            }}>
+              <button
+                onClick={() => prevMonthStr && setViewMonth(prevMonthStr)}
+                disabled={!prevMonthStr}
+                style={{
+                  background: "none", border: "none",
+                  color: prevMonthStr ? "#fff" : "rgba(255,255,255,0.25)",
+                  fontSize: "1.1rem", cursor: prevMonthStr ? "pointer" : "default",
+                  padding: "2px 8px", minHeight: "36px",
+                }}
+              >‹</button>
+              <span style={{ color: "#fff", fontWeight: 700, fontSize: "0.95rem" }}>
+                {parseInt(viewMonth, 10)}월
+                <span style={{ fontWeight: 400, fontSize: "0.75rem", marginLeft: "6px", opacity: 0.6 }}>
+                  ({viewDays.length}일)
+                </span>
+              </span>
+              <button
+                onClick={() => nextMonthStr && setViewMonth(nextMonthStr)}
+                disabled={!nextMonthStr}
+                style={{
+                  background: "none", border: "none",
+                  color: nextMonthStr ? "#fff" : "rgba(255,255,255,0.25)",
+                  fontSize: "1.1rem", cursor: nextMonthStr ? "pointer" : "default",
+                  padding: "2px 8px", minHeight: "36px",
+                }}
+              >›</button>
+            </div>
 
-                {/* ── 날짜 그리드 (현재 월만) ── */}
-                <div style={S.dateGrid}>
-                  {viewDays.map((d) => {
-                    const isSelected = selectedDate?.dateLabel === d.dateLabel;
-                    const isWeekend = d.dayIdx === 5 || d.dayIdx === 6;
-                    const hasTeams = d.예약팀수 > 0;
-                    const savedStatuses = dateStatuses[d.dateLabel] ?? {};
-                    const hasManual = Object.keys(savedStatuses).length > 0;
-                    return (
-                      <button
-                        key={d.dateLabel}
-                        onClick={() => selectExcelDate(d)}
-                        style={{
-                          ...S.dateBtn,
-                          background: isSelected
-                            ? "linear-gradient(135deg, #1a1a2e 0%, #4e89ae 100%)"
-                            : hasManual ? "#eff6ff" : "#f8fafc",
-                          color: isSelected ? "#fff" : isWeekend ? "#c62828" : "#1a1a2e",
-                          border: isSelected
-                            ? "2px solid #4e89ae"
-                            : hasManual ? "2px solid #93c5fd"
-                            : hasTeams ? "2px solid #60a5fa" : "1.5px solid #e5e7eb",
-                          animation: isSelected ? "glowPulse 2s ease-in-out infinite" : "none",
-                          transform: isSelected ? "scale(1.05)" : "scale(1)",
-                        }}
-                      >
-                        <span style={{ fontSize: "0.72rem", fontWeight: 700 }}>{d.dateLabel.split(" ")[0]}</span>
-                        <span style={{ fontSize: "0.65rem", opacity: 0.7 }}>{d.dayName}</span>
-                        {d.가용인원 > 0 && (
-                          <span style={{
-                            fontSize: "0.6rem", fontWeight: 700,
-                            color: isSelected ? "#fff" : "#2e7d32",
-                            lineHeight: 1,
-                          }}>
-                            {d.가용인원}명
-                          </span>
-                        )}
-                        {hasTeams && (
-                          <span style={{
-                            fontSize: "0.55rem", fontWeight: 700,
-                            color: isSelected ? "rgba(255,255,255,0.75)" : "#1565c0",
-                            lineHeight: 1,
-                          }}>
-                            {d.예약팀수}팀
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            );
-          })()}
+            {/* ── 날짜 그리드 ── */}
+            <div style={S.dateGrid}>
+              {viewDays.map((d) => {
+                const isSelected = selectedDate?.dateLabel === d.dateLabel;
+                const isWeekend = d.dayIdx === 5 || d.dayIdx === 6;
+                const hasTeams = d.예약팀수 > 0;
+                const savedStatuses = dateStatuses[d.dateLabel] ?? {};
+                const hasManual = Object.keys(savedStatuses).length > 0;
+                const hasExcel = d.가용인원 > 0 || hasTeams;
+                return (
+                  <button
+                    key={d.dateLabel}
+                    onClick={() => selectExcelDate(d)}
+                    style={{
+                      ...S.dateBtn,
+                      background: isSelected
+                        ? "linear-gradient(135deg, #1a1a2e 0%, #4e89ae 100%)"
+                        : hasManual ? "#eff6ff" : "#f8fafc",
+                      color: isSelected ? "#fff" : isWeekend ? "#c62828" : "#1a1a2e",
+                      border: isSelected
+                        ? "2px solid #4e89ae"
+                        : hasManual ? "2px solid #93c5fd"
+                        : hasTeams ? "2px solid #60a5fa" : "1.5px solid #e5e7eb",
+                      animation: isSelected ? "glowPulse 2s ease-in-out infinite" : "none",
+                      transform: isSelected ? "scale(1.05)" : "scale(1)",
+                      opacity: !hasExcel && !hasManual && !isSelected ? 0.75 : 1,
+                    }}
+                  >
+                    <span style={{ fontSize: "0.72rem", fontWeight: 700 }}>{d.dateLabel.split(" ")[0]}</span>
+                    <span style={{ fontSize: "0.65rem", opacity: 0.7 }}>{d.dayName}</span>
+                    {d.가용인원 > 0 && (
+                      <span style={{
+                        fontSize: "0.6rem", fontWeight: 700,
+                        color: isSelected ? "#fff" : "#2e7d32",
+                        lineHeight: 1,
+                      }}>
+                        {d.가용인원}명
+                      </span>
+                    )}
+                    {hasTeams && (
+                      <span style={{
+                        fontSize: "0.55rem", fontWeight: 700,
+                        color: isSelected ? "rgba(255,255,255,0.75)" : "#1565c0",
+                        lineHeight: 1,
+                      }}>
+                        {d.예약팀수}팀
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </>
 
           {/* 선택된 날짜 정보 */}
           {selectedDate && (
