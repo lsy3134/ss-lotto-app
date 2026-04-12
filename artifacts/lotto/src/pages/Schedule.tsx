@@ -57,6 +57,9 @@ interface DayResult {
   shift2: string[];
   spare2: string[];
   excluded: string[];
+  // 위치 표시용 메타 (후출: 2부 뒤에서3번째, 조출: 1부 앞)
+  조출List?: string[];
+  후출List?: string[];
 }
 
 // ── 엑셀 파싱 훅 ──────────────────────────────────
@@ -120,44 +123,65 @@ function useExcelData() {
   return { excelDays, loading, error, reload: load };
 }
 
-// ── 배정 엔진: 복부제 ─────────────────────────────
+// ── 배정 엔진: 2부제 (PDF 규정 기준) ──────────────
+// 배치 순서:
+//   1부: 찾근자(선발3번~) → 조출자 → 일반순번 → [1부스페어]
+//   2부: 일반순번 → 후출자(뒤에서 3번째) → 일반순번(막팀) → [2부스페어]
 function assignDouble(
   names: string[],
   statuses: Record<string, StatusType>,
   shift1Size: number,
   shift2Size: number
 ): DayResult {
-  const twoRound: string[] = [];
-  const shift1: string[] = [];
-  const spare1: string[] = [];
-  const shift2: string[] = [];
-  const spare2: string[] = [];
+  const twoRound: string[] = [];   // 찾근 (1부+2부 투라운드)
+  const 조출List: string[] = [];   // 조출 (1부 앞 고정, 최대 4명)
+  const 후출List: string[] = [];   // 후출 (2부 뒤에서 3번째, 최대 4명)
   const excluded: string[] = [];
-  const autoQueue: string[] = [];
-  let choCount = 0, huCount = 0;
+  const autoQueue: string[] = [];  // 일반 순번 대기열
 
   for (const name of names) {
     const s = statuses[name] ?? null;
-    if (s === "찾근") { twoRound.push(name); }
+    if (s === "찾근")  { twoRound.push(name); }
     else if (s === "조출") {
-      if (choCount < 4) { shift1.push(name); choCount++; } else autoQueue.push(name);
+      if (조출List.length < 4) 조출List.push(name); else autoQueue.push(name);
     } else if (s === "후출") {
-      if (huCount < 4) { shift2.push(name); huCount++; } else autoQueue.push(name);
+      if (후출List.length < 4) 후출List.push(name); else autoQueue.push(name);
     } else if (EXCLUDED_SET.has(s ?? "")) { excluded.push(name); }
     else { autoQueue.push(name); }
   }
 
-  const avail1 = Math.max(0, shift1Size - choCount - twoRound.length);
-  const avail2 = Math.max(0, shift2Size - huCount - twoRound.length);
+  // ── 1부 배치: 찾근 → 조출 → 일반순번 ──
+  const fixed1 = [...twoRound, ...조출List];           // 고정 1부 인원
+  const avail1 = Math.max(0, shift1Size - fixed1.length);
+  const shift1 = [...fixed1, ...autoQueue.slice(0, avail1)];
+  const spare1 = autoQueue.slice(avail1, avail1 + 1); // 1부스페어 1명
+  const remaining = autoQueue.slice(avail1 + 1);       // 2부 후보 대기열
 
-  autoQueue.forEach((n, i) => {
-    if (i < avail1)                      shift1.push(n);
-    else if (i === avail1)               spare1.push(n);
-    else if (i <= avail1 + avail2)       shift2.push(n);
-    else                                 spare2.push(n);
-  });
+  // ── 2부 배치: 일반순번 + 후출자 뒤에서 3번째 위치 ──
+  // 찾근자는 투라운드이므로 2부에도 참여 (twoRound 표시로 커버)
+  // 후출자: 2부 팀수 기준 뒤에서 3번째 고정
+  // 예) 2부 35팀 → 33번째 위치에 후출자 삽입
+  const avail2 = Math.max(0, shift2Size - 후출List.length);
+  const normalFor2 = remaining.slice(0, avail2);
+  const restQueue = remaining.slice(avail2);
 
-  return { twoRound, shift1, spare1, shift2, spare2, excluded };
+  let shift2: string[];
+  if (후출List.length > 0 && normalFor2.length >= 2) {
+    // 뒤에서 3번째 = 끝에서 2개 자리를 막팀(1번째, 2번째)으로 남기고 후출자 삽입
+    const insertAt = Math.max(0, normalFor2.length - 2);
+    shift2 = [
+      ...normalFor2.slice(0, insertAt),
+      ...후출List,
+      ...normalFor2.slice(insertAt),
+    ];
+  } else {
+    // 일반순번이 2명 미만이면 그냥 뒤에 추가
+    shift2 = [...normalFor2, ...후출List];
+  }
+
+  const spare2 = restQueue;
+
+  return { twoRound, shift1, spare1, shift2, spare2, excluded, 조출List, 후출List };
 }
 
 // ── 배정 엔진: 단부제 ─────────────────────────────
@@ -326,7 +350,7 @@ export default function SchedulePage() {
     setDayResult(null);
   }
 
-  // 활성 인원 대기열(제외 제외)에서의 순번 인덱스
+  // 활성 인원 대기열(제외·찾근 제외)에서의 순번 인덱스
   function activeQueueIndex(name: string): number {
     const active = names.filter((n) => {
       const s = effectiveStatus(n);
@@ -335,10 +359,29 @@ export default function SchedulePage() {
     return active.indexOf(name);
   }
 
+  // 찾근 가능 여부 (PDF 규정 기준)
+  // 2부제: 1부팀수 ≥ 6 + 본인 순번이 1부스페어 이후(2부 배정 순번~) 또는 근무 안 될 때
+  // 단부제: 스페어 이후(근무 안 될 때)만 가능
   function canChakgeun(name: string): boolean {
-    if (mode === "단부제") return false;
-    return activeQueueIndex(name) >= shift1Size;
+    const s = effectiveStatus(name);
+    if (s === "찾근") return true; // 이미 찾근 상태 → 해제 허용
+    if (mode === "단부제") {
+      // 단부제: 근무 안 될 때(스페어 이후)만 가능
+      const qi = activeQueueIndex(name);
+      return qi > singleSize; // singleSize 이후 = 근무 안 됨
+    }
+    // 2부제: 1부 6팀 이상 필수
+    if (shift1Size < 6) return false;
+    // 본인 순번이 1부스페어(shift1Size번째) 이후여야 함
+    // = 2부 배정 순번 or 근무 안 될 때
+    const qi = activeQueueIndex(name);
+    return qi >= shift1Size; // shift1Size 인덱스 = 1부스페어 위치 이후
   }
+
+  // 조출 가능 여부 (1부 6팀 이상 필수)
+  const cho가능 = shift1Size >= 6;
+  const cho현재수 = names.filter((n) => effectiveStatus(n) === "조출").length;
+  const hu현재수 = names.filter((n) => effectiveStatus(n) === "후출").length;
 
   // 순번 위치에 따른 배정 구간 레이블
   function getSlotLabel(name: string): { label: string; color: string } | null {
@@ -547,12 +590,48 @@ export default function SchedulePage() {
               </div>
             )}
 
+            {/* 조출·후출·찾근 규정 안내 */}
+            {mode === "2부제" && (
+              <div style={{
+                background: "#f8f9ff", border: "1px solid #e0e4ff", borderRadius: "10px",
+                padding: "10px 12px", marginBottom: "10px", fontSize: "0.75rem", color: "#444",
+              }}>
+                <div style={{ fontWeight: 700, color: "#3f51b5", marginBottom: "6px" }}>
+                  📘 조출·후출·찾근 규정 (PDF 기준)
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px" }}>
+                  <div style={{ background: "#fff3ee", borderRadius: "7px", padding: "5px 7px", borderLeft: "3px solid #ff6b35" }}>
+                    <div style={{ fontWeight: 700, color: "#ff6b35" }}>조출</div>
+                    <div>1부 배치 (앞)</div>
+                    <div>최대 4명</div>
+                    <div style={{ color: shift1Size >= 6 ? "#2e7d32" : "#c62828", fontWeight: 600 }}>
+                      {shift1Size >= 6 ? `✓ 사용 가능` : `✗ 1부 6팀+`}
+                    </div>
+                  </div>
+                  <div style={{ background: "#e8f4ff", borderRadius: "7px", padding: "5px 7px", borderLeft: "3px solid #2196f3" }}>
+                    <div style={{ fontWeight: 700, color: "#2196f3" }}>후출</div>
+                    <div>2부 배치 (뒤)</div>
+                    <div>최대 4명</div>
+                    <div style={{ color: "#2e7d32", fontWeight: 600 }}>뒤에서 3번째</div>
+                  </div>
+                  <div style={{ background: "#e0faf9", borderRadius: "7px", padding: "5px 7px", borderLeft: "3px solid #00bcd4" }}>
+                    <div style={{ fontWeight: 700, color: "#00838f" }}>찾근</div>
+                    <div>1부+2부 투라운드</div>
+                    <div>조출자보다 앞</div>
+                    <div style={{ color: shift1Size >= 6 ? "#2e7d32" : "#c62828", fontWeight: 600 }}>
+                      {shift1Size >= 6 ? `✓ 2부순번~` : `✗ 1부 6팀+`}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* 현재 체크 현황 */}
             {names.length > 0 && (
               <div style={{ display: "flex", gap: "5px", marginBottom: "10px", flexWrap: "wrap" }}>
                 {checkedCounts.찾근 > 0 && <MiniCount label="찾근" count={checkedCounts.찾근} color="#00bcd4" />}
-                {checkedCounts.조출 > 0 && <MiniCount label="조출" count={checkedCounts.조출} color="#ff6b35" />}
-                {checkedCounts.후출 > 0 && <MiniCount label="후출" count={checkedCounts.후출} color="#2196f3" />}
+                {checkedCounts.조출 > 0 && <MiniCount label={`조출 (${cho현재수}/4)`} count={checkedCounts.조출} color="#ff6b35" />}
+                {checkedCounts.후출 > 0 && <MiniCount label={`후출 (${hu현재수}/4)`} count={checkedCounts.후출} color="#2196f3" />}
                 {checkedCounts.당번 > 0 && <MiniCount label="당번" count={checkedCounts.당번} color="#e53935" />}
                 {checkedCounts.병가 > 0 && <MiniCount label="병가" count={checkedCounts.병가} color="#9e9e9e" />}
                 {checkedCounts.휴무 > 0 && <MiniCount label="휴무" count={checkedCounts.휴무} color="#bdbdbd" />}
@@ -655,17 +734,30 @@ export default function SchedulePage() {
                       ).map((btn) => {
                         const active = effS === btn;
                         const isAutoActive = active && isAutoHumu;
-                        const disabled = btn === "찾근" && !canChakgeun(name) && effS !== "찾근";
+                        // 조출: 1부 6팀 미만이면 비활성화 / 찾근: canChakgeun 조건
+                        const disabled =
+                          (btn === "조출" && !cho가능 && effS !== "조출") ||
+                          (btn === "찾근" && !canChakgeun(name));
                         const col = active ? STATUS_COLOR[btn!] : null;
+                        // 조출/후출 최대 4명 초과 시 비활성화
+                        const maxReached =
+                          (btn === "조출" && cho현재수 >= 4 && effS !== "조출") ||
+                          (btn === "후출" && hu현재수 >= 4 && effS !== "후출");
                         return (
-                          <button key={btn} disabled={disabled}
+                          <button key={btn} disabled={disabled || maxReached}
                             onClick={() => toggleStatus(name, btn)}
+                            title={
+                              btn === "조출" && !cho가능 ? "1부 6팀 이상일 때만 사용 가능" :
+                              btn === "조출" && maxReached ? "조출 최대 4명" :
+                              btn === "후출" && maxReached ? "후출 최대 4명" :
+                              btn === "찾근" && !canChakgeun(name) ? "2부 배정 순번 이상이어야 사용 가능" : ""
+                            }
                             style={{
                               ...S.statusBtn,
                               background: active ? col!.bg : "#f0f0f0",
-                              color: active ? col!.color : disabled ? "#ccc" : "#555",
+                              color: active ? col!.color : (disabled || maxReached) ? "#ccc" : "#555",
                               border: isAutoActive ? `2px dashed ${col!.bg}` : active ? "none" : "1px solid #e0e0e0",
-                              opacity: disabled ? 0.4 : 1,
+                              opacity: (disabled || maxReached) ? 0.35 : 1,
                             }}>
                             {btn}
                           </button>
@@ -782,11 +874,43 @@ function DayResultView({ result, mode, compact = false }: {
   result: DayResult; mode: Mode; compact?: boolean;
 }) {
   const cats = mode === "2부제" ? CATS_DOUBLE : CATS_SINGLE;
+  const 조출Set = new Set(result.조출List ?? []);
+  const 후출Set = new Set(result.후출List ?? []);
+
+  function renderPeople(people: string[], key: string) {
+    if (compact) return people.join("  ·  ");
+    // 2부 목록에서 후출자·조출자 강조 표시
+    return (
+      <span style={{ fontSize: "0.88rem", color: "#333", lineHeight: 1.7 }}>
+        {people.map((n, i) => {
+          const isCho = (key === "shift1") && 조출Set.has(n);
+          const isHu = (key === "shift2") && 후출Set.has(n);
+          const isTwoR = key === "twoRound";
+          const suffix = isCho ? " [조출]" : isHu ? " [후출]" : "";
+          return (
+            <span key={n}>
+              {i > 0 && <span style={{ color: "#ccc" }}> · </span>}
+              <span style={{
+                fontWeight: (isCho || isHu || isTwoR) ? 700 : 400,
+                color: isCho ? "#ff6b35" : isHu ? "#2196f3" : isTwoR ? "#00838f" : "#333",
+              }}>
+                {n}{suffix}
+              </span>
+            </span>
+          );
+        })}
+      </span>
+    );
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: compact ? "4px" : "10px" }}>
       {cats.map(({ key, label, badge }) => {
         const people = result[key];
         if (!people.length) return null;
+        // 2부 항목에 후출 위치 안내 추가
+        const posNote = !compact && mode === "2부제" && key === "shift2" && (result.후출List?.length ?? 0) > 0
+          ? ` (후출: 뒤에서 3번째)` : "";
         return (
           <div key={label} style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
             <span style={{
@@ -800,13 +924,13 @@ function DayResultView({ result, mode, compact = false }: {
               flexShrink: 0,
               marginTop: "1px",
               whiteSpace: "nowrap",
-            }}>{label}</span>
-            <span style={{
-              fontSize: compact ? "0.8rem" : "0.88rem",
-              color: "#333",
-              lineHeight: 1.6,
-              flex: 1,
-            }}>{people.join("  ·  ")}</span>
+            }}>{label}{posNote}</span>
+            {compact
+              ? <span style={{ fontSize: "0.8rem", color: "#333", lineHeight: 1.6, flex: 1 }}>
+                  {renderPeople(people, key)}
+                </span>
+              : <div style={{ flex: 1 }}>{renderPeople(people, key)}</div>
+            }
           </div>
         );
       })}
