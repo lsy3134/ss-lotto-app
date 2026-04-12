@@ -3152,156 +3152,152 @@ export default function SchedulePage() {
             </div>
           </div>
 
-          {/* ── 배정 경계선 실시간 미리보기 ── */}
+          {/* ── 컷 기준 요약 ── */}
           {livePreview && names.length > 0 && (
             <div style={{
               background: "#f8f9ff", border: "1.5px solid #c5cae9", borderRadius: 12,
-              padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6,
+              padding: "10px 14px", display: "flex", flexDirection: "column", gap: 5,
             }}>
-              <div style={{ fontWeight: 700, fontSize: "0.78rem", color: "#3949ab", marginBottom: 2 }}>
-                🔍예상 스페어
+              <div style={{ fontWeight: 800, fontSize: "0.78rem", color: "#3949ab", marginBottom: 3 }}>
+                ✂️ 컷 기준 요약
               </div>
 
-              {mode === "2부제" ? (<>
-                {/* 1부 마지막 */}
-                {livePreview.shift1.length > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{
-                      fontSize: "0.7rem", fontWeight: 800, color: "#1565c0",
-                      background: "#e3f2fd", borderRadius: 6, padding: "2px 7px", minWidth: 70, textAlign: "center",
-                    }}>1부 마지막</span>
-                    <span style={{ fontSize: 15, fontWeight: 800, color: "#1565c0" }}>
-                      {livePreview.shift1[livePreview.shift1.length - 1]}
-                    </span>
-                    <span style={{ fontSize: "0.7rem", color: "#90a4ae" }}>
-                      (총 {livePreview.shift1.length}명)
-                    </span>
-                  </div>
-                )}
+              {mode === "2부제" ? (() => {
+                const tr = livePreview.twoRound ?? [];
+                const s1 = livePreview.shift1 ?? [];
+                const s2 = livePreview.shift2 ?? [];
+                const sp1 = livePreview.spare1 ?? [];
+                const sp2 = livePreview.spare2 ?? [];
+                const cutRows: React.ReactNode[] = [];
 
-                {/* 1부 스페어 */}
-                {livePreview.spare1.length > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{
-                      fontSize: "0.7rem", fontWeight: 800, color: "#e65100",
-                      background: "#fff3e0", borderRadius: 6, padding: "2px 7px", minWidth: 70, textAlign: "center",
-                    }}>1부 스페어</span>
-                    <span style={{ fontSize: 15, fontWeight: 800, color: "#e65100" }}>
-                      {livePreview.spare1.join(", ")}
-                    </span>
-                  </div>
-                )}
-
-                {/* 투라운드(찾근) — 2부 몇팀째 */}
-                {livePreview.twoRound?.length > 0 && livePreview.shift2?.length > 0 && (() => {
-                  const positions = livePreview.twoRound
-                    .map((n: string) => livePreview.shift2.indexOf(n))
-                    .filter((i: number) => i >= 0)
-                    .map((i: number) => i + 1);
-                  const minPos = positions.length > 0 ? Math.min(...positions) : null;
-                  const maxPos = positions.length > 0 ? Math.max(...positions) : null;
-                  return (
-                    <div style={{
-                      display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
-                      background: "#ecfeff", border: "1.5px solid #a5f3fc", borderRadius: 8, padding: "5px 10px",
-                    }}>
+                if (tr.length > 0) {
+                  cutRows.push(
+                    <div key="tr-cut" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{
-                        fontSize: "0.7rem", fontWeight: 800, color: "#164e63",
-                        background: "#cffafe", borderRadius: 6, padding: "2px 7px", minWidth: 70, textAlign: "center", flexShrink: 0,
-                      }}>🔄 투라운드</span>
-                      <span style={{ fontSize: 14, fontWeight: 800, color: "#0e7490" }}>
-                        {livePreview.twoRound.join("  ·  ")}
+                        fontSize: "0.7rem", fontWeight: 800, color: "#0e7490",
+                        background: "#cffafe", borderRadius: 6, padding: "2px 8px",
+                        minWidth: 76, textAlign: "center", flexShrink: 0,
+                      }}>🔄 투라운드컷</span>
+                      <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0e7490" }}>
+                        {tr[tr.length - 1]}
                       </span>
-                      <span style={{ fontSize: "0.7rem", color: "#90a4ae" }}>
-                        ({livePreview.twoRound.length}명)
-                      </span>
-                      {minPos !== null && (
-                        <span style={{
-                          marginLeft: "auto", fontSize: "0.72rem", fontWeight: 700,
-                          color: "#0e7490", background: "#a5f3fc", borderRadius: 5, padding: "1px 7px", flexShrink: 0,
-                        }}>
-                          2부 {minPos === maxPos ? `${minPos}팀` : `${minPos}~${maxPos}팀`}
-                        </span>
-                      )}
+                      <span style={{ fontSize: "0.72rem", color: "#90a4ae" }}>까지</span>
                     </div>
                   );
-                })()}
+                }
 
-                {/* 2부 마지막 */}
-                {livePreview.shift2.length > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{
-                      fontSize: "0.7rem", fontWeight: 800, color: "#2e7d32",
-                      background: "#e8f5e9", borderRadius: 6, padding: "2px 7px", minWidth: 70, textAlign: "center",
-                    }}>2부 마지막</span>
-                    <span style={{ fontSize: 15, fontWeight: 800, color: "#2e7d32" }}>
-                      {livePreview.shift2[livePreview.shift2.length - 1]}
-                    </span>
-                    <span style={{ fontSize: "0.7rem", color: "#90a4ae" }}>
-                      (총 {livePreview.shift2.length}명)
-                    </span>
-                  </div>
-                )}
+                if (s1.length > 0) {
+                  cutRows.push(
+                    <div key="s1-cut" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{
+                        fontSize: "0.7rem", fontWeight: 800, color: "#1565c0",
+                        background: "#e3f2fd", borderRadius: 6, padding: "2px 8px",
+                        minWidth: 76, textAlign: "center", flexShrink: 0,
+                      }}>1부 컷</span>
+                      <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#1565c0" }}>
+                        {s1[s1.length - 1]}
+                      </span>
+                      <span style={{ fontSize: "0.72rem", color: "#90a4ae" }}>까지</span>
+                    </div>
+                  );
+                }
 
-                {/* 2부 스페어 — 항상 표시 */}
-                <div style={{
-                  display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
-                  background: livePreview.spare2.length > 0 ? "#fffbeb" : "#f9f9f9",
-                  border: `1.5px solid ${livePreview.spare2.length > 0 ? "#fcd34d" : "#e0e0e0"}`,
-                  borderRadius: 8, padding: "5px 10px",
-                }}>
-                  <span style={{
-                    fontSize: "0.7rem", fontWeight: 800,
-                    color: livePreview.spare2.length > 0 ? "#92400e" : "#999",
-                    background: livePreview.spare2.length > 0 ? "#fef3c7" : "#f0f0f0",
-                    borderRadius: 6, padding: "2px 7px", minWidth: 70, textAlign: "center", flexShrink: 0,
-                  }}>🏁 2부스페어</span>
-                  {livePreview.spare2.length > 0 ? (<>
-                    <span style={{ fontSize: 15, fontWeight: 800, color: "#b45309" }}>
-                      {livePreview.spare2.join("  ·  ")}
-                    </span>
-                    <span style={{ fontSize: "0.7rem", color: "#90a4ae" }}>
-                      ({livePreview.spare2.length}명)
-                    </span>
-                    <span style={{
-                      marginLeft: "auto", fontSize: "0.72rem", fontWeight: 700,
-                      color: "#92400e", background: "#fcd34d", borderRadius: 5, padding: "1px 7px", flexShrink: 0,
-                    }}>→ 내일 첫번호</span>
-                  </>) : (
-                    <span style={{ fontSize: "0.8rem", color: "#bbb" }}>없음 (전원 2부 배정)</span>
-                  )}
-                </div>
-              </>) : (<>
-                {/* 단부제: 단부 마지막 & 스페어 */}
-                {livePreview.shift1.length > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{
-                      fontSize: "0.7rem", fontWeight: 800, color: "#1565c0",
-                      background: "#e3f2fd", borderRadius: 6, padding: "2px 7px", minWidth: 70, textAlign: "center",
-                    }}>단부 마지막</span>
-                    <span style={{ fontSize: 15, fontWeight: 800, color: "#1565c0" }}>
-                      {livePreview.shift1[livePreview.shift1.length - 1]}
-                    </span>
-                    <span style={{ fontSize: "0.7rem", color: "#90a4ae" }}>
-                      (총 {livePreview.shift1.length}명)
-                    </span>
-                  </div>
-                )}
-                {livePreview.spare2.length > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                    <span style={{
-                      fontSize: "0.7rem", fontWeight: 800, color: "#6a1b9a",
-                      background: "#f3e5f5", borderRadius: 6, padding: "2px 7px", minWidth: 70, textAlign: "center", flexShrink: 0,
-                    }}>스페어</span>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: "#6a1b9a" }}>
-                      {livePreview.spare2.join("  ·  ")}
-                    </span>
-                    <span style={{ fontSize: "0.7rem", color: "#90a4ae" }}>
-                      ({livePreview.spare2.length}명)
-                    </span>
-                  </div>
-                )}
-              </>)}
+                if (s2.length > 0) {
+                  cutRows.push(
+                    <div key="s2-cut" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{
+                        fontSize: "0.7rem", fontWeight: 800, color: "#2e7d32",
+                        background: "#e8f5e9", borderRadius: 6, padding: "2px 8px",
+                        minWidth: 76, textAlign: "center", flexShrink: 0,
+                      }}>2부 컷</span>
+                      <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#2e7d32" }}>
+                        {s2[s2.length - 1]}
+                      </span>
+                      <span style={{ fontSize: "0.72rem", color: "#90a4ae" }}>까지</span>
+                    </div>
+                  );
+                }
+
+                if (sp1.length > 0) {
+                  cutRows.push(
+                    <div key="sp1" style={{
+                      display: "flex", alignItems: "center", gap: 8,
+                      borderTop: "1px dashed #e0e7ff", paddingTop: 5, marginTop: 2,
+                    }}>
+                      <span style={{
+                        fontSize: "0.7rem", fontWeight: 800, color: "#e65100",
+                        background: "#fff3e0", borderRadius: 6, padding: "2px 8px",
+                        minWidth: 76, textAlign: "center", flexShrink: 0,
+                      }}>1부 스페어</span>
+                      <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#e65100" }}>
+                        {sp1[0]}
+                      </span>
+                    </div>
+                  );
+                }
+
+                if (sp2.length > 0) {
+                  cutRows.push(
+                    <div key="sp2" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{
+                        fontSize: "0.7rem", fontWeight: 800, color: "#92400e",
+                        background: "#fef3c7", borderRadius: 6, padding: "2px 8px",
+                        minWidth: 76, textAlign: "center", flexShrink: 0,
+                      }}>2부 스페어</span>
+                      <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#b45309" }}>
+                        {sp2.slice(0, 2).join("  ·  ")}
+                      </span>
+                      <span style={{
+                        marginLeft: "auto", fontSize: "0.68rem", fontWeight: 700,
+                        color: "#92400e", background: "#fcd34d", borderRadius: 5,
+                        padding: "1px 6px", flexShrink: 0,
+                      }}>→ 내일 첫번호</span>
+                    </div>
+                  );
+                }
+
+                return cutRows;
+              })() : (() => {
+                const s1 = livePreview.shift1 ?? [];
+                const sp2 = livePreview.spare2 ?? [];
+                const cutRows: React.ReactNode[] = [];
+
+                if (s1.length > 0) {
+                  cutRows.push(
+                    <div key="dan-cut" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{
+                        fontSize: "0.7rem", fontWeight: 800, color: "#1565c0",
+                        background: "#e3f2fd", borderRadius: 6, padding: "2px 8px",
+                        minWidth: 76, textAlign: "center", flexShrink: 0,
+                      }}>컷</span>
+                      <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#1565c0" }}>
+                        {s1[s1.length - 1]}
+                      </span>
+                      <span style={{ fontSize: "0.72rem", color: "#90a4ae" }}>까지</span>
+                    </div>
+                  );
+                }
+
+                if (sp2.length > 0) {
+                  cutRows.push(
+                    <div key="dan-sp" style={{
+                      display: "flex", alignItems: "center", gap: 8,
+                      borderTop: "1px dashed #e0e7ff", paddingTop: 5, marginTop: 2,
+                    }}>
+                      <span style={{
+                        fontSize: "0.7rem", fontWeight: 800, color: "#6a1b9a",
+                        background: "#f3e5f5", borderRadius: 6, padding: "2px 8px",
+                        minWidth: 76, textAlign: "center", flexShrink: 0,
+                      }}>스페어</span>
+                      <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#6a1b9a" }}>
+                        {sp2.slice(0, 2).join("  ·  ")}
+                      </span>
+                    </div>
+                  );
+                }
+
+                return cutRows;
+              })()}
             </div>
           )}
 
