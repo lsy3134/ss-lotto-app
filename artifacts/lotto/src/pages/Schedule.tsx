@@ -1418,7 +1418,6 @@ export default function SchedulePage() {
 
                   const isDisabled = (() => {
                     if (isSelected) return false;
-                    if (modalStatus === "찾근") return !canChakgeun(name);
                     if (modalStatus === "조출") return !cho가능 || cho현재수 >= 4;
                     if (modalStatus === "후출") return hu현재수 >= 4;
                     return false;
@@ -1833,10 +1832,9 @@ export default function SchedulePage() {
                       ).map((btn) => {
                         const active = effS === btn;
                         const isAutoActive = active && isAutoHumu;
-                        // 조출: 1부 6팀 미만이면 비활성화 / 찾근: canChakgeun 조건
+                        // 조출: 1부 6팀 미만이면 비활성화
                         const disabled =
-                          (btn === "조출" && !cho가능 && effS !== "조출") ||
-                          (btn === "찾근" && !canChakgeun(name));
+                          (btn === "조출" && !cho가능 && effS !== "조출");
                         const col = active ? STATUS_COLOR[btn!] : null;
                         // 조출/후출 최대 4명 초과 시 비활성화
                         const maxReached =
@@ -1848,8 +1846,7 @@ export default function SchedulePage() {
                             title={
                               btn === "조출" && !cho가능 ? "1부 6팀 이상일 때만 사용 가능" :
                               btn === "조출" && maxReached ? "조출 최대 4명" :
-                              btn === "후출" && maxReached ? "후출 최대 4명" :
-                              btn === "찾근" && !canChakgeun(name) ? "2부 배정 순번 이상이어야 사용 가능" : ""
+                              btn === "후출" && maxReached ? "후출 최대 4명" : ""
                             }
                             style={{
                               ...S.statusBtn,
