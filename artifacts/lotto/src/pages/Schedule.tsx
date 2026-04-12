@@ -256,7 +256,7 @@ export default function SchedulePage() {
   const { excelDays, loading: xlLoading, error: xlError } = useExcelData();
 
   // 설정
-  const [mode, setMode] = useState<Mode>("2부제");
+  const [mode, setMode] = useState<Mode>("단부제");
   // 2부제: totalSize = 총팀수, shift1Size = 1부팀수, shift2Size = 총팀수 - 1부팀수
   const [totalSize, setTotalSize] = useState(70);
   const [shift1Size, setShift1Size] = useState(35);
@@ -563,7 +563,7 @@ export default function SchedulePage() {
 
           {/* ── 엑셀 날짜 선택 ── */}
           <label style={S.label}>
-            📊 날짜 선택 (엑셀 자동 로드)
+            {selectedDate ? selectedDate.dateLabel : "날짜 선택"}
             {xlLoading && <span style={{ color: "#aaa", fontWeight: 400, marginLeft: "6px" }}>불러오는 중…</span>}
             {xlError && <span style={{ color: "#e53935", fontWeight: 400, marginLeft: "6px" }}>{xlError}</span>}
           </label>
@@ -592,35 +592,22 @@ export default function SchedulePage() {
                   >
                     <span style={{ fontSize: "0.72rem", fontWeight: 700 }}>{d.dateLabel.split(" ")[0]}</span>
                     <span style={{ fontSize: "0.65rem", opacity: 0.7 }}>{d.dayName}</span>
+                    {d.가용인원 > 0 && (
+                      <span style={{
+                        fontSize: "0.6rem", fontWeight: 700,
+                        color: isSelected ? "#fff" : "#2e7d32",
+                        lineHeight: 1,
+                      }}>
+                        {d.가용인원}명
+                      </span>
+                    )}
                     {hasTeams && (
                       <span style={{
-                        fontSize: "0.6rem",
-                        background: isSelected ? "rgba(255,255,255,0.25)" : "#e3f2fd",
-                        color: isSelected ? "#fff" : "#1565c0",
-                        borderRadius: "4px",
-                        padding: "1px 4px",
-                        fontWeight: 700,
+                        fontSize: "0.55rem", fontWeight: 700,
+                        color: isSelected ? "rgba(255,255,255,0.75)" : "#1565c0",
+                        lineHeight: 1,
                       }}>
                         {d.예약팀수}팀
-                      </span>
-                    )}
-                    {/* 당번·휴무: 수동 배정 있으면 실제 수, 없으면 엑셀 수 */}
-                    {(manualDangbunCnt > 0 || d.당번 > 0) && (
-                      <span style={{
-                        fontSize: "0.55rem", fontWeight: 700,
-                        color: isSelected ? "#90caf9" : "#1565c0",
-                        lineHeight: 1,
-                      }}>
-                        당{manualDangbunCnt > 0 ? manualDangbunCnt : d.당번}
-                      </span>
-                    )}
-                    {(manualHumuCnt > 0 || d.휴무 > 0) && (
-                      <span style={{
-                        fontSize: "0.55rem", fontWeight: 700,
-                        color: isSelected ? "#ccc" : manualHumuCnt > 0 ? "#555" : "#9e9e9e",
-                        lineHeight: 1,
-                      }}>
-                        휴{manualHumuCnt > 0 ? manualHumuCnt : d.휴무}
                       </span>
                     )}
                   </button>
