@@ -280,9 +280,12 @@ export default function SchedulePage() {
   const [weekly, setWeekly] = useState<{ day: string; result: DayResult }[]>([]);
   const [view, setView] = useState<"input" | "assign">("input");
 
-  // 상태 선택 모달
+  // 상태 선택 모달 (전체 순번표 표시)
   const [modalStatus, setModalStatus] = useState<StatusType | null>(null);
   const [modalSearch, setModalSearch] = useState("");
+
+  // 명단 보기 모달 (해당 상태인 사람만 표시)
+  const [viewStatusModal, setViewStatusModal] = useState<"당번" | "휴무" | "병가" | null>(null);
 
   // ── 사용자 정의 순번표 (localStorage 영구 저장) ──
   const [customRoster, setCustomRoster] = useState<PersonData[]>(() => {
@@ -611,8 +614,8 @@ export default function SchedulePage() {
                   const canClick = names.length > 0;
                   return (
                     <div key={st}
-                      onClick={() => { if (canClick) { setModalStatus(st); setModalSearch(""); } }}
-                      title={canClick ? `${st} 배정 클릭` : "순번표를 먼저 불러오세요"}
+                      onClick={() => { if (canClick) setViewStatusModal(st); }}
+                      title={canClick ? `${st} 명단 보기` : "순번표를 먼저 불러오세요"}
                       style={{
                         display: "flex", flexDirection: "column", alignItems: "center",
                         background: assigned > 0 ? sc.bg + "22" : sc.bg + "12",
@@ -1145,6 +1148,118 @@ export default function SchedulePage() {
           </div>
         </div>
       )}
+
+      {/* ── 명단 보기 모달 (당번/휴무/병가 해당자만 표시) ── */}
+      {viewStatusModal && (() => {
+        const st = viewStatusModal;
+        const sc = STATUS_COLOR[st] ?? { bg: "#eee", color: "#333" };
+        const people = names.filter(n => effectiveStatus(n) === st);
+        return (
+          <div style={{
+            position: "fixed", inset: 0, zIndex: 200,
+            background: "rgba(0,0,0,0.45)",
+            display: "flex", flexDirection: "column", justifyContent: "flex-end",
+          }}
+            onClick={(e) => { if (e.target === e.currentTarget) setViewStatusModal(null); }}
+          >
+            <div style={{
+              background: "#fff", borderRadius: "18px 18px 0 0",
+              maxHeight: "75vh", display: "flex", flexDirection: "column",
+              overflow: "hidden",
+            }}>
+              {/* 헤더 */}
+              <div style={{
+                padding: "16px 16px 10px",
+                background: sc.bg,
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+              }}>
+                <div>
+                  <span style={{ fontWeight: 800, fontSize: "1rem", color: sc.color }}>{st} 명단</span>
+                  <span style={{ marginLeft: "8px", fontSize: "0.8rem", color: sc.color + "cc" }}>
+                    총 {people.length}명
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  {/* 추가 배정 버튼 → 전체 모달로 이동 */}
+                  <button
+                    onClick={() => { setViewStatusModal(null); setModalStatus(st); setModalSearch(""); }}
+                    style={{
+                      padding: "5px 12px", borderRadius: "8px", border: "none",
+                      background: sc.color + "33", color: sc.color,
+                      fontWeight: 700, fontSize: "0.78rem", cursor: "pointer",
+                    }}>
+                    + 추가
+                  </button>
+                  <button onClick={() => setViewStatusModal(null)}
+                    style={{
+                      background: "transparent", border: "none",
+                      fontSize: "1.2rem", cursor: "pointer", color: sc.color, lineHeight: 1,
+                    }}>✕</button>
+                </div>
+              </div>
+
+              {/* 명단 */}
+              <div style={{ overflowY: "auto", flex: 1, padding: "10px 14px" }}>
+                {people.length === 0 ? (
+                  <div style={{ textAlign: "center", color: "#bbb", padding: "40px 0", fontSize: "0.95rem" }}>
+                    현재 {st}인 사람이 없습니다
+                  </div>
+                ) : (
+                  people.map((name) => {
+                    const person = customRosterMap[name];
+                    const isAuto = !manualStatuses[name];
+                    return (
+                      <div key={name} style={{
+                        display: "flex", alignItems: "center", gap: "10px",
+                        padding: "10px 12px", borderRadius: "10px", marginBottom: "6px",
+                        background: sc.bg + "18",
+                        border: `1px solid ${sc.bg}44`,
+                      }}>
+                        {/* 이름 + 조 정보 */}
+                        <div style={{ flex: 1 }}>
+                          <span style={{ fontWeight: 700, fontSize: "0.95rem" }}>{name}</span>
+                          {person && (
+                            <span style={{ marginLeft: "8px", fontSize: "0.7rem", color: GROUP_STYLE[person.group].color, fontWeight: 600 }}>
+                              {person.조}조 · {GROUP_STYLE[person.group].label}
+                            </span>
+                          )}
+                          {isAuto && (
+                            <span style={{ marginLeft: "6px", fontSize: "0.62rem", color: "#9e9e9e" }}>자동</span>
+                          )}
+                        </div>
+                        {/* 해제 버튼 (자동 휴무는 해제 불가) */}
+                        {!isAuto && (
+                          <button
+                            onClick={() => toggleStatus(name, st)}
+                            style={{
+                              padding: "3px 10px", borderRadius: "8px", border: "none",
+                              background: "#f5f5f5", color: "#777",
+                              fontWeight: 700, fontSize: "0.75rem", cursor: "pointer",
+                            }}>
+                            해제
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* 하단 닫기 */}
+              <div style={{ padding: "10px 14px", borderTop: "1px solid #f0f0f0" }}>
+                <button onClick={() => setViewStatusModal(null)}
+                  style={{
+                    width: "100%", padding: "13px", borderRadius: "12px", border: "none",
+                    background: sc.bg, color: sc.color,
+                    fontWeight: 700, fontSize: "0.95rem", cursor: "pointer",
+                  }}>
+                  닫기
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ─── 배정 단계 ─── */}
       {view === "assign" && (
