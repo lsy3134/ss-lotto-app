@@ -1,0 +1,132 @@
+import React, { useState } from 'react';
+
+// 디자인 시스템 변수
+const colors = {
+  bgDark: "#1a1a2e",
+  cardBg: "#16213e",
+  accentBlue: "#4e89ae",
+  accentGreen: "#52de97",
+  accentYellow: "#f8b400",
+  textMain: "#ffffff",
+};
+
+export default function App() {
+  // 화면 전환을 위한 상태 (intro, main, schedule, lotto)
+  const [view, setView] = useState('intro');
+
+  // --- 1. 인트로 화면 (Welcome Page) ---
+  const IntroView = () => (
+    <div style={{
+      backgroundColor: colors.bgDark,
+      height: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      color: colors.textMain,
+      textAlign: 'center',
+      padding: '20px'
+    }}>
+      <img 
+        src="/images/char_cloud.jpg" 
+        alt="Welcome Cloud"
+        style={{ width: '200px', borderRadius: '50%', marginBottom: '20px', boxShadow: `0 0 20px ${colors.accentBlue}` }}
+      />
+      <div style={{ backgroundColor: 'white', color: '#333', padding: '10px 20px', borderRadius: '20px', marginBottom: '30px', position: 'relative' }}>
+        <p style={{ margin: 0, fontWeight: 'bold' }}>안녕! 오늘도 수고 많으세요!<br/>제가 근무표 작성을 도와드릴까요?</p>
+        <div style={{ position: 'absolute', bottom: '-10px', left: '50%', transform: 'translateX(-50%)', width: '0', height: '0', borderLeft: '10px solid transparent', borderRight: '10px solid transparent', borderTop: '10px solid white' }}></div>
+      </div>
+      
+      <button 
+        onClick={() => setView('main')}
+        style={{
+          backgroundColor: colors.accentBlue,
+          color: 'white',
+          border: 'none',
+          padding: '15px 50px',
+          borderRadius: '30px',
+          fontSize: '18px',
+          fontWeight: 'bold',
+          cursor: 'pointer',
+          boxShadow: '0 4px 15px rgba(0,0,0,0.3)'
+        }}
+      >
+        입장하기
+      </button>
+    </div>
+  );
+
+  // --- 2. 메인 서비스 선택 화면 (Main Menu) ---
+  const MainMenuView = () => (
+    <div style={{
+      backgroundColor: colors.bgDark,
+      minHeight: '100vh',
+      padding: '40px 20px',
+      color: colors.textMain
+    }}>
+      <header style={{ marginBottom: '40px' }}>
+        <h2 style={{ fontSize: '24px', marginBottom: '5px' }}>서비스 선택</h2>
+        <p style={{ opacity: 0.7 }}>필요한 업무를 골라주세요.</p>
+      </header>
+
+      {/* 근무표 카드 */}
+      <div 
+        onClick={() => alert('근무표 로직을 연결하세요!')}
+        style={{
+          backgroundColor: colors.cardBg,
+          borderRadius: '20px',
+          padding: '25px',
+          marginBottom: '20px',
+          display: 'flex',
+          alignItems: 'center',
+          cursor: 'pointer',
+          border: `1px solid rgba(255,255,255,0.1)`,
+          position: 'relative',
+          overflow: 'hidden'
+        }}
+      >
+        <img src="/images/char_dino.jpg" style={{ width: '60px', height: '60px', borderRadius: '12px', marginRight: '20px' }} />
+        <div>
+          <h3 style={{ margin: 0, fontSize: '20px' }}>근무표 생성</h3>
+          <p style={{ margin: '5px 0 0', opacity: 0.6, fontSize: '14px' }}>63명 캐디 배정 및 일정 관리</p>
+        </div>
+        <div style={{ marginLeft: 'auto', fontSize: '24px', opacity: 0.3 }}>&gt;</div>
+      </div>
+
+      {/* 로또 생성기 카드 */}
+      <div 
+        onClick={() => alert('로또 로직을 연결하세요!')}
+        style={{
+          backgroundColor: '#2d2d44', // 약간 다른 톤
+          borderRadius: '20px',
+          padding: '25px',
+          display: 'flex',
+          alignItems: 'center',
+          cursor: 'pointer',
+          border: `1px solid ${colors.accentYellow}33`,
+          position: 'relative'
+        }}
+      >
+        <img src="/images/char_dragon.jpg" style={{ width: '60px', height: '60px', borderRadius: '12px', marginRight: '20px' }} />
+        <div>
+          <h3 style={{ margin: 0, fontSize: '20px', color: colors.accentYellow }}>나만의 로또 생성</h3>
+          <p style={{ margin: '5px 0 0', opacity: 0.6, fontSize: '14px' }}>오늘의 행운 번호 추출</p>
+        </div>
+        <div style={{ marginLeft: 'auto', fontSize: '24px', color: colors.accentYellow }}>&gt;</div>
+      </div>
+
+      {/* 하단 미소 캐릭터 */}
+      <div style={{ marginTop: '50px', textAlign: 'center', opacity: 0.5 }}>
+        <img src="/images/char_smile.jpg" style={{ width: '40px', marginBottom: '10px' }} />
+        <p style={{ fontSize: '12px' }}>Caddie's Cloud Helper v1.0</p>
+      </div>
+    </div>
+  );
+
+  // 조건부 렌더링
+  return (
+    <div className="App">
+      {view === 'intro' ? <IntroView /> : <MainMenuView />}
+    </div>
+  );
+}
