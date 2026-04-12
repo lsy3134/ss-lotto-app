@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Switch, Route, Link, Router as WouterRouter, useLocation } from "wouter";
 import * as XLSX from "xlsx";
+import SchedulePage from "./pages/Schedule";
 
 const BASE_URL = import.meta.env.BASE_URL;
 const base = BASE_URL.replace(/\/$/, "");
@@ -47,29 +48,6 @@ function HomePage() {
   );
 }
 
-// ───────────────────────────────────────────
-// 근무표 플레이스홀더
-// ───────────────────────────────────────────
-function SchedulePage() {
-  const [, setLocation] = useLocation();
-  return (
-    <div style={styles.page}>
-      <div style={{ ...styles.homeWrap, textAlign: "center" }}>
-        <div style={{ fontSize: "3rem", marginBottom: "12px" }}>📅</div>
-        <h2 style={{ color: "#1a1a2e", marginBottom: "8px" }}>근무표</h2>
-        <p style={{ color: "#888", marginBottom: "24px", fontSize: "0.9rem" }}>
-          곧 오픈 예정입니다
-        </p>
-        <button
-          onClick={() => setLocation(`${base}/`)}
-          style={styles.backBtn}
-        >
-          ← 홈으로
-        </button>
-      </div>
-    </div>
-  );
-}
 
 // ───────────────────────────────────────────
 // 로또 페이지
