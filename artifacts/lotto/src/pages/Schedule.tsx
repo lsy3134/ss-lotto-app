@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
+import * as XLSX from "xlsx";
 import { ROSTER, ROSTER_MAP, isAutoOff, type GroupType } from "../data/roster";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -35,6 +36,19 @@ const GROUP_STYLE: Record<GroupType, { bg: string; color: string; label: string 
 };
 
 const DAY_LABELS = ["월", "화", "수", "목", "금", "토", "일"];
+const DAY_MAP: Record<string, number> = { 월: 0, 화: 1, 수: 2, 목: 3, 금: 4, 토: 5, 일: 6 };
+
+// ── 엑셀 날짜 데이터 타입 ──────────────────────────
+interface ExcelDayData {
+  dateLabel: string;  // "04.01 (수)"
+  dayName: string;    // "수"
+  dayIdx: number;     // 2 (수=2)
+  당번: number;
+  휴무: number;
+  병가: number;
+  가용인원: number;
+  예약팀수: number;
+}
 
 interface DayResult {
   twoRound: string[];
@@ -43,6 +57,67 @@ interface DayResult {
   shift2: string[];
   spare2: string[];
   excluded: string[];
+}
+
+// ── 엑셀 파싱 훅 ──────────────────────────────────
+function useExcelData() {
+  const [excelDays, setExcelDays] = useState<ExcelDayData[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`${BASE}/schedule.xlsx`);
+      if (!res.ok) throw new Error("파일을 찾을 수 없습니다");
+      const buf = await res.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+
+      // 시트 찾기 (설정 시트 제외, 투입계산 시트 사용)
+      const sheetName = wb.SheetNames.find((n) => n.includes("투입계산")) ?? wb.SheetNames[1];
+      const ws = wb.Sheets[sheetName];
+      const range = XLSX.utils.decode_range(ws["!ref"] ?? "A1");
+
+      const days: ExcelDayData[] = [];
+      for (let r = range.s.r + 2; r <= range.e.r; r++) {
+        const getVal = (c: number) => {
+          const cell = ws[XLSX.utils.encode_cell({ r, c })];
+          return cell ? cell.v : undefined;
+        };
+
+        const dateLabel = getVal(0);
+        const dayName = getVal(1);
+        if (!dateLabel || !dayName || typeof dayName !== "string" || !DAY_MAP.hasOwnProperty(dayName)) continue;
+
+        const 당번 = Number(getVal(5)) || 0;
+        const 휴무 = Number(getVal(6)) || 0;
+        const 병가 = Number(getVal(7)) || 0;
+        const 가용인원 = Number(getVal(9)) || 0;
+        const 예약팀수 = Number(getVal(10)) || 0;
+
+        days.push({
+          dateLabel: String(dateLabel),
+          dayName,
+          dayIdx: DAY_MAP[dayName],
+          당번,
+          휴무,
+          병가,
+          가용인원,
+          예약팀수,
+        });
+      }
+      setExcelDays(days);
+    } catch (e: any) {
+      setError(e.message ?? "오류");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  return { excelDays, loading, error, reload: load };
 }
 
 // ── 배정 엔진: 복부제 ─────────────────────────────
@@ -121,7 +196,6 @@ function applyAutoOff(
   const result: Record<string, StatusType> = { ...manualStatuses };
   names.forEach((name) => {
     const person = ROSTER_MAP[name];
-    // 수동 설정이 없는 경우에만 자동 휴무 적용
     if (person && !(name in manualStatuses) && isAutoOff(person.group, dayIdx)) {
       result[name] = "휴무";
     }
@@ -132,6 +206,7 @@ function applyAutoOff(
 // ── 메인 컴포넌트 ─────────────────────────────────
 export default function SchedulePage() {
   const [, setLocation] = useLocation();
+  const { excelDays, loading: xlLoading, error: xlError } = useExcelData();
 
   // 설정
   const [mode, setMode] = useState<Mode>("복부제");
@@ -139,13 +214,16 @@ export default function SchedulePage() {
   const [shift2Size, setShift2Size] = useState(35);
   const [singleSize, setSingleSize] = useState(60);
   const [nameText, setNameText] = useState("");
-  const [dayOfWeek, setDayOfWeek] = useState(0); // 0=월
+  const [dayOfWeek, setDayOfWeek] = useState(0);
+
+  // 선택된 날짜 (엑셀 날짜)
+  const [selectedDate, setSelectedDate] = useState<ExcelDayData | null>(null);
 
   // 인원
   const [names, setNames] = useState<string[]>([]);
   const [rosterLoaded, setRosterLoaded] = useState(false);
 
-  // 수동 상태 (사용자가 직접 클릭한 것)
+  // 수동 상태
   const [manualStatuses, setManualStatuses] = useState<Record<string, StatusType>>({});
 
   // 결과
@@ -153,7 +231,7 @@ export default function SchedulePage() {
   const [weekly, setWeekly] = useState<{ day: string; result: DayResult }[]>([]);
   const [view, setView] = useState<"input" | "assign">("input");
 
-  // 현재 요일의 유효 상태 반환 (auto 포함)
+  // 현재 요일의 유효 상태 반환
   function effectiveStatus(name: string, dayIdx: number = dayOfWeek): StatusType {
     if (name in manualStatuses) return manualStatuses[name];
     const person = ROSTER_MAP[name];
@@ -161,22 +239,32 @@ export default function SchedulePage() {
     return null;
   }
 
-  // 상태 토글 (수동 오버라이드)
+  // 상태 토글
   function toggleStatus(name: string, btn: StatusType) {
     setManualStatuses((prev) => {
       const cur = effectiveStatus(name);
       if (cur === btn && name in prev) {
-        // 수동 설정 제거 → auto로 복귀
         const next = { ...prev };
         delete next[name];
         return next;
       } else if (cur === btn && !(name in prev)) {
-        // auto 상태를 클릭 → 명시적으로 null 설정 (auto 해제)
         return { ...prev, [name]: null };
       } else {
         return { ...prev, [name]: btn };
       }
     });
+  }
+
+  // 날짜 선택 → 팀수/요일 자동 설정
+  function selectExcelDate(day: ExcelDayData) {
+    setSelectedDate(day);
+    setDayOfWeek(day.dayIdx);
+    if (day.예약팀수 > 0) {
+      const half = Math.round(day.예약팀수 / 2);
+      setShift1Size(half);
+      setShift2Size(day.예약팀수 - half);
+      setSingleSize(day.예약팀수);
+    }
   }
 
   // 순번표 불러오기
@@ -219,7 +307,7 @@ export default function SchedulePage() {
 
   function generateWeek() {
     const results = DAY_LABELS.map((day, di) => {
-      const statuses = getEffective(di); // 각 요일별 auto-휴무 적용
+      const statuses = getEffective(di);
       const result = mode === "복부제"
         ? assignDouble(names, statuses, shift1Size, shift2Size)
         : assignSingle(names, statuses, singleSize);
@@ -234,6 +322,16 @@ export default function SchedulePage() {
     const active = names.filter((n) => !EXCLUDED_SET.has(effectiveStatus(n) ?? ""));
     return active.indexOf(name) >= shift1Size;
   }
+
+  // 현재 선택된 날짜에 대한 당번/찾근 카운트 (사용자가 체크한 것)
+  const checkedCounts = {
+    찾근: names.filter((n) => effectiveStatus(n) === "찾근").length,
+    조출: names.filter((n) => effectiveStatus(n) === "조출").length,
+    후출: names.filter((n) => effectiveStatus(n) === "후출").length,
+    당번: names.filter((n) => effectiveStatus(n) === "당번").length,
+    병가: names.filter((n) => effectiveStatus(n) === "병가").length,
+    휴무: names.filter((n) => effectiveStatus(n) === "휴무").length,
+  };
 
   // ── 렌더 ────────────────────────────────────────
   return (
@@ -263,9 +361,79 @@ export default function SchedulePage() {
             ))}
           </div>
 
-          {/* 팀수 */}
+          {/* ── 엑셀 날짜 선택 ── */}
+          <label style={S.label}>
+            📊 날짜 선택 (엑셀 자동 로드)
+            {xlLoading && <span style={{ color: "#aaa", fontWeight: 400, marginLeft: "6px" }}>불러오는 중…</span>}
+            {xlError && <span style={{ color: "#e53935", fontWeight: 400, marginLeft: "6px" }}>{xlError}</span>}
+          </label>
+
+          {excelDays.length > 0 && (
+            <div style={S.dateGrid}>
+              {excelDays.map((d) => {
+                const isSelected = selectedDate?.dateLabel === d.dateLabel;
+                const isWeekend = d.dayIdx === 5 || d.dayIdx === 6;
+                const hasTeams = d.예약팀수 > 0;
+                return (
+                  <button
+                    key={d.dateLabel}
+                    onClick={() => selectExcelDate(d)}
+                    style={{
+                      ...S.dateBtn,
+                      background: isSelected ? "#1a1a2e" : "#f8f9fa",
+                      color: isSelected ? "#fff" : isWeekend ? "#c62828" : "#333",
+                      border: isSelected ? "2px solid #1a1a2e" : hasTeams ? "2px solid #1565c0" : "1px solid #e0e0e0",
+                    }}
+                  >
+                    <span style={{ fontSize: "0.72rem", fontWeight: 700 }}>{d.dateLabel.split(" ")[0]}</span>
+                    <span style={{ fontSize: "0.65rem", opacity: 0.7 }}>{d.dayName}</span>
+                    {hasTeams && (
+                      <span style={{
+                        fontSize: "0.6rem",
+                        background: isSelected ? "rgba(255,255,255,0.25)" : "#e3f2fd",
+                        color: isSelected ? "#fff" : "#1565c0",
+                        borderRadius: "4px",
+                        padding: "1px 4px",
+                        fontWeight: 700,
+                      }}>
+                        {d.예약팀수}팀
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* 선택된 날짜 정보 */}
+          {selectedDate && (
+            <div style={S.excelInfo}>
+              <div style={S.excelInfoTitle}>
+                📋 {selectedDate.dateLabel} 기준 데이터
+                {selectedDate.예약팀수 > 0 && (
+                  <span style={{ marginLeft: "8px", color: "#1565c0", fontWeight: 700 }}>
+                    → 팀수 자동 입력 완료
+                  </span>
+                )}
+              </div>
+              <div style={S.excelStatRow}>
+                <StatBadge label="가용인원" value={selectedDate.가용인원} color="#1565c0" />
+                <StatBadge label="예약팀수" value={selectedDate.예약팀수 || "미입력"} color={selectedDate.예약팀수 > 0 ? "#2e7d32" : "#9e9e9e"} />
+                <StatBadge label="당번" value={selectedDate.당번} color="#e53935" />
+                <StatBadge label="휴무" value={selectedDate.휴무} color="#757575" />
+                <StatBadge label="병가" value={selectedDate.병가} color="#9e9e9e" />
+              </div>
+              {selectedDate.예약팀수 === 0 && (
+                <div style={{ fontSize: "0.72rem", color: "#ff8f00", marginTop: "4px" }}>
+                  ⚠ 예약팀수 미입력 — 아래에서 직접 팀수를 입력해 주세요
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 팀수 입력 */}
           {mode === "복부제" ? (
-            <div style={{ display: "flex", gap: "10px", marginBottom: "14px" }}>
+            <div style={{ display: "flex", gap: "10px", marginBottom: "14px", marginTop: "14px" }}>
               <div style={{ flex: 1 }}>
                 <label style={S.label}>1부 팀수</label>
                 <input type="number" value={shift1Size} min={1}
@@ -278,7 +446,7 @@ export default function SchedulePage() {
               </div>
             </div>
           ) : (
-            <div style={{ marginBottom: "14px" }}>
+            <div style={{ marginBottom: "14px", marginTop: "14px" }}>
               <label style={S.label}>팀수</label>
               <input type="number" value={singleSize} min={1}
                 onChange={(e) => setSingleSize(Number(e.target.value))} style={S.numInput} />
@@ -305,7 +473,7 @@ export default function SchedulePage() {
           <div style={S.card}>
             {/* 요일 선택 */}
             <label style={{ ...S.label, marginBottom: "8px" }}>오늘 요일</label>
-            <div style={{ display: "flex", gap: "6px", marginBottom: "14px", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: "6px", marginBottom: "10px", flexWrap: "wrap" }}>
               {DAY_LABELS.map((d, i) => (
                 <button key={d} onClick={() => setDayOfWeek(i)}
                   style={{
@@ -317,6 +485,33 @@ export default function SchedulePage() {
                 </button>
               ))}
             </div>
+
+            {/* 선택 날짜 표시 */}
+            {selectedDate && (
+              <div style={S.dateBar}>
+                <span style={{ fontWeight: 700, color: "#1a1a2e" }}>{selectedDate.dateLabel}</span>
+                <span style={{ color: "#666", fontSize: "0.8rem", marginLeft: "6px" }}>
+                  예약 {selectedDate.예약팀수}팀
+                </span>
+                <div style={{ marginLeft: "auto", display: "flex", gap: "6px" }}>
+                  <StatBadge label="당번" value={selectedDate.당번} color="#e53935" small />
+                  <StatBadge label="휴무" value={selectedDate.휴무} color="#757575" small />
+                  <StatBadge label="병가" value={selectedDate.병가} color="#9e9e9e" small />
+                </div>
+              </div>
+            )}
+
+            {/* 현재 체크 현황 */}
+            {names.length > 0 && (
+              <div style={{ display: "flex", gap: "5px", marginBottom: "10px", flexWrap: "wrap" }}>
+                {checkedCounts.찾근 > 0 && <MiniCount label="찾근" count={checkedCounts.찾근} color="#00bcd4" />}
+                {checkedCounts.조출 > 0 && <MiniCount label="조출" count={checkedCounts.조출} color="#ff6b35" />}
+                {checkedCounts.후출 > 0 && <MiniCount label="후출" count={checkedCounts.후출} color="#2196f3" />}
+                {checkedCounts.당번 > 0 && <MiniCount label="당번" count={checkedCounts.당번} color="#e53935" />}
+                {checkedCounts.병가 > 0 && <MiniCount label="병가" count={checkedCounts.병가} color="#9e9e9e" />}
+                {checkedCounts.휴무 > 0 && <MiniCount label="휴무" count={checkedCounts.휴무} color="#bdbdbd" />}
+              </div>
+            )}
 
             {/* 설정 정보 */}
             <div style={S.infoRow}>
@@ -337,9 +532,8 @@ export default function SchedulePage() {
             {/* 인원 리스트 */}
             {names.map((name, idx) => {
               const person = ROSTER_MAP[name];
-              const manualS = manualStatuses[name];
               const effS = effectiveStatus(name, dayOfWeek);
-              const isAutoH휴무 = !(name in manualStatuses) && effS === "휴무";
+              const isAutoHuму = !(name in manualStatuses) && effS === "휴무";
 
               return (
                 <div key={name} style={{
@@ -348,7 +542,6 @@ export default function SchedulePage() {
                 }}>
                   <span style={S.personNum}>{idx + 1}</span>
 
-                  {/* 이름 + 그룹 배지 */}
                   <div style={{ minWidth: "70px" }}>
                     <div style={S.personName}>{name}</div>
                     {person && (
@@ -361,18 +554,17 @@ export default function SchedulePage() {
                         fontWeight: 700,
                       }}>
                         {GROUP_STYLE[person.group].label}
-                        {isAutoH휴무 ? " (자동)" : ""}
+                        {isAutoHuму ? " (자동)" : ""}
                       </span>
                     )}
                   </div>
 
-                  {/* 상태 버튼 */}
                   <div style={S.btnGroup}>
                     {STATUS_BUTTONS.filter((btn) =>
                       mode !== "단부제" || (btn !== "조출" && btn !== "후출")
                     ).map((btn) => {
                       const active = effS === btn;
-                      const isAutoActive = active && isAutoH휴무;
+                      const isAutoActive = active && isAutoHuму;
                       const disabled = btn === "찾근" && !canChakgeun(name) && effS !== "찾근";
                       const col = active ? STATUS_COLOR[btn!] : null;
                       return (
@@ -405,7 +597,9 @@ export default function SchedulePage() {
           {/* 1일 결과 */}
           {dayResult && weekly.length === 0 && (
             <div style={S.card}>
-              <div style={S.sectionTitle}>📋 {DAY_LABELS[dayOfWeek]}요일 배정 결과</div>
+              <div style={S.sectionTitle}>
+                📋 {selectedDate ? selectedDate.dateLabel : DAY_LABELS[dayOfWeek] + "요일"} 배정 결과
+              </div>
               <DayResultView result={dayResult} mode={mode} />
             </div>
           )}
@@ -431,6 +625,36 @@ export default function SchedulePage() {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+// ── 소형 카운트 배지 ──────────────────────────────
+function MiniCount({ label, count, color }: { label: string; count: number; color: string }) {
+  return (
+    <span style={{
+      padding: "2px 8px", borderRadius: "20px", fontSize: "0.72rem",
+      background: color + "22", color, fontWeight: 700, border: `1px solid ${color}44`,
+    }}>
+      {label} {count}
+    </span>
+  );
+}
+
+// ── 통계 배지 ─────────────────────────────────────
+function StatBadge({ label, value, color, small = false }: {
+  label: string; value: number | string; color: string; small?: boolean;
+}) {
+  return (
+    <div style={{
+      display: "flex", flexDirection: "column", alignItems: "center",
+      background: color + "15", borderRadius: "8px",
+      padding: small ? "3px 7px" : "6px 10px",
+      border: `1px solid ${color}33`,
+      minWidth: small ? "44px" : "52px",
+    }}>
+      <span style={{ fontSize: small ? "0.6rem" : "0.65rem", color, fontWeight: 600 }}>{label}</span>
+      <span style={{ fontSize: small ? "0.85rem" : "1rem", fontWeight: 700, color }}>{value}</span>
     </div>
   );
 }
@@ -542,5 +766,25 @@ const S: Record<string, React.CSSProperties> = {
     minWidth: "28px", height: "28px", borderRadius: "8px",
     color: "white", display: "flex", alignItems: "center", justifyContent: "center",
     fontWeight: 700, fontSize: "0.85rem", flexShrink: 0, marginTop: "1px",
+  },
+  dateGrid: {
+    display: "grid", gridTemplateColumns: "repeat(5, 1fr)",
+    gap: "6px", marginBottom: "14px",
+  },
+  dateBtn: {
+    display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
+    padding: "7px 4px", borderRadius: "8px", cursor: "pointer",
+    fontSize: "0.75rem", fontWeight: 600, border: "1px solid #e0e0e0",
+  },
+  excelInfo: {
+    background: "#f0f7ff", borderRadius: "10px", padding: "10px 12px",
+    marginBottom: "14px", border: "1px solid #bbdefb",
+  },
+  excelInfoTitle: { fontSize: "0.78rem", fontWeight: 700, color: "#1565c0", marginBottom: "8px" },
+  excelStatRow: { display: "flex", gap: "6px", flexWrap: "wrap" },
+  dateBar: {
+    display: "flex", alignItems: "center", gap: "6px",
+    background: "#f8f9fa", borderRadius: "8px", padding: "8px 12px",
+    marginBottom: "10px", flexWrap: "wrap",
   },
 };
