@@ -26,11 +26,14 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   스페어: { bg: "#7b1fa2", color: "#fff" },
 };
 
+// 6개 카테고리
 interface DayResult {
-  shift1: string[];
-  shift2: string[];
-  spares: string[];
-  excluded: string[];
+  twoRound: string[];  // 투라운드 (찾근)
+  shift1: string[];    // 1부 (순번 자동배정)
+  spare1: string[];    // 1부 스페어 (조출)
+  shift2: string[];    // 2부 (순번 자동배정 + 후출)
+  spare2: string[];    // 2부 스페어 (스페어 체크)
+  excluded: string[];  // 제외 (당번/병가/휴무/하우스)
 }
 
 // ── 배정 엔진 ─────────────────────────────────────
@@ -39,71 +42,58 @@ function assignShifts(
   statuses: Record<string, StatusType>,
   teamSize: number
 ): DayResult {
+  const twoRound: string[] = [];
   const shift1: string[] = [];
+  const spare1: string[] = [];
   const shift2: string[] = [];
-  const spares: string[] = [];
+  const spare2: string[] = [];
   const excluded: string[] = [];
   const autoQueue: string[] = [];
 
-  let cho = 0; // 조출 카운트
-  let hu = 0;  // 후출 카운트
+  let choCount = 0;
 
   for (const name of names) {
     const s = statuses[name] ?? null;
 
-    if (s === "조출") {
-      if (cho < 4) { shift1.push(name); cho++; }
-      else shift2.push(name); // 초과 시 2부
+    if (s === "찾근") {
+      twoRound.push(name); // 투라운드 (1부+2부 모두 표시)
+    } else if (s === "조출") {
+      if (choCount < 4) { spare1.push(name); choCount++; }
+      else shift1.push(name); // 초과 시 일반 1부로
     } else if (s === "후출") {
-      if (hu < 4) { shift2.push(name); hu++; }
-      else shift1.push(name);
-    } else if (s === "찾근") {
-      shift1.push(name);
       shift2.push(name);
     } else if (EXCLUDED_SET.has(s ?? "")) {
       excluded.push(name);
     } else if (s === "스페어") {
-      shift2.push(name);
-      spares.push(name);
+      spare2.push(name);
     } else {
       autoQueue.push(name);
     }
   }
 
-  const slots = Math.max(0, teamSize - shift1.length);
+  // 순번 자동배정: 팀수 - (찾근수 + 조출수) 만큼 1부로
+  const usedSlots = twoRound.length + spare1.length + shift1.length;
+  const remaining = Math.max(0, teamSize - usedSlots);
   autoQueue.forEach((n, i) => {
-    if (i < slots) shift1.push(n);
+    if (i < remaining) shift1.push(n);
     else shift2.push(n);
   });
 
-  return { shift1, shift2, spares, excluded };
-}
-
-// 마지막 스페어 기준으로 순번 회전
-function rotateByLastSpare(names: string[], spares: string[]): string[] {
-  if (!spares.length) return names;
-  const lastSpare = spares[spares.length - 1];
-  const idx = names.indexOf(lastSpare);
-  if (idx === -1) return names;
-  const next = (idx + 1) % names.length;
-  return [...names.slice(next), ...names.slice(0, next)];
+  return { twoRound, shift1, spare1, shift2, spare2, excluded };
 }
 
 // ── 메인 컴포넌트 ─────────────────────────────────
 export default function SchedulePage() {
   const [, setLocation] = useLocation();
 
-  // 입력 단계
   const [nameText, setNameText] = useState("");
   const [teamSize, setTeamSize] = useState(5);
   const [names, setNames] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<Record<string, StatusType>>({});
 
-  // 결과
   const [dayResult, setDayResult] = useState<DayResult | null>(null);
   const [weekly, setWeekly] = useState<{ day: string; result: DayResult }[]>([]);
-
-  const [view, setView] = useState<"input" | "result">("input");
+  const [view, setView] = useState<"input" | "assign">("input");
 
   // 이름 확정
   function confirmNames() {
@@ -113,7 +103,7 @@ export default function SchedulePage() {
     setStatuses({});
     setDayResult(null);
     setWeekly([]);
-    setView("result");
+    setView("assign");
   }
 
   // 상태 토글
@@ -121,18 +111,11 @@ export default function SchedulePage() {
     setStatuses((prev) => ({ ...prev, [name]: prev[name] === s ? null : s }));
   }
 
-  // 찾근 가능 여부 (본인 순번이 팀수 초과 또는 어제 스페어 2명 이상)
+  // 찾근 가능 여부
   function canChakgeun(name: string): boolean {
-    const idx = names.indexOf(name); // 0-based
     const active = names.filter((n) => !EXCLUDED_SET.has(statuses[n] ?? ""));
-    const myRank = active.indexOf(name); // 제외자 제외 순번
-    if (myRank >= teamSize) return true;
-    // 전날 스페어 2명 이상 체크
-    if (weekly.length > 0) {
-      const yesterday = weekly[weekly.length - 1];
-      if (yesterday.result.spares.length >= 2) return true;
-    }
-    return false;
+    const myRank = active.indexOf(name);
+    return myRank >= teamSize;
   }
 
   // 1일 배정
@@ -142,17 +125,15 @@ export default function SchedulePage() {
     setWeekly([]);
   }
 
-  // 일주일 생성 — 같은 순번·상태 7일 반복 (스페어 회전 없음)
+  // 일주일 생성 — 같은 순번·상태 7일 반복
   function generateWeek() {
     const DAY_LABELS = ["월", "화", "수", "목", "금", "토", "일"];
-    const results: { day: string; result: DayResult }[] = [];
-
-    for (let d = 0; d < 7; d++) {
-      const res = assignShifts(names, statuses, teamSize);
-      results.push({ day: DAY_LABELS[d], result: res });
-    }
-
+    const results = DAY_LABELS.map((day) => ({
+      day,
+      result: assignShifts(names, statuses, teamSize),
+    }));
     setWeekly(results);
+    setDayResult(null);
   }
 
   // ── 렌더 ────────────────────────────────────────
@@ -162,8 +143,10 @@ export default function SchedulePage() {
       <div style={S.header}>
         <button onClick={() => setLocation(`${BASE}/`)} style={S.backBtn}>←</button>
         <span style={S.headerTitle}>📅 근무표</span>
-        {view === "result" && (
-          <button onClick={() => setView("input")} style={S.smallBtn}>다시 입력</button>
+        {view === "assign" && (
+          <button onClick={() => { setView("input"); setDayResult(null); setWeekly([]); }} style={S.smallBtn}>
+            다시 입력
+          </button>
         )}
       </div>
 
@@ -191,17 +174,16 @@ export default function SchedulePage() {
       )}
 
       {/* ─── 배정 단계 ─── */}
-      {view === "result" && (
+      {view === "assign" && (
         <>
-          {/* 인원 리스트 + 상태 버튼 */}
           <div style={S.card}>
-            <div style={S.rowBetween}>
-              <span style={S.label}>인원 {names.length}명 · 1부 {teamSize}명</span>
+            <div style={S.infoRow}>
+              <span style={S.label}>인원 {names.length}명</span>
+              <span style={S.label}>1부 팀수 {teamSize}명</span>
             </div>
 
             {names.map((name, idx) => {
               const s = statuses[name] ?? null;
-              const sc = s ? STATUS_COLOR[s] : null;
               return (
                 <div key={name} style={S.personRow}>
                   <span style={S.personNum}>{idx + 1}</span>
@@ -209,8 +191,9 @@ export default function SchedulePage() {
                   <div style={S.btnGroup}>
                     {STATUS_BUTTONS.map((btn) => {
                       const active = s === btn;
-                      const disabled = btn === "찾근" && !canChakgeun(name) && s !== "찾근";
-                      const color = active ? STATUS_COLOR[btn!] : null;
+                      const isChakgeun = btn === "찾근";
+                      const disabled = isChakgeun && !canChakgeun(name) && s !== "찾근";
+                      const col = active ? STATUS_COLOR[btn!] : null;
                       return (
                         <button
                           key={btn}
@@ -218,8 +201,8 @@ export default function SchedulePage() {
                           onClick={() => toggleStatus(name, btn)}
                           style={{
                             ...S.statusBtn,
-                            background: active ? color!.bg : "#f0f0f0",
-                            color: active ? color!.color : disabled ? "#ccc" : "#555",
+                            background: active ? col!.bg : "#f0f0f0",
+                            color: active ? col!.color : disabled ? "#ccc" : "#555",
                             border: active ? "none" : "1px solid #e0e0e0",
                           }}
                         >
@@ -232,15 +215,9 @@ export default function SchedulePage() {
               );
             })}
 
-            {/* 배정 / 일주일 버튼 */}
             <div style={{ display: "flex", gap: "8px", marginTop: "16px" }}>
-              <button onClick={assign} style={{ ...S.primaryBtn, flex: 1 }}>
-                배정하기
-              </button>
-              <button
-                onClick={generateWeek}
-                style={{ ...S.primaryBtn, flex: 1, background: "#374151" }}
-              >
+              <button onClick={assign} style={{ ...S.primaryBtn, flex: 1 }}>배정하기</button>
+              <button onClick={generateWeek} style={{ ...S.primaryBtn, flex: 1, background: "#374151" }}>
                 일주일 생성
               </button>
             </div>
@@ -250,11 +227,7 @@ export default function SchedulePage() {
           {dayResult && weekly.length === 0 && (
             <div style={S.card}>
               <div style={S.sectionTitle}>📋 오늘 배정 결과</div>
-              <ResultBlock label="1부" names={dayResult.shift1} color="#1565c0" />
-              <ResultBlock label="2부" names={dayResult.shift2} color="#2e7d32" spares={dayResult.spares} />
-              {dayResult.excluded.length > 0 && (
-                <ResultBlock label="제외" names={dayResult.excluded} color="#9e9e9e" />
-              )}
+              <DayResultView result={dayResult} />
             </div>
           )}
 
@@ -263,33 +236,10 @@ export default function SchedulePage() {
             <div style={S.card}>
               <div style={S.sectionTitle}>📅 주간 근무표</div>
               {weekly.map(({ day, result: r }) => (
-                <div key={day} style={S.weekRow}>
-                  <div style={S.dayLabel}>{day}</div>
-                  <div style={S.weekShifts}>
-                    {/* 1부 */}
-                    <div style={S.weekShiftLine}>
-                      <span style={{ ...S.shiftBadge, background: "#e3f2fd", color: "#1565c0" }}>1부</span>
-                      <span style={S.shiftNames}>{r.shift1.join("  ·  ") || "–"}</span>
-                    </div>
-                    {/* 2부 */}
-                    <div style={S.weekShiftLine}>
-                      <span style={{ ...S.shiftBadge, background: "#e8f5e9", color: "#2e7d32" }}>2부</span>
-                      <span style={S.shiftNames}>
-                        {r.shift2.map((n) => (
-                          <span key={n} style={{ marginRight: "6px" }}>
-                            {n}{r.spares.includes(n) ? <span style={{ color: "#7b1fa2", fontSize: "0.7rem" }}>★</span> : ""}
-                          </span>
-                        ))}
-                        {r.shift2.length === 0 && "–"}
-                      </span>
-                    </div>
-                    {/* 제외 */}
-                    {r.excluded.length > 0 && (
-                      <div style={S.weekShiftLine}>
-                        <span style={{ ...S.shiftBadge, background: "#f5f5f5", color: "#9e9e9e" }}>제외</span>
-                        <span style={{ ...S.shiftNames, color: "#bbb" }}>{r.excluded.join("  ·  ")}</span>
-                      </div>
-                    )}
+                <div key={day} style={S.weekDay}>
+                  <div style={S.dayChip}>{day}</div>
+                  <div style={S.weekContent}>
+                    <DayResultView result={r} compact />
                   </div>
                 </div>
               ))}
@@ -301,42 +251,77 @@ export default function SchedulePage() {
   );
 }
 
-// ── 결과 블록 ─────────────────────────────────────
-function ResultBlock({
-  label, names, color, spares,
-}: {
-  label: string;
-  names: string[];
-  color: string;
-  spares?: string[];
-}) {
+// ── 6카테고리 결과 컴포넌트 ─────────────────────────
+const CATEGORIES = [
+  {
+    key: "twoRound" as const,
+    label: "투라운드",
+    badge: { bg: "#e0f7fa", color: "#00838f" },
+  },
+  {
+    key: "shift1" as const,
+    label: "1부",
+    badge: { bg: "#e3f2fd", color: "#1565c0" },
+  },
+  {
+    key: "spare1" as const,
+    label: "1부 스페어",
+    badge: { bg: "#fff3e0", color: "#e65100" },
+  },
+  {
+    key: "shift2" as const,
+    label: "2부",
+    badge: { bg: "#e8f5e9", color: "#2e7d32" },
+  },
+  {
+    key: "spare2" as const,
+    label: "2부 스페어",
+    badge: { bg: "#f3e5f5", color: "#6a1b9a" },
+  },
+  {
+    key: "excluded" as const,
+    label: "제외",
+    badge: { bg: "#f5f5f5", color: "#9e9e9e" },
+  },
+] as const;
+
+function DayResultView({ result, compact = false }: { result: DayResult; compact?: boolean }) {
   return (
-    <div style={{ marginBottom: "12px" }}>
-      <div style={{ fontWeight: 700, color, fontSize: "0.85rem", marginBottom: "6px" }}>
-        {label} ({names.length}명)
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-        {names.map((n) => {
-          const isSpare = spares?.includes(n);
-          return (
+    <div style={{ display: "flex", flexDirection: "column", gap: compact ? "4px" : "10px" }}>
+      {CATEGORIES.map(({ key, label, badge }) => {
+        const people = result[key];
+        if (people.length === 0) return null;
+        return (
+          <div key={key} style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
             <span
-              key={n}
               style={{
-                padding: "5px 10px",
-                borderRadius: "20px",
-                background: isSpare ? "#f3e5f5" : `${color}18`,
-                color: isSpare ? "#7b1fa2" : color,
-                fontSize: "0.85rem",
-                fontWeight: isSpare ? 700 : 400,
-                border: `1px solid ${isSpare ? "#ce93d8" : color}40`,
+                display: "inline-block",
+                padding: compact ? "1px 7px" : "3px 10px",
+                borderRadius: "12px",
+                fontSize: compact ? "0.7rem" : "0.75rem",
+                fontWeight: 700,
+                background: badge.bg,
+                color: badge.color,
+                flexShrink: 0,
+                marginTop: "1px",
+                whiteSpace: "nowrap",
               }}
             >
-              {n}{isSpare ? " ★" : ""}
+              {label}
             </span>
-          );
-        })}
-        {names.length === 0 && <span style={{ color: "#bbb", fontSize: "0.8rem" }}>없음</span>}
-      </div>
+            <span
+              style={{
+                fontSize: compact ? "0.8rem" : "0.88rem",
+                color: "#333",
+                lineHeight: 1.6,
+                flex: 1,
+              }}
+            >
+              {people.join("  ·  ")}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -379,10 +364,7 @@ const S: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     fontSize: "0.8rem",
   },
-  headerTitle: {
-    fontWeight: 700,
-    fontSize: "1rem",
-  },
+  headerTitle: { fontWeight: 700, fontSize: "1rem" },
   card: {
     background: "white",
     borderRadius: "14px",
@@ -392,12 +374,17 @@ const S: Record<string, React.CSSProperties> = {
   },
   label: {
     display: "block",
-    fontSize: "0.8rem",
+    fontSize: "0.75rem",
     color: "#888",
-    marginBottom: "8px",
+    marginBottom: "6px",
     fontWeight: 600,
     textTransform: "uppercase",
     letterSpacing: "0.04em",
+  },
+  infoRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    marginBottom: "8px",
   },
   textarea: {
     width: "100%",
@@ -470,55 +457,28 @@ const S: Record<string, React.CSSProperties> = {
     marginBottom: "14px",
     color: "#333",
   },
-  rowBetween: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "8px",
-  },
-  weekRow: {
+  weekDay: {
     display: "flex",
     gap: "10px",
-    padding: "10px 0",
-    borderBottom: "1px solid #f5f5f5",
+    padding: "12px 0",
+    borderBottom: "1px solid #f0f0f0",
     alignItems: "flex-start",
   },
-  dayLabel: {
-    minWidth: "24px",
-    fontWeight: 700,
-    color: "#1a1a2e",
-    fontSize: "0.9rem",
-    paddingTop: "2px",
-  },
-  weekShifts: {
+  dayChip: {
+    minWidth: "28px",
+    height: "28px",
+    borderRadius: "8px",
+    background: "#1a1a2e",
+    color: "white",
     display: "flex",
-    flexDirection: "column",
-    gap: "5px",
-    flex: 1,
-  },
-  weekShiftLine: {
-    display: "flex",
-    alignItems: "flex-start",
-    gap: "6px",
-  },
-  shiftBadge: {
-    display: "inline-block",
-    padding: "1px 7px",
-    borderRadius: "10px",
-    fontSize: "0.72rem",
+    alignItems: "center",
+    justifyContent: "center",
     fontWeight: 700,
+    fontSize: "0.85rem",
     flexShrink: 0,
     marginTop: "1px",
   },
-  shiftNames: {
-    fontSize: "0.82rem",
-    color: "#333",
-    lineHeight: 1.5,
+  weekContent: {
     flex: 1,
-  },
-  shiftChip: {
-    fontSize: "0.82rem",
-    color: "#444",
-    lineHeight: 1.5,
   },
 };
