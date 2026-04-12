@@ -9,6 +9,34 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+      :root {
+        --bg-dark:      #1a1a2e;
+        --bg-mid:       #16213e;
+        --accent-blue:  #4e89ae;
+        --accent-gold:  #f8b400;
+        --accent-green: #52de97;
+        --card-bg:      #ffffff;
+        --page-bg:      #eef2f7;
+        --text-main:    #1a1a2e;
+        --text-sub:     #6b7280;
+        --radius-lg:    16px;
+        --radius-md:    10px;
+        --shadow-card:  0 2px 12px rgba(26,26,46,0.08);
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--page-bg); font-family: 'Inter', sans-serif; }
+      @keyframes floatBob {
+        0%,100% { transform: translateY(0px); }
+        50%      { transform: translateY(-6px); }
+      }
+      @keyframes glowPulse {
+        0%,100% { box-shadow: 0 0 0 0 rgba(78,137,174,0.4); }
+        50%      { box-shadow: 0 0 0 6px rgba(78,137,174,0); }
+      }
+      @keyframes shimmer {
+        0%   { background-position: -200% center; }
+        100% { background-position: 200% center; }
+      }
       @media print {
         body * { visibility: hidden; }
         #print-area, #print-area * { visibility: visible; }

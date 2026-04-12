@@ -21,13 +21,13 @@ const STATUS_BUTTONS: StatusType[] = [
 const EXCLUDED_SET = new Set(["당번", "병가", "휴무", "하우스"]);
 
 const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
-  조출:   { bg: "#ff6b35", color: "#fff" },
-  후출:   { bg: "#2196f3", color: "#fff" },
-  찾근:   { bg: "#00bcd4", color: "#fff" },
-  당번:   { bg: "#e53935", color: "#fff" },
-  병가:   { bg: "#9e9e9e", color: "#fff" },
-  휴무:   { bg: "#bdbdbd", color: "#555" },
-  하우스: { bg: "#f9a825", color: "#fff" },
+  조출:   { bg: "#fed7aa", color: "#9a3412" },  // 주황 (주의)
+  후출:   { bg: "#ddd6fe", color: "#5b21b6" },  // 연보라 (구분)
+  찾근:   { bg: "#cffafe", color: "#164e63" },  // 하늘 (투라운드)
+  당번:   { bg: "#fecaca", color: "#991b1b" },  // 연빨 (주의)
+  병가:   { bg: "#e5e7eb", color: "#4b5563" },  // 회색 (비활성)
+  휴무:   { bg: "#f3f4f6", color: "#6b7280" },  // 연회색 (비활성)
+  하우스: { bg: "#fef08a", color: "#713f12" },  // 금 (하우스)
 };
 
 const GROUP_STYLE: Record<GroupType, { bg: string; color: string; label: string }> = {
@@ -1047,10 +1047,11 @@ export default function SchedulePage() {
       {/* 헤더 */}
       <div style={S.header}>
         <button onClick={() => setLocation(`${BASE}/`)} style={S.backBtn}>←</button>
-        <span style={S.headerTitle}>📅 근무표</span>
+        <img src={`${BASE}/char_dino.png`} alt="" style={{ width: 30, height: 30, objectFit: "contain" }} />
+        <span style={S.headerTitle}>캐디 근무표</span>
         {view === "assign" && (
           <button onClick={() => { setView("input"); setDayResult(null); setWeekly([]); }} style={S.smallBtn}>
-            다시 입력
+            ↩ 다시
           </button>
         )}
       </div>
@@ -1060,11 +1061,20 @@ export default function SchedulePage() {
         <div style={S.card}>
           {/* 운영 모드 */}
           <label style={S.label}>운영 방식</label>
-          <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+          {/* iOS 세그먼트 컨트롤 */}
+          <div style={S.segmentTrack}>
             {(["2부제", "단부제"] as Mode[]).map((m) => (
-              <button key={m} onClick={() => { setMode(m); if (teamsLocked) setTeamsLocked(false); }}
-                style={{ ...S.modeBtn, background: mode === m ? "#1a1a2e" : "#f0f0f0", color: mode === m ? "#fff" : "#555" }}>
-                {m}
+              <button key={m}
+                onClick={() => { setMode(m); if (teamsLocked) setTeamsLocked(false); }}
+                style={{
+                  ...S.segmentBtn,
+                  background: mode === m
+                    ? "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)"
+                    : "transparent",
+                  color: mode === m ? "#fff" : "#6b7280",
+                  boxShadow: mode === m ? "0 2px 8px rgba(26,26,46,0.3)" : "none",
+                }}>
+                {m === "2부제" ? "☀️ 2부제" : "🌙 단부제"}
               </button>
             ))}
           </div>
@@ -1098,23 +1108,6 @@ export default function SchedulePage() {
             </label>
           </div>
 
-          {/* ★ 기능2: 오늘 첫번호 힌트 (전날 2부스페어) */}
-          {todayFirstHint && (
-            <div style={{
-              background: "#fff8e1", border: "1px solid #ffe082", borderRadius: "8px",
-              padding: "6px 12px", marginBottom: "8px",
-              fontSize: "0.8rem", display: "flex", alignItems: "center", gap: "6px",
-            }}>
-              <span>🔢</span>
-              <span style={{ color: "#795548" }}>
-                오늘 첫번호 (전날 2부스페어):
-              </span>
-              <span style={{ fontWeight: 800, color: "#e65100", fontSize: "0.9rem" }}>
-                {todayFirstHint}
-              </span>
-            </div>
-          )}
-
           {excelDays.length > 0 && (() => {
             const monthIdx = availableMonths.indexOf(viewMonth);
             const prevMonth = monthIdx > 0 ? availableMonths[monthIdx - 1] : null;
@@ -1123,11 +1116,27 @@ export default function SchedulePage() {
             const monthName = parseInt(viewMonth, 10) + "월";
             return (
               <>
-                {/* ── 월 네비게이션 ── */}
+                {/* ── 캐릭터 + 월 네비게이션 ── */}
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+                  <img
+                    src={`${BASE}/char_cloud.png`}
+                    alt="cloud"
+                    style={{ width: 44, height: 44, objectFit: "contain", animation: "floatBob 3s ease-in-out infinite" }}
+                  />
+                  <div style={{ flex: 1 }}>
+                    {todayFirstHint && (
+                      <div style={{ fontSize: "0.72rem", color: "#92400e", background: "#fef3c7", borderRadius: "6px", padding: "3px 8px", marginBottom: "4px" }}>
+                        🔢 오늘 첫번호: <strong>{todayFirstHint}</strong>
+                      </div>
+                    )}
+                  </div>
+                </div>
                 <div style={{
                   display: "flex", alignItems: "center", justifyContent: "space-between",
-                  marginBottom: "8px", background: "#1a1a2e", borderRadius: "10px",
-                  padding: "6px 10px",
+                  marginBottom: "8px",
+                  background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)",
+                  borderRadius: "12px", padding: "8px 12px",
+                  boxShadow: "0 2px 8px rgba(26,26,46,0.25)",
                 }}>
                   <button
                     onClick={() => prevMonth && setViewMonth(prevMonth)}
@@ -1167,9 +1176,16 @@ export default function SchedulePage() {
                         onClick={() => selectExcelDate(d)}
                         style={{
                           ...S.dateBtn,
-                          background: isSelected ? "#1a1a2e" : hasManual ? "#f0f4ff" : "#f8f9fa",
-                          color: isSelected ? "#fff" : isWeekend ? "#c62828" : "#333",
-                          border: isSelected ? "2px solid #1a1a2e" : hasManual ? "2px solid #7986cb" : hasTeams ? "2px solid #1565c0" : "1px solid #e0e0e0",
+                          background: isSelected
+                            ? "linear-gradient(135deg, #1a1a2e 0%, #4e89ae 100%)"
+                            : hasManual ? "#eff6ff" : "#f8fafc",
+                          color: isSelected ? "#fff" : isWeekend ? "#c62828" : "#1a1a2e",
+                          border: isSelected
+                            ? "2px solid #4e89ae"
+                            : hasManual ? "2px solid #93c5fd"
+                            : hasTeams ? "2px solid #60a5fa" : "1.5px solid #e5e7eb",
+                          animation: isSelected ? "glowPulse 2s ease-in-out infinite" : "none",
+                          transform: isSelected ? "scale(1.05)" : "scale(1)",
                         }}
                       >
                         <span style={{ fontSize: "0.72rem", fontWeight: 700 }}>{d.dateLabel.split(" ")[0]}</span>
@@ -2699,11 +2715,26 @@ export default function SchedulePage() {
                 rows.push(
                   <div key={name} style={{
                     ...S.personRow,
-                    opacity: effS === "휴무" ? 0.5 : 1,
+                    opacity: effS === "휴무" ? 0.45 : 1,
                   }}>
                     <span style={S.personNum}>{person?.no ?? idx + 1}</span>
+                    {/* 아바타 이니셜 */}
+                    <div style={{
+                      width: 34, height: 34, borderRadius: "50%", flexShrink: 0,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontWeight: 800, fontSize: "0.85rem", color: "white",
+                      background: effS && effS !== "없음"
+                        ? (STATUS_COLOR[effS]?.bg ?? "#e5e7eb")
+                        : person?.group === "하우스" ? "#52de97"
+                        : person?.group === "주중" ? "#4e89ae" : "#f8b400",
+                      boxShadow: "0 1px 4px rgba(0,0,0,0.12)",
+                    }}>
+                      <span style={{ color: effS && effS !== "없음" ? (STATUS_COLOR[effS]?.color ?? "#333") : "#fff" }}>
+                        {name.charAt(0)}
+                      </span>
+                    </div>
 
-                    <div style={{ minWidth: "72px" }}>
+                    <div style={{ minWidth: "68px" }}>
                       <div style={S.personName}>{name}</div>
                       <div style={{ display: "flex", gap: "3px", flexWrap: "wrap" }}>
                         {person && (
@@ -2914,9 +2945,12 @@ export default function SchedulePage() {
                 <div key={day} style={S.weekDay}>
                   <div style={{
                     ...S.dayChip,
-                    background: di === 5 || di === 6 ? "#c62828" : "#1a1a2e",
+                    background: di === 5 || di === 6
+                      ? "linear-gradient(135deg, #c62828, #ef5350)"
+                      : "linear-gradient(135deg, #1a1a2e, #4e89ae)",
                   }}>
-                    {day}
+                    <span style={{ fontSize: "0.85rem", fontWeight: 800 }}>{day}</span>
+                    <span style={{ fontSize: "0.55rem", opacity: 0.8 }}>요일</span>
                   </div>
                   <div style={{ flex: 1 }}>
                     <DayResultView result={r} mode={mode} compact />
@@ -2926,6 +2960,23 @@ export default function SchedulePage() {
             </div>
           )}
         </>
+      )}
+
+      {/* ── 플로팅 바: 다음날 첫번호 ── */}
+      {dayResult && dayResult.spare2?.[0] && weekly.length === 0 && (
+        <div style={S.floatingBar}>
+          <img src={`${BASE}/char_smile.png`} alt="" style={{ width: 36, height: 36, objectFit: "contain" }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: "0.68rem", color: "rgba(255,255,255,0.65)", marginBottom: 2 }}>🏁 내일 2부 첫번호</div>
+            <div style={{ fontWeight: 800, fontSize: "1.1rem", color: "#f8b400" }}>{dayResult.spare2[0]}</div>
+          </div>
+          {dayResult.spare2[1] && (
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: "0.65rem", color: "rgba(255,255,255,0.55)" }}>대기</div>
+              <div style={{ fontWeight: 600, fontSize: "0.85rem", color: "rgba(255,255,255,0.8)" }}>{dayResult.spare2[1]}</div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -2963,18 +3014,18 @@ function StatBadge({ label, value, color, small = false }: {
 
 // ── 결과 표시 컴포넌트 ─────────────────────────────
 const CATS_DOUBLE = [
-  { key: "twoRound" as const, label: "투라운드",          badge: { bg: "#e0f7fa", color: "#00838f" } },
-  { key: "shift1"   as const, label: "1부",               badge: { bg: "#e3f2fd", color: "#1565c0" } },
-  { key: "spare1"   as const, label: "1부스페어→2부1번째", badge: { bg: "#fff3e0", color: "#e65100" } },
-  { key: "shift2"   as const, label: "2부",               badge: { bg: "#e8f5e9", color: "#2e7d32" } },
-  { key: "spare2"   as const, label: "2부 스페어",         badge: { bg: "#f3e5f5", color: "#6a1b9a" } },
-  { key: "excluded" as const, label: "휴무/제외",          badge: { bg: "#f5f5f5", color: "#9e9e9e" } },
+  { key: "twoRound" as const, label: "🔄 투라운드",          badge: { bg: "#cffafe", color: "#164e63" } },
+  { key: "shift1"   as const, label: "☀️ 1부",               badge: { bg: "#dbeafe", color: "#1e40af" } },
+  { key: "spare1"   as const, label: "⚡ 1부스페어→2부1번째", badge: { bg: "#fed7aa", color: "#9a3412" } },
+  { key: "shift2"   as const, label: "🌙 2부",               badge: { bg: "#ede9fe", color: "#5b21b6" } },
+  { key: "spare2"   as const, label: "🏁 2부스페어",          badge: { bg: "#fef3c7", color: "#92400e" } },
+  { key: "excluded" as const, label: "💤 휴무/제외",          badge: { bg: "#f3f4f6", color: "#6b7280" } },
 ];
 const CATS_SINGLE = [
-  { key: "twoRound" as const, label: "투라운드", badge: { bg: "#e0f7fa", color: "#00838f" } },
-  { key: "shift1"   as const, label: "단부",     badge: { bg: "#e3f2fd", color: "#1565c0" } },
-  { key: "spare2"   as const, label: "스페어",   badge: { bg: "#f3e5f5", color: "#6a1b9a" } },
-  { key: "excluded" as const, label: "휴무/제외", badge: { bg: "#f5f5f5", color: "#9e9e9e" } },
+  { key: "twoRound" as const, label: "🔄 투라운드", badge: { bg: "#cffafe", color: "#164e63" } },
+  { key: "shift1"   as const, label: "⛳ 단부",     badge: { bg: "#dbeafe", color: "#1e40af" } },
+  { key: "spare2"   as const, label: "🏁 스페어",   badge: { bg: "#fef3c7", color: "#92400e" } },
+  { key: "excluded" as const, label: "💤 휴무/제외", badge: { bg: "#f3f4f6", color: "#6b7280" } },
 ];
 
 function DayResultView({ result, mode, compact = false }: {
@@ -2992,15 +3043,17 @@ function DayResultView({ result, mode, compact = false }: {
         {people.map((n, i) => {
           const isCho   = (key === "shift1") && 조출Set.has(n);
           const isHu    = (key === "shift2") && 후출Set.has(n);
-          const isSpare1= (key === "shift2") && spare1Set.has(n); // 1부스페어가 2부 앞에 배정됨
+          const isSpare1= (key === "shift2") && spare1Set.has(n);
           const isTwoR  = key === "twoRound";
           const suffix  = isCho ? " [조출]" : isHu ? " [후출]" : isSpare1 ? " [1부스페어]" : "";
           return (
             <span key={n}>
-              {i > 0 && <span style={{ color: "#ccc" }}> · </span>}
+              {i > 0 && <span style={{ color: "#d1d5db" }}> · </span>}
               <span style={{
-                fontWeight: (isCho || isHu || isTwoR || isSpare1) ? 700 : 400,
-                color: isCho ? "#ff6b35" : isHu ? "#2196f3" : isTwoR ? "#00838f" : isSpare1 ? "#e65100" : "#333",
+                fontWeight: (isCho || isHu || isTwoR || isSpare1) ? 800 : 500,
+                color: isCho ? "#9a3412" : isHu ? "#5b21b6" : isTwoR ? "#164e63" : isSpare1 ? "#9a3412" : "#374151",
+                background: isCho ? "#fed7aa" : isHu ? "#ddd6fe" : "transparent",
+                borderRadius: 4, padding: (isCho || isHu) ? "1px 4px" : 0,
               }}>
                 {n}{suffix}
               </span>
@@ -3149,88 +3202,171 @@ function NextDayQueueView({
 
 // ── 스타일 ────────────────────────────────────────
 const S: Record<string, React.CSSProperties> = {
-  page: { fontFamily: "sans-serif", background: "#f4f7f9", minHeight: "100vh", paddingBottom: "40px" },
+  /* ─── Layout ─── */
+  page: { fontFamily: "'Inter', sans-serif", background: "#eef2f7", minHeight: "100vh", paddingBottom: "80px" },
   header: {
     display: "flex", alignItems: "center", gap: "10px",
-    padding: "14px 16px", background: "#1a1a2e", color: "white",
-    position: "sticky", top: 0, zIndex: 10,
+    padding: "14px 16px",
+    background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)",
+    color: "white", position: "sticky", top: 0, zIndex: 20,
+    boxShadow: "0 2px 12px rgba(26,26,46,0.25)",
   },
   backBtn: {
-    background: "rgba(255,255,255,0.15)", border: "none", color: "white",
-    borderRadius: "8px", padding: "6px 12px", cursor: "pointer", fontSize: "1rem",
+    background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.15)",
+    color: "white", borderRadius: "10px", padding: "8px 14px",
+    cursor: "pointer", fontSize: "1rem", minHeight: "44px",
   },
   smallBtn: {
-    marginLeft: "auto", background: "rgba(255,255,255,0.15)", border: "none", color: "white",
-    borderRadius: "8px", padding: "6px 12px", cursor: "pointer", fontSize: "0.8rem",
+    marginLeft: "auto",
+    background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.15)",
+    color: "white", borderRadius: "10px", padding: "8px 14px",
+    cursor: "pointer", fontSize: "0.82rem", minHeight: "44px",
   },
-  headerTitle: { fontWeight: 700, fontSize: "1rem" },
+  headerTitle: { fontWeight: 700, fontSize: "1.05rem", letterSpacing: "-0.02em" },
+
+  /* ─── Cards ─── */
   card: {
-    background: "white", borderRadius: "14px", padding: "16px",
-    margin: "12px", boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+    background: "#ffffff", borderRadius: "18px", padding: "18px 16px",
+    margin: "10px 12px", boxShadow: "0 2px 12px rgba(26,26,46,0.08)",
   },
+  card1부: {
+    background: "linear-gradient(135deg, #e8f4fd 0%, #dbeafe 100%)",
+    borderRadius: "14px", padding: "14px",
+    border: "1.5px solid #93c5fd", marginBottom: "10px",
+  },
+  card2부: {
+    background: "linear-gradient(135deg, #fdf4ff 0%, #ede9fe 100%)",
+    borderRadius: "14px", padding: "14px",
+    border: "1.5px solid #c4b5fd", marginBottom: "10px",
+  },
+  cardSpare: {
+    background: "linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)",
+    borderRadius: "14px", padding: "14px",
+    border: "1.5px solid #fcd34d",
+  },
+
+  /* ─── Typography & Labels ─── */
   label: {
-    display: "block", fontSize: "0.75rem", color: "#888",
-    marginBottom: "6px", fontWeight: 600,
-    textTransform: "uppercase", letterSpacing: "0.04em",
+    display: "block", fontSize: "0.7rem", color: "#9ca3af",
+    marginBottom: "8px", fontWeight: 700,
+    textTransform: "uppercase", letterSpacing: "0.06em",
   },
-  modeBtn: { flex: 1, padding: "10px", border: "none", borderRadius: "8px", fontSize: "0.9rem", fontWeight: 700, cursor: "pointer" },
-  dayBtn: { padding: "6px 12px", border: "none", borderRadius: "8px", fontSize: "0.85rem", fontWeight: 700, cursor: "pointer", minWidth: "36px" },
-  infoRow: { display: "flex", gap: "6px", marginBottom: "12px", flexWrap: "wrap" },
-  chip: { padding: "3px 10px", borderRadius: "20px", background: "#f0f0f0", color: "#555", fontSize: "0.78rem", fontWeight: 600 },
-  textarea: {
-    width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid #e0e0e0",
-    fontSize: "0.95rem", resize: "vertical", fontFamily: "sans-serif",
-    marginBottom: "14px", boxSizing: "border-box",
+  sectionTitle: {
+    fontWeight: 800, fontSize: "0.95rem", marginBottom: "14px",
+    color: "#1a1a2e", letterSpacing: "-0.01em",
   },
-  numInput: { width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid #e0e0e0", fontSize: "1rem", boxSizing: "border-box" },
-  primaryBtn: {
-    width: "100%", padding: "14px", background: "#1a1a2e", color: "white",
-    border: "none", borderRadius: "10px", fontSize: "1rem", fontWeight: 700, cursor: "pointer",
+
+  /* ─── Mode Segment Control ─── */
+  segmentTrack: {
+    display: "flex", background: "#e5e7eb", borderRadius: "12px",
+    padding: "3px", marginBottom: "18px", gap: "2px",
   },
-  personRow: {
-    display: "flex", alignItems: "flex-start", gap: "8px",
-    padding: "10px 0", borderBottom: "1px solid #f5f5f5", flexWrap: "wrap",
-    transition: "opacity 0.2s",
+  segmentBtn: {
+    flex: 1, padding: "10px", border: "none", borderRadius: "10px",
+    fontSize: "0.9rem", fontWeight: 700, cursor: "pointer", transition: "all 0.2s",
+    minHeight: "44px",
   },
-  personNum: { minWidth: "22px", fontSize: "0.78rem", color: "#bbb", paddingTop: "4px" },
-  personName: { fontWeight: 600, fontSize: "0.9rem", marginBottom: "2px" },
-  btnGroup: { display: "flex", flexWrap: "wrap", gap: "4px", flex: 1 },
-  statusBtn: { padding: "4px 8px", borderRadius: "6px", fontSize: "0.78rem", cursor: "pointer", fontWeight: 600, transition: "all 0.15s" },
-  sectionTitle: { fontWeight: 700, fontSize: "0.95rem", marginBottom: "14px", color: "#333" },
-  weekDay: { display: "flex", gap: "10px", padding: "12px 0", borderBottom: "1px solid #f0f0f0", alignItems: "flex-start" },
-  dayChip: {
-    minWidth: "28px", height: "28px", borderRadius: "8px",
-    color: "white", display: "flex", alignItems: "center", justifyContent: "center",
-    fontWeight: 700, fontSize: "0.85rem", flexShrink: 0, marginTop: "1px",
+
+  /* ─── Day-of-week pills ─── */
+  dayBtn: {
+    padding: "8px 14px", border: "none", borderRadius: "10px",
+    fontSize: "0.85rem", fontWeight: 700, cursor: "pointer", minWidth: "44px", minHeight: "44px",
   },
-  calcBox: {
-    display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center",
-    background: "#f8f9fa", borderRadius: "8px", padding: "8px 12px",
-    fontSize: "0.82rem", fontWeight: 600,
-  },
-  cutoffBox: {
-    display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center",
-    background: "#fafafa", borderRadius: "8px", padding: "8px 12px",
-    margin: "0 0 8px", border: "1px solid #e0e0e0",
-  },
+
+  /* ─── Date calendar grid ─── */
   dateGrid: {
     display: "grid", gridTemplateColumns: "repeat(5, 1fr)",
-    gap: "6px", marginBottom: "14px",
+    gap: "5px", marginBottom: "14px",
   },
   dateBtn: {
     display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
-    padding: "7px 4px", borderRadius: "8px", cursor: "pointer",
-    fontSize: "0.75rem", fontWeight: 600, border: "1px solid #e0e0e0",
+    padding: "8px 4px", borderRadius: "10px", cursor: "pointer",
+    fontSize: "0.73rem", fontWeight: 600, border: "1.5px solid #e5e7eb",
+    minHeight: "52px", transition: "all 0.15s",
+  },
+
+  /* ─── Info rows ─── */
+  infoRow: { display: "flex", gap: "6px", marginBottom: "12px", flexWrap: "wrap" },
+  chip: {
+    padding: "4px 12px", borderRadius: "20px", background: "#f3f4f6",
+    color: "#374151", fontSize: "0.78rem", fontWeight: 600,
+  },
+
+  /* ─── Inputs ─── */
+  textarea: {
+    width: "100%", padding: "12px", borderRadius: "10px",
+    border: "1.5px solid #e5e7eb", fontSize: "0.95rem", resize: "vertical",
+    fontFamily: "'Inter', sans-serif", marginBottom: "14px", boxSizing: "border-box",
+    background: "#fafafa",
+  },
+  numInput: {
+    width: "100%", padding: "12px", borderRadius: "10px",
+    border: "1.5px solid #e5e7eb", fontSize: "1rem",
+    boxSizing: "border-box", background: "#fafafa",
+  },
+  primaryBtn: {
+    width: "100%", padding: "15px",
+    background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)",
+    color: "white", border: "none", borderRadius: "12px",
+    fontSize: "1rem", fontWeight: 800, cursor: "pointer",
+    boxShadow: "0 4px 14px rgba(26,26,46,0.3)", minHeight: "50px",
+  },
+
+  /* ─── Person list ─── */
+  personRow: {
+    display: "flex", alignItems: "center", gap: "10px",
+    padding: "10px 0", borderBottom: "1px solid #f3f4f6", flexWrap: "wrap",
+    transition: "opacity 0.2s",
+  },
+  personNum: { minWidth: "20px", fontSize: "0.72rem", color: "#d1d5db", textAlign: "right" },
+  personName: { fontWeight: 700, fontSize: "0.88rem", marginBottom: "2px" },
+  btnGroup: { display: "flex", flexWrap: "wrap", gap: "4px", flex: 1 },
+  statusBtn: {
+    padding: "5px 10px", borderRadius: "8px", fontSize: "0.76rem",
+    cursor: "pointer", fontWeight: 700, transition: "all 0.15s", minHeight: "32px",
+  },
+
+  /* ─── Weekly view ─── */
+  weekDay: {
+    display: "flex", gap: "10px", padding: "12px 0",
+    borderBottom: "1px solid #f3f4f6", alignItems: "flex-start",
+  },
+  dayChip: {
+    minWidth: "56px", borderRadius: "10px", color: "white",
+    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+    fontWeight: 800, fontSize: "0.7rem", flexShrink: 0, padding: "6px 4px", lineHeight: 1.3,
+  },
+
+  /* ─── Info boxes ─── */
+  calcBox: {
+    display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center",
+    background: "#f8fafc", borderRadius: "10px", padding: "10px 14px",
+    fontSize: "0.82rem", fontWeight: 600, border: "1px solid #e2e8f0",
+  },
+  cutoffBox: {
+    display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center",
+    background: "#fafafa", borderRadius: "10px", padding: "10px 14px",
+    marginBottom: "8px", border: "1px solid #e5e7eb",
   },
   excelInfo: {
-    background: "#f0f7ff", borderRadius: "10px", padding: "10px 12px",
-    marginBottom: "14px", border: "1px solid #bbdefb",
+    background: "linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)",
+    borderRadius: "12px", padding: "12px 14px",
+    marginBottom: "14px", border: "1px solid #bfdbfe",
   },
-  excelInfoTitle: { fontSize: "0.78rem", fontWeight: 700, color: "#1565c0", marginBottom: "8px" },
+  excelInfoTitle: { fontSize: "0.78rem", fontWeight: 700, color: "#1d4ed8", marginBottom: "8px" },
   excelStatRow: { display: "flex", gap: "6px", flexWrap: "wrap" },
   dateBar: {
     display: "flex", alignItems: "center", gap: "6px",
-    background: "#f8f9fa", borderRadius: "8px", padding: "8px 12px",
-    marginBottom: "10px", flexWrap: "wrap",
+    background: "#f8fafc", borderRadius: "10px", padding: "10px 14px",
+    marginBottom: "10px", flexWrap: "wrap", border: "1px solid #e2e8f0",
+  },
+
+  /* ─── Floating next-first bar (fixed bottom) ─── */
+  floatingBar: {
+    position: "fixed", bottom: 0, left: 0, right: 0,
+    background: "linear-gradient(135deg, #1a1a2e 0%, #4e89ae 100%)",
+    color: "white", padding: "12px 20px", zIndex: 30,
+    display: "flex", alignItems: "center", gap: "10px",
+    boxShadow: "0 -4px 20px rgba(26,26,46,0.3)",
   },
 };
