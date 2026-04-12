@@ -1802,11 +1802,11 @@ export default function SchedulePage() {
                 첫번호부터 시작하겠습니까?
               </div>
 
-              {/* 하겠습니다 */}
+              {/* 하겠습니다 → 첫번호 직접 선택 */}
               <button
                 onClick={() => {
-                  applyRoster(queueStartName);
-                  setQueueModal(null);
+                  setQueuePickSearch("");
+                  setQueueModal("pick");
                 }}
                 style={{
                   width: "100%", padding: "14px 0", borderRadius: 12, border: "none",
@@ -1821,7 +1821,7 @@ export default function SchedulePage() {
                   background: "rgba(255,255,255,0.2)", borderRadius: 8,
                   padding: "2px 10px", fontSize: 14, fontWeight: 800,
                 }}>
-                  {queueStartName}부터
+                  첫번호 선택 →
                 </span>
               </button>
 
@@ -1860,20 +1860,11 @@ export default function SchedulePage() {
               </button>
 
               {/* 구분선 */}
-              <div style={{ borderTop: "1px solid #eee", paddingTop: 12, display: "flex", gap: 8 }}>
-                <button
-                  onClick={() => { setQueuePickSearch(""); setQueueModal("pick"); }}
-                  style={{
-                    flex: 1, padding: "8px 0", borderRadius: 8, border: "1px solid #ddd",
-                    background: "transparent", color: "#555", fontSize: 13, cursor: "pointer",
-                  }}
-                >
-                  🔄 새로 지정
-                </button>
+              <div style={{ borderTop: "1px solid #eee", paddingTop: 12 }}>
                 <button
                   onClick={() => { applyRoster(null); saveQueueStart(null); setQueueModal(null); }}
                   style={{
-                    flex: 1, padding: "8px 0", borderRadius: 8, border: "1px solid #ddd",
+                    width: "100%", padding: "8px 0", borderRadius: 8, border: "1px solid #ddd",
                     background: "transparent", color: "#999", fontSize: 13, cursor: "pointer",
                   }}
                 >
