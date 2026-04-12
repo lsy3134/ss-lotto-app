@@ -661,6 +661,36 @@ export default function SchedulePage() {
     return base;
   }
 
+  // ── 실시간 배정 미리보기 ──────────────────────────
+  // 현재 상태(휴무/조출/...)를 반영한 배정 경계 계산 (배정 버튼 누르지 않아도 표시)
+  const livePreview = useMemo(() => {
+    if (names.length === 0) return null;
+    const statuses: Record<string, StatusType> = {};
+    names.forEach((n) => {
+      if (n in manualStatuses) { statuses[n] = manualStatuses[n]; return; }
+      const person = customRosterMap[n];
+      if (person && isAutoOff(person.group, dayOfWeek)) { statuses[n] = "휴무"; return; }
+      statuses[n] = null;
+    });
+    return mode === "2부제"
+      ? assignDouble(names, statuses, shift1Size, shift2Size)
+      : assignSingle(names, statuses, singleSize);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [names, manualStatuses, mode, shift1Size, shift2Size, singleSize, dayOfWeek, customRosterMap]);
+
+  // 이름 → 배정 카테고리 맵 (live)
+  const liveCategoryMap = useMemo<Record<string, "1부" | "1부스페어" | "2부" | "2부스페어" | "스페어" | "단부" | "찾근" | "제외">>(() => {
+    if (!livePreview) return {};
+    const map: Record<string, "1부" | "1부스페어" | "2부" | "2부스페어" | "스페어" | "단부" | "찾근" | "제외"> = {};
+    livePreview.twoRound?.forEach((n: string) => { map[n] = "찾근"; });
+    livePreview.shift1?.forEach((n: string) => { map[n] = mode === "2부제" ? "1부" : "단부"; });
+    livePreview.spare1?.forEach((n: string) => { map[n] = "1부스페어"; });
+    livePreview.shift2?.forEach((n: string) => { map[n] = "2부"; });
+    livePreview.spare2?.forEach((n: string) => { map[n] = mode === "2부제" ? "2부스페어" : "스페어"; });
+    livePreview.excluded?.forEach((n: string) => { map[n] = "제외"; });
+    return map;
+  }, [livePreview, mode]);
+
   // 상태 버튼 목록
   const STATUS_BTNS: { st: StatusType; label: string; color: string; bg: string }[] = [
     { st: "휴무",  label: "휴무",  color: "#757575", bg: "#f5f5f5" },
@@ -811,20 +841,32 @@ export default function SchedulePage() {
   const cho현재수 = names.filter((n) => effectiveStatus(n) === "조출").length;
   const hu현재수 = names.filter((n) => effectiveStatus(n) === "후출").length;
 
-  // 순번 위치에 따른 배정 구간 레이블
+  // 순번 위치에 따른 배정 구간 레이블 (livePreview 기반 정확한 계산)
   function getSlotLabel(name: string): { label: string; color: string } | null {
-    if (mode !== "2부제") return null;
-    const s = effectiveStatus(name);
-    if (s === "찾근") return { label: "투라운드", color: "#00bcd4" };
-    if (s === "조출") return { label: "1부↑", color: "#ff6b35" };
-    if (s === "후출") return { label: "2부↑", color: "#2196f3" };
-    if (EXCLUDED_SET.has(s ?? "")) return null;
-    const qi = activeQueueIndex(name);
-    if (qi < 0) return null;
-    if (qi < shift1Size)          return { label: `1부 #${qi + 1}`, color: "#1565c0" };
-    if (qi === shift1Size)        return { label: "1부스페어", color: "#e65100" };
-    if (qi <= shift1Size + shift2Size) return { label: `2부 #${qi - shift1Size}`, color: "#2e7d32" };
-    return { label: "2부스페어", color: "#6a1b9a" };
+    if (!livePreview) return null;
+    const cat = liveCategoryMap[name];
+    if (!cat) return null;
+    if (cat === "찾근")  return { label: "투라운드", color: "#00bcd4" };
+    if (cat === "제외")  return null;
+    if (cat === "1부") {
+      const idx = livePreview.shift1.indexOf(name);
+      const isLast = idx === livePreview.shift1.length - 1;
+      return { label: `1부 #${idx + 1}${isLast ? " ★" : ""}`, color: "#1565c0" };
+    }
+    if (cat === "1부스페어") return { label: "1부스페어", color: "#e65100" };
+    if (cat === "2부") {
+      const idx = livePreview.shift2.indexOf(name);
+      const isLast = idx === livePreview.shift2.length - 1;
+      return { label: `2부 #${idx + 1}${isLast ? " ★" : ""}`, color: "#2e7d32" };
+    }
+    if (cat === "2부스페어") return { label: "2부스페어", color: "#6a1b9a" };
+    if (cat === "단부") {
+      const idx = livePreview.shift1.indexOf(name);
+      const isLast = idx === livePreview.shift1.length - 1;
+      return { label: `단부 #${idx + 1}${isLast ? " ★" : ""}`, color: "#1565c0" };
+    }
+    if (cat === "스페어") return { label: "스페어", color: "#6a1b9a" };
+    return null;
   }
 
   // 현재 선택된 날짜에 대한 체크 카운트
@@ -2026,7 +2068,7 @@ export default function SchedulePage() {
                     lastJo = joNum;
                     const jc = JO_COLORS[joNum] ?? { bg: "#f5f5f5", color: "#555" };
                     items.push(
-                      <div key={`h-${joNum}`} style={{ padding: "5px 14px 3px", display: "flex", alignItems: "center", gap: "8px" }}>
+                      <div key={`h-${joNum}-${name}`} style={{ padding: "5px 14px 3px", display: "flex", alignItems: "center", gap: "8px" }}>
                         <span style={{
                           background: jc.bg, color: jc.color, fontWeight: 700,
                           fontSize: "0.72rem", padding: "1px 10px", borderRadius: "20px",
@@ -2395,7 +2437,7 @@ export default function SchedulePage() {
                   lastGroup = joNum;
                   const jc = JO_COLORS[joNum] ?? { bg: "#f5f5f5", color: "#555" };
                   rows.push(
-                    <div key={`jo-${joNum}`} style={{
+                    <div key={`jo-${joNum}-${idx}`} style={{
                       display: "flex", alignItems: "center", gap: "8px",
                       padding: "6px 0 4px", marginTop: idx === 0 ? "0" : "4px",
                     }}>
@@ -2495,14 +2537,108 @@ export default function SchedulePage() {
             </div>
           </div>
 
-          {/* 2부제 배정 기준 안내 */}
-          {mode === "2부제" && names.length > 0 && (
-            <div style={S.cutoffBox}>
-              <span style={{ fontWeight: 700, fontSize: "0.78rem", color: "#555", marginRight: "6px" }}>배정 기준</span>
-              <span style={{ color: "#1565c0", fontSize: "0.75rem" }}>1~{shift1Size}번 → 1부</span>
-              <span style={{ color: "#e65100", fontSize: "0.75rem" }}>{shift1Size + 1}번 → 1부스페어</span>
-              <span style={{ color: "#2e7d32", fontSize: "0.75rem" }}>{shift1Size + 2}~{totalSize + 1}번 → 2부</span>
-              <span style={{ color: "#6a1b9a", fontSize: "0.75rem" }}>{totalSize + 2}번~ → 2부스페어</span>
+          {/* ── 배정 경계선 실시간 미리보기 ── */}
+          {livePreview && names.length > 0 && (
+            <div style={{
+              background: "#f8f9ff", border: "1.5px solid #c5cae9", borderRadius: 12,
+              padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6,
+            }}>
+              <div style={{ fontWeight: 700, fontSize: "0.78rem", color: "#3949ab", marginBottom: 2 }}>
+                🔍 배정 경계선 미리보기
+              </div>
+
+              {mode === "2부제" ? (<>
+                {/* 1부 마지막 */}
+                {livePreview.shift1.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{
+                      fontSize: "0.7rem", fontWeight: 800, color: "#1565c0",
+                      background: "#e3f2fd", borderRadius: 6, padding: "2px 7px", minWidth: 70, textAlign: "center",
+                    }}>1부 마지막</span>
+                    <span style={{ fontSize: 15, fontWeight: 800, color: "#1565c0" }}>
+                      {livePreview.shift1[livePreview.shift1.length - 1]}
+                    </span>
+                    <span style={{ fontSize: "0.7rem", color: "#90a4ae" }}>
+                      (총 {livePreview.shift1.length}명)
+                    </span>
+                  </div>
+                )}
+
+                {/* 1부 스페어 */}
+                {livePreview.spare1.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{
+                      fontSize: "0.7rem", fontWeight: 800, color: "#e65100",
+                      background: "#fff3e0", borderRadius: 6, padding: "2px 7px", minWidth: 70, textAlign: "center",
+                    }}>1부 스페어</span>
+                    <span style={{ fontSize: 15, fontWeight: 800, color: "#e65100" }}>
+                      {livePreview.spare1.join(", ")}
+                    </span>
+                  </div>
+                )}
+
+                {/* 2부 마지막 */}
+                {livePreview.shift2.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{
+                      fontSize: "0.7rem", fontWeight: 800, color: "#2e7d32",
+                      background: "#e8f5e9", borderRadius: 6, padding: "2px 7px", minWidth: 70, textAlign: "center",
+                    }}>2부 마지막</span>
+                    <span style={{ fontSize: 15, fontWeight: 800, color: "#2e7d32" }}>
+                      {livePreview.shift2[livePreview.shift2.length - 1]}
+                    </span>
+                    <span style={{ fontSize: "0.7rem", color: "#90a4ae" }}>
+                      (총 {livePreview.shift2.length}명)
+                    </span>
+                  </div>
+                )}
+
+                {/* 2부 스페어 */}
+                {livePreview.spare2.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    <span style={{
+                      fontSize: "0.7rem", fontWeight: 800, color: "#6a1b9a",
+                      background: "#f3e5f5", borderRadius: 6, padding: "2px 7px", minWidth: 70, textAlign: "center", flexShrink: 0,
+                    }}>2부 스페어</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: "#6a1b9a" }}>
+                      {livePreview.spare2.join("  ·  ")}
+                    </span>
+                    <span style={{ fontSize: "0.7rem", color: "#90a4ae" }}>
+                      ({livePreview.spare2.length}명)
+                    </span>
+                  </div>
+                )}
+              </>) : (<>
+                {/* 단부제: 단부 마지막 & 스페어 */}
+                {livePreview.shift1.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{
+                      fontSize: "0.7rem", fontWeight: 800, color: "#1565c0",
+                      background: "#e3f2fd", borderRadius: 6, padding: "2px 7px", minWidth: 70, textAlign: "center",
+                    }}>단부 마지막</span>
+                    <span style={{ fontSize: 15, fontWeight: 800, color: "#1565c0" }}>
+                      {livePreview.shift1[livePreview.shift1.length - 1]}
+                    </span>
+                    <span style={{ fontSize: "0.7rem", color: "#90a4ae" }}>
+                      (총 {livePreview.shift1.length}명)
+                    </span>
+                  </div>
+                )}
+                {livePreview.spare2.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    <span style={{
+                      fontSize: "0.7rem", fontWeight: 800, color: "#6a1b9a",
+                      background: "#f3e5f5", borderRadius: 6, padding: "2px 7px", minWidth: 70, textAlign: "center", flexShrink: 0,
+                    }}>스페어</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: "#6a1b9a" }}>
+                      {livePreview.spare2.join("  ·  ")}
+                    </span>
+                    <span style={{ fontSize: "0.7rem", color: "#90a4ae" }}>
+                      ({livePreview.spare2.length}명)
+                    </span>
+                  </div>
+                )}
+              </>)}
             </div>
           )}
 
