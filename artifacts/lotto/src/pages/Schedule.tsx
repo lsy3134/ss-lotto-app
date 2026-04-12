@@ -379,8 +379,41 @@ export default function SchedulePage() {
     localStorage.setItem("lotto_dateStatuses", JSON.stringify(dateStatuses));
   }, [dateStatuses]);
 
+  // VIP 날짜별 저장 (localStorage)
+  type VipRound = "1부" | "2부" | null;
+  interface VipEntry { count: number; round: VipRound }
+  const [vipData, setVipData] = useState<Record<string, VipEntry>>(() => {
+    try {
+      const saved = localStorage.getItem("lotto_vipData");
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
+  useEffect(() => {
+    localStorage.setItem("lotto_vipData", JSON.stringify(vipData));
+  }, [vipData]);
+
+  const [vipPickerOpen, setVipPickerOpen] = useState(false);
+
   // 현재 선택 날짜 키 (e.g. "04.01 (수)")
   const currentDateKey = selectedDate?.dateLabel ?? "";
+
+  const currentVip: VipEntry = useMemo(
+    () => vipData[currentDateKey] ?? { count: 0, round: null },
+    [vipData, currentDateKey]
+  );
+  function setCurrentVip(v: Partial<VipEntry>) {
+    if (!currentDateKey) return;
+    setVipData(prev => {
+      const cur = prev[currentDateKey] ?? { count: 0, round: null };
+      const next = { ...cur, ...v };
+      if (next.count === 0 && !next.round) {
+        const upd = { ...prev };
+        delete upd[currentDateKey];
+        return upd;
+      }
+      return { ...prev, [currentDateKey]: next };
+    });
+  }
 
   // 현재 날짜의 수동 상태 (derived)
   const manualStatuses = useMemo(
@@ -911,6 +944,109 @@ export default function SchedulePage() {
                   ⚠ 예약팀수 미입력 — 아래에서 직접 팀수를 입력해 주세요
                 </div>
               )}
+
+              {/* ── VIP 섹션 ── */}
+              <div style={{ marginTop: "12px", borderTop: "1px solid #e8e0f0", paddingTop: "10px" }}>
+                {/* VIP 헤더 행 */}
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                  <span style={{ fontWeight: 800, fontSize: "0.85rem", color: "#7b1fa2" }}>
+                    👑 VIP
+                  </span>
+                  {currentVip.count > 0 && (
+                    <span style={{
+                      padding: "2px 8px", borderRadius: "8px",
+                      background: "#f3e5f5", color: "#7b1fa2",
+                      fontSize: "0.78rem", fontWeight: 700,
+                    }}>
+                      {currentVip.count}팀 {currentVip.round ? `(${currentVip.round})` : ""}
+                    </span>
+                  )}
+                  <button
+                    onClick={() => setVipPickerOpen(v => !v)}
+                    style={{
+                      marginLeft: "auto", padding: "4px 12px", borderRadius: "10px",
+                      border: `1.5px solid ${vipPickerOpen ? "#7b1fa2" : "#ce93d8"}`,
+                      background: vipPickerOpen ? "#7b1fa2" : "#fce4ec",
+                      color: vipPickerOpen ? "#fff" : "#7b1fa2",
+                      fontWeight: 700, fontSize: "0.78rem", cursor: "pointer",
+                    }}>
+                    {vipPickerOpen ? "닫기" : (currentVip.count > 0 ? "수정" : "+ 추가")}
+                  </button>
+                </div>
+
+                {/* VIP 입력 패널 */}
+                {vipPickerOpen && (
+                  <div style={{
+                    background: "#fdf5ff", borderRadius: "12px",
+                    padding: "12px", border: "1.5px solid #ce93d8",
+                  }}>
+                    {/* 팀수 입력 */}
+                    <div style={{ marginBottom: "10px" }}>
+                      <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#555", display: "block", marginBottom: "5px" }}>
+                        VIP 팀수
+                      </label>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <button
+                          onClick={() => setCurrentVip({ count: Math.max(0, currentVip.count - 1) })}
+                          style={{
+                            width: "36px", height: "36px", borderRadius: "10px",
+                            border: "1.5px solid #ce93d8", background: "#fff",
+                            color: "#7b1fa2", fontSize: "1.2rem", fontWeight: 700, cursor: "pointer",
+                          }}>−</button>
+                        <span style={{ fontSize: "1.4rem", fontWeight: 900, color: "#7b1fa2", minWidth: "32px", textAlign: "center" }}>
+                          {currentVip.count}
+                        </span>
+                        <button
+                          onClick={() => setCurrentVip({ count: currentVip.count + 1 })}
+                          style={{
+                            width: "36px", height: "36px", borderRadius: "10px",
+                            border: "1.5px solid #ce93d8", background: "#fff",
+                            color: "#7b1fa2", fontSize: "1.2rem", fontWeight: 700, cursor: "pointer",
+                          }}>＋</button>
+                        {currentVip.count > 0 && (
+                          <button
+                            onClick={() => { setCurrentVip({ count: 0, round: null }); setVipPickerOpen(false); }}
+                            style={{
+                              marginLeft: "auto", padding: "4px 10px", borderRadius: "8px",
+                              border: "1px solid #ef9a9a", background: "#ffebee",
+                              color: "#c62828", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer",
+                            }}>삭제</button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 1부 / 2부 선택 */}
+                    {currentVip.count > 0 && (
+                      <div>
+                        <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#555", display: "block", marginBottom: "5px" }}>
+                          나가는 부
+                        </label>
+                        <div style={{ display: "flex", gap: "8px" }}>
+                          {(["1부", "2부"] as VipRound[]).filter(Boolean).map(r => (
+                            <button
+                              key={r!}
+                              onClick={() => setCurrentVip({ round: currentVip.round === r ? null : r })}
+                              style={{
+                                flex: 1, padding: "10px", borderRadius: "12px",
+                                border: `2px solid ${currentVip.round === r ? "#7b1fa2" : "#ce93d8"}`,
+                                background: currentVip.round === r ? "#7b1fa2" : "#fff",
+                                color: currentVip.round === r ? "#fff" : "#7b1fa2",
+                                fontWeight: 800, fontSize: "0.9rem", cursor: "pointer",
+                              }}>
+                              {r}
+                            </button>
+                          ))}
+                        </div>
+                        {currentVip.round && (
+                          <div style={{ marginTop: "8px", fontSize: "0.75rem", color: "#7b1fa2", fontWeight: 600 }}>
+                            ✅ VIP {currentVip.count}팀 → {currentVip.round} 배정
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* ── OCR 휴무 달력 자동 적용 ── */}
               <div style={{ marginTop: "12px", borderTop: "1px solid #e0e0e0", paddingTop: "10px" }}>
