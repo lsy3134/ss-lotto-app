@@ -1427,13 +1427,16 @@ export default function SchedulePage() {
                         alignItems: "center", justifyContent: "center",
                         padding: "6px 10px",
                         borderRadius: "8px",
-                        border: activeDaegeun.length > 0 ? "1.5px solid #f59e0b" : "1px solid #f59e0b55",
-                        background: activeDaegeun.length > 0 ? "#fef3c7" : "#fffbeb15",
+                        border: `1px solid ${activeDaegeun.length > 0 ? "#f59e0b" : "#f59e0b33"}`,
+                        background: activeDaegeun.length > 0 ? "#fef3c7" : "#f59e0b15",
                         cursor: "pointer",
                         minWidth: "52px",
+                        fontFamily: "inherit",
+                        lineHeight: 1,
+                        outline: "none",
                         WebkitTapHighlightColor: "transparent",
                       }}>
-                      <span style={{ fontSize: "0.65rem", fontWeight: 700, color: "#92400e" }}>대근</span>
+                      <span style={{ fontSize: "0.65rem", fontWeight: 600, color: "#92400e" }}>대근</span>
                       <span style={{ fontSize: "1rem", fontWeight: 700, color: activeDaegeun.length > 0 ? "#f59e0b" : "#d1d5db" }}>
                         {activeDaegeun.length > 0 ? activeDaegeun.length : daegeunCandidates.length}
                       </span>
@@ -1453,13 +1456,16 @@ export default function SchedulePage() {
                         alignItems: "center", justifyContent: "center",
                         padding: "6px 10px",
                         borderRadius: "8px",
-                        border: active ? "1.5px solid #c62828" : "1px solid #c6282855",
-                        background: active ? "#ffebee" : "#fff5f515",
+                        border: `1px solid ${active ? "#c62828" : "#c6282833"}`,
+                        background: active ? "#ffebee" : "#c6282815",
                         cursor: "pointer",
                         minWidth: "52px",
+                        fontFamily: "inherit",
+                        lineHeight: 1,
+                        outline: "none",
                         WebkitTapHighlightColor: "transparent",
                       }}>
-                      <span style={{ fontSize: "0.65rem", fontWeight: 700, color: "#b71c1c" }}>병가</span>
+                      <span style={{ fontSize: "0.65rem", fontWeight: 600, color: "#b71c1c" }}>병가</span>
                       <span style={{ fontSize: "1rem", fontWeight: 700, color: active ? "#c62828" : "#d1d5db" }}>
                         {active ? sickCnt : "–"}
                       </span>
