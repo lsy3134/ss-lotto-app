@@ -89,7 +89,7 @@
         to   { transform: translateY(0);    opacity: 1; }
       }
 
-      /* ── 설치 배너 ── */
+      /* ── 안드로이드 설치 배너 ── */
       #pwa-install-banner {
         display: none;
         position: fixed;
@@ -130,6 +130,52 @@
         font-size: 1rem !important;
       }
 
+      /* ── iOS 설치 안내 배너 ── */
+      #ios-install-banner {
+        display: none;
+        position: fixed;
+        bottom: calc(0px + var(--sab));
+        left: 0; right: 0;
+        background: #fff;
+        border-top: 1px solid #e5e7eb;
+        border-radius: 20px 20px 0 0;
+        padding: 18px 20px calc(18px + var(--sab));
+        z-index: 9999;
+        box-shadow: 0 -4px 24px rgba(0,0,0,0.15);
+        font-family: 'Inter', sans-serif;
+        animation: slideUp 0.3s ease;
+      }
+      #ios-install-banner.visible { display: block; }
+      #ios-install-banner .ios-title {
+        font-size: 1rem; font-weight: 800; color: #1a1a2e;
+        display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
+      }
+      #ios-install-banner .ios-steps {
+        display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;
+      }
+      #ios-install-banner .ios-step {
+        display: flex; align-items: center; gap: 10px;
+        font-size: 0.88rem; color: #374151;
+      }
+      #ios-install-banner .ios-step-num {
+        width: 24px; height: 24px; border-radius: 50%;
+        background: #1a1a2e; color: #fff;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 0.75rem; font-weight: 800; flex-shrink: 0;
+      }
+      #ios-install-banner .ios-icon {
+        display: inline-block;
+        background: #007aff; color: #fff;
+        border-radius: 6px; padding: 1px 6px;
+        font-size: 0.85rem; font-weight: 700;
+      }
+      #ios-install-close-btn {
+        width: 100%; padding: 12px; border: none;
+        background: #f3f4f6; border-radius: 12px;
+        font-size: 0.9rem; font-weight: 700; color: #6b7280;
+        cursor: pointer;
+      }
+
       @media print {
         body * { visibility: hidden; }
         #print-area, #print-area * { visibility: visible; }
@@ -140,17 +186,37 @@
     </style>
   </head>
   <body>
-    <!-- PWA 설치 배너 (beforeinstallprompt) -->
+    <!-- 안드로이드 PWA 설치 배너 -->
     <div id="pwa-install-banner" aria-label="앱 설치 배너">
       <span>📲 SS앱 홈 화면에 추가</span>
       <button id="pwa-install-btn">설치</button>
       <button id="pwa-install-close">✕</button>
     </div>
 
+    <!-- iOS 설치 안내 배너 -->
+    <div id="ios-install-banner" aria-label="iOS 설치 안내">
+      <div class="ios-title">📲 SS앱 홈 화면에 추가하기</div>
+      <div class="ios-steps">
+        <div class="ios-step">
+          <div class="ios-step-num">1</div>
+          <span>하단 <span class="ios-icon">공유 □↑</span> 버튼을 탭하세요</span>
+        </div>
+        <div class="ios-step">
+          <div class="ios-step-num">2</div>
+          <span>스크롤해서 <strong>「홈 화면에 추가」</strong> 를 탭하세요</span>
+        </div>
+        <div class="ios-step">
+          <div class="ios-step-num">3</div>
+          <span>우측 상단 <strong>「추가」</strong> 를 탭하면 완료!</span>
+        </div>
+      </div>
+      <button id="ios-install-close-btn">닫기</button>
+    </div>
+
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
 
-    <!-- Service Worker 등록 + beforeinstallprompt 처리 -->
+    <!-- Service Worker 등록 + PWA 설치 처리 -->
     <script>
       (function () {
         'use strict';
@@ -158,11 +224,8 @@
         // ── Service Worker 등록 ──────────────────────────────
         if ('serviceWorker' in navigator) {
           window.addEventListener('load', function () {
-            const swPath = (document.querySelector('link[rel="manifest"]')
-              ? document.querySelector('link[rel="manifest"]').href.replace('manifest.json', '')
-              : './') + 'sw.js';
             navigator.serviceWorker
-              .register(swPath, { scope: './' })
+              .register('./sw.js', { scope: './' })
               .then(function (reg) {
                 console.log('[SW] registered, scope:', reg.scope);
               })
@@ -172,27 +235,53 @@
           });
         }
 
-        // ── beforeinstallprompt (설치 배너) ─────────────────
+        // ── 공통: 이미 standalone(홈 화면 앱)이면 아무것도 안 함 ──
+        var isStandalone =
+          window.matchMedia('(display-mode: standalone)').matches ||
+          window.navigator.standalone === true;
+        if (isStandalone) return;
+
+        // ── 배너 하루 이내 닫은 경우 스킵 ──────────────────────
+        var dismissed = localStorage.getItem('pwa_banner_dismissed');
+        if (dismissed && Date.now() - Number(dismissed) < 86400000) return;
+
+        // ── iOS 감지 ────────────────────────────────────────
+        var ua = navigator.userAgent || '';
+        var isIOS = /iPhone|iPad|iPod/.test(ua) ||
+          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        var isSafari = /Safari/.test(ua) && !/Chrome|CriOS|FxiOS/.test(ua);
+
+        if (isIOS) {
+          // iOS: Safari인 경우에만 안내 (Chrome 등은 설치 불가)
+          if (!isSafari) return;
+          var iosBanner = document.getElementById('ios-install-banner');
+          var iosCloseBtn = document.getElementById('ios-install-close-btn');
+          // 2초 후 배너 표시
+          setTimeout(function () {
+            if (iosBanner) iosBanner.classList.add('visible');
+          }, 2000);
+          if (iosCloseBtn) {
+            iosCloseBtn.addEventListener('click', function () {
+              iosBanner.classList.remove('visible');
+              localStorage.setItem('pwa_banner_dismissed', Date.now().toString());
+            });
+          }
+          return;
+        }
+
+        // ── 안드로이드 / 데스크탑 Chrome: beforeinstallprompt ──
         var deferredPrompt = null;
         var banner = document.getElementById('pwa-install-banner');
         var installBtn = document.getElementById('pwa-install-btn');
         var closeBtn = document.getElementById('pwa-install-close');
 
-        // 이미 설치됐거나 standalone이면 숨김
-        var isStandalone =
-          window.matchMedia('(display-mode: standalone)').matches ||
-          window.navigator.standalone === true;
-
-        if (!isStandalone) {
-          window.addEventListener('beforeinstallprompt', function (e) {
-            e.preventDefault();
-            deferredPrompt = e;
-            // 3초 후 배너 표시
-            setTimeout(function () {
-              banner.classList.add('visible');
-            }, 3000);
-          });
-        }
+        window.addEventListener('beforeinstallprompt', function (e) {
+          e.preventDefault();
+          deferredPrompt = e;
+          setTimeout(function () {
+            if (banner) banner.classList.add('visible');
+          }, 2000);
+        });
 
         if (installBtn) {
           installBtn.addEventListener('click', function () {
@@ -200,28 +289,24 @@
             deferredPrompt.prompt();
             deferredPrompt.userChoice.then(function (result) {
               if (result.outcome === 'accepted') {
-                console.log('[PWA] 설치 완료');
                 localStorage.setItem('pwa_installed', '1');
               }
               deferredPrompt = null;
-              banner.classList.remove('visible');
+              if (banner) banner.classList.remove('visible');
             });
           });
         }
 
         if (closeBtn) {
           closeBtn.addEventListener('click', function () {
-            banner.classList.remove('visible');
-            // 하루 동안 배너 비활성화
+            if (banner) banner.classList.remove('visible');
             localStorage.setItem('pwa_banner_dismissed', Date.now().toString());
           });
         }
 
-        // ── 앱 설치 완료 감지 ────────────────────────────────
         window.addEventListener('appinstalled', function () {
-          console.log('[PWA] 앱 설치됨');
           localStorage.setItem('pwa_installed', '1');
-          banner.classList.remove('visible');
+          if (banner) banner.classList.remove('visible');
         });
       })();
     </script>
