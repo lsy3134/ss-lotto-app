@@ -1371,7 +1371,8 @@ export default function SchedulePage() {
                 <StatBadge label="가용인원" value={selectedDate.가용인원} color="#1565c0" />
                 <StatBadge label="예약팀수" value={selectedDate.예약팀수 || "미입력"} color={selectedDate.예약팀수 > 0 ? "#2e7d32" : "#9e9e9e"} />
                 {(() => {
-                  const daegeunCandidates = names.filter(n => {
+                  const daegeunBaseNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
+                  const daegeunCandidates = daegeunBaseNames.filter(n => {
                     const p = customRosterMap[n];
                     return p != null && isAutoOff(p.group, dayOfWeek) && !(n in manualStatuses);
                   });
@@ -1407,7 +1408,8 @@ export default function SchedulePage() {
                 gap: "7px", marginTop: "12px",
               }}>
                 {STATUS_BTNS.map(({ st, label, color, bg }) => {
-                  const cnt = names.filter(n => effectiveStatus(n) === st).length;
+                  const countNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
+                  const cnt = countNames.filter(n => effectiveStatus(n, dayOfWeek) === st).length;
                   const active = cnt > 0;
                   return (
                     <button key={st}
@@ -2768,7 +2770,8 @@ export default function SchedulePage() {
 
       {/* ─── 대근 일괄 모달 ─── */}
       {batchDaegeunOpen && (() => {
-        const candidates = names.filter(n => {
+        const batchBaseNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
+        const candidates = batchBaseNames.filter(n => {
           const p = customRosterMap[n];
           return p != null && isAutoOff(p.group, dayOfWeek) && !(n in manualStatuses);
         });
