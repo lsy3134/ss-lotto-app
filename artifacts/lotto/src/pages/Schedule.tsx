@@ -275,31 +275,30 @@ function assignSingle(
 }
 
 // ── 다음날 예상 순번 계산기 ───────────────────────────
-// 규정: 오늘 스페어(앞번호 우선) → 찾근자 → 오늘 근무자 순서
-// "뒷번호가 스페어를 스면 앞번호는 죽어" = 앞번호(낮은 큐)가 다음날 먼저
+// 규정:
+//   - 찾근은 당일만 적용 → 다음날은 일반 순번 대기
+//   - 오늘 2부스페어(앞번호) → 나머지 전체 큐 순서 (찾근 여부 무시)
+//   - 제외(병가·당번 등)는 맨 뒤
 function buildNextDayQueue(
-  allNames: string[],     // 전체 이름 (원래 큐 순서)
+  allNames: string[],     // 전체 이름 (오늘 currentNames 큐 순서)
   spare1: string[],
   spare2: string[],
-  twoRound: string[],
+  twoRound: string[],     // 사용하지 않음 — 찾근은 당일만 적용
   excluded: string[]
 ): string[] {
-  const spareSet   = new Set([...spare1, ...spare2]);
-  const twoRndSet  = new Set(twoRound);
-  const exclSet    = new Set(excluded);
+  const spareSet = new Set([...spare1, ...spare2]);
+  const exclSet  = new Set(excluded);
 
-  // ① 스페어를 선 사람: 1부스페어 → 2부스페어 (앞번호 = 낮은 큐 인덱스가 먼저)
-  const spares = [...spare1, ...spare2];
+  // ① 오늘 2부스페어: 앞번호부터 (1부스페어는 오늘 2부도 나갔으므로 포함X)
+  const spares = [...spare2];
 
-  // ② 찾근자 (원래 큐 순서 유지)
-  const twoRndOrdered = allNames.filter(n => twoRndSet.has(n));
+  // ② 나머지: 스페어·제외 아닌 전원 → 큐 순서 그대로 (찾근 구분 없음)
+  const rest = allNames.filter(n => !spareSet.has(n) && !exclSet.has(n));
 
-  // ③ 오늘 실제 근무자 (스페어·찾근·제외 아닌 나머지, 원래 큐 순서)
-  const workers = allNames.filter(
-    n => !spareSet.has(n) && !twoRndSet.has(n) && !exclSet.has(n)
-  );
+  // ③ 제외자(병가·당번 등) → 맨 뒤
+  const excls = allNames.filter(n => exclSet.has(n));
 
-  return [...spares, ...twoRndOrdered, ...workers];
+  return [...spares, ...rest, ...excls];
 }
 
 
@@ -965,42 +964,32 @@ export default function SchedulePage() {
         ? assignDouble(currentNames, statuses, s1, s2)
         : assignSingle(currentNames, statuses, ss);
 
-      // ── 다음날 currentNames 재정렬 (규정: spare2앞번호 → 찾근 → 근무자 → 오늘휴무) ──
+      // ── 다음날 currentNames 재정렬 (규정: 2부스페어 앞번호 → 나머지 순번 대기) ──
       {
         const spare2Set = new Set(result.spare2);
-        const twoRndSet = new Set(result.twoRound);
-        const exclNow   = new Set(result.excluded);
 
-        // ① 오늘 2부스페어 → 앞번호 순서 유지
-        const nextSpares  = [...result.spare2];
+        // 찾근은 당일만 적용 — 내일 큐 재정렬 시 찾근 구분 없음
+        // ① 오늘 2부스페어 → 앞번호 순서 (내일 첫번호)
+        const nextSpares = [...result.spare2];
 
-        // ② 오늘 찾근자 → 원래 큐 순서
-        const nextTwoRnd  = currentNames.filter(n => twoRndSet.has(n));
-
-        // ③ 일반 근무자 + 오늘 휴무/제외자 (큐 위치 유지 — 내일 상태는 날짜별 별도 결정)
-        let nextWorkers = currentNames.filter(
-          n => !spare2Set.has(n) && !twoRndSet.has(n)
-        );
+        // ② 나머지 전원 (스페어 제외, 찾근 여부 무관) → 큐 순서 유지
+        let nextRest = currentNames.filter(n => !spare2Set.has(n));
 
         if (result.spare2.length > 0) {
-          // spare2 있음: workers 순서는 그대로 유지
-          // (spare2[0]가 현재 큐에서 처음 남은 사람 → workers 상대 순서 유지)
+          // spare2 있음: rest 순서는 그대로 유지
         } else {
-          // spare2 없음: 오늘 마지막으로 근무한 일반 근무자 다음 번호부터 내일 시작
-          // 2부제: shift2 마지막 찾근 제외 일반 근무자, 단부제: shift1 마지막
-          const todayLast = (mode === "2부제" ? result.shift2 : result.shift1)
-            .filter(n => !twoRndSet.has(n))
-            .at(-1);
+          // spare2 없음: 오늘 마지막 근무자 다음 번호부터 시작
+          const todayLast = (mode === "2부제" ? result.shift2 : result.shift1).at(-1);
           if (todayLast) {
-            const li = nextWorkers.indexOf(todayLast);
-            if (li >= 0 && nextWorkers.length > 1) {
-              const startAt = (li + 1) % nextWorkers.length;
-              nextWorkers = [...nextWorkers.slice(startAt), ...nextWorkers.slice(0, startAt)];
+            const li = nextRest.indexOf(todayLast);
+            if (li >= 0 && nextRest.length > 1) {
+              const startAt = (li + 1) % nextRest.length;
+              nextRest = [...nextRest.slice(startAt), ...nextRest.slice(0, startAt)];
             }
           }
         }
 
-        currentNames = [...nextSpares, ...nextTwoRnd, ...nextWorkers];
+        currentNames = [...nextSpares, ...nextRest];
       }
 
       return [...acc, { day: dateLabel || day, result }];
@@ -3172,15 +3161,12 @@ function NextDayQueueView({
   spare2: string[];
   twoRound: string[];
 }) {
-  const spare1Set  = new Set(spare1);
-  const spare2Set  = new Set(spare2);
-  const twoRndSet  = new Set(twoRound);
+  // 찾근은 당일만 적용 — 다음날 예상 순번에서는 태그 없음
+  // 오직 2부스페어만 강조 표시 (내일 첫번호이므로)
+  const spare2Set = new Set(spare2);
 
-  // 종류별 색상
   function tagOf(name: string) {
-    if (spare1Set.has(name))  return { label: "1부스페어", color: "#e65100", bg: "#fff3e0" };
-    if (spare2Set.has(name))  return { label: "2부스페어", color: "#6a1b9a", bg: "#f3e5f5" };
-    if (twoRndSet.has(name))  return { label: "찾근",     color: "#00838f", bg: "#e0f7fa" };
+    if (spare2Set.has(name)) return { label: "2부스페어", color: "#6a1b9a", bg: "#f3e5f5" };
     return null;
   }
 
@@ -3198,7 +3184,7 @@ function NextDayQueueView({
       <div style={{ fontWeight: 700, fontSize: "0.78rem", color: "#3f51b5", marginBottom: "8px" }}>
         📅 다음날 예상 첫 순번
         <span style={{ fontWeight: 400, color: "#888", marginLeft: "6px", fontSize: "0.72rem" }}>
-          (2부스페어 앞번호 → 찾근 → 근무자 순)
+          (2부스페어 앞번호 → 나머지 순번 대기 순)
         </span>
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
