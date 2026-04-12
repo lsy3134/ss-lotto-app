@@ -647,12 +647,6 @@ export default function SchedulePage() {
             📋 순번표 불러오기 (63명)
           </button>
 
-          <div style={{ textAlign: "center", color: "#aaa", fontSize: "0.8rem", marginBottom: "12px" }}>또는 직접 입력</div>
-
-          <label style={S.label}>이름 목록 (한 줄에 한 명)</label>
-          <textarea value={nameText} onChange={(e) => setNameText(e.target.value)}
-            placeholder={"홍길동\n김철수"} rows={5} style={S.textarea} />
-          <button onClick={confirmNames} style={S.primaryBtn}>다음 →</button>
         </div>
       )}
 
