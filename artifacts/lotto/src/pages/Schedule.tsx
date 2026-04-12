@@ -11,7 +11,7 @@ type StatusType =
   | "당번" | "병가" | "휴무" | "하우스"
   | null;
 
-type Mode = "복부제" | "단부제";
+type Mode = "2부제" | "단부제";
 
 const STATUS_BUTTONS: StatusType[] = [
   "조출", "후출", "찾근", "당번", "병가", "휴무", "하우스",
@@ -203,15 +203,23 @@ function applyAutoOff(
   return result;
 }
 
+// ── 조 순서로 정렬된 순번표 ────────────────────────
+const SORTED_ROSTER = [...ROSTER].sort((a, b) => {
+  if (a.조 !== b.조) return a.조 - b.조;
+  return a.no - b.no;
+});
+
 // ── 메인 컴포넌트 ─────────────────────────────────
 export default function SchedulePage() {
   const [, setLocation] = useLocation();
   const { excelDays, loading: xlLoading, error: xlError } = useExcelData();
 
   // 설정
-  const [mode, setMode] = useState<Mode>("복부제");
+  const [mode, setMode] = useState<Mode>("2부제");
+  // 2부제: totalSize = 총팀수, shift1Size = 1부팀수, shift2Size = 총팀수 - 1부팀수
+  const [totalSize, setTotalSize] = useState(70);
   const [shift1Size, setShift1Size] = useState(35);
-  const [shift2Size, setShift2Size] = useState(35);
+  const shift2Size = Math.max(0, totalSize - shift1Size);
   const [singleSize, setSingleSize] = useState(60);
   const [nameText, setNameText] = useState("");
   const [dayOfWeek, setDayOfWeek] = useState(0);
@@ -260,16 +268,17 @@ export default function SchedulePage() {
     setSelectedDate(day);
     setDayOfWeek(day.dayIdx);
     if (day.예약팀수 > 0) {
-      const half = Math.round(day.예약팀수 / 2);
+      const total = day.예약팀수;
+      const half = Math.round(total / 2);
+      setTotalSize(total);
       setShift1Size(half);
-      setShift2Size(day.예약팀수 - half);
-      setSingleSize(day.예약팀수);
+      setSingleSize(total);
     }
   }
 
-  // 순번표 불러오기
+  // 순번표 불러오기 (1조→2조→3조→4조 순서)
   function loadRoster() {
-    const loaded = ROSTER.map((p) => p.name);
+    const loaded = SORTED_ROSTER.map((p) => p.name);
     setNames(loaded);
     setRosterLoaded(true);
     setManualStatuses({});
@@ -298,7 +307,7 @@ export default function SchedulePage() {
 
   function assign() {
     const statuses = getEffective(dayOfWeek);
-    const result = mode === "복부제"
+    const result = mode === "2부제"
       ? assignDouble(names, statuses, shift1Size, shift2Size)
       : assignSingle(names, statuses, singleSize);
     setDayResult(result);
@@ -308,7 +317,7 @@ export default function SchedulePage() {
   function generateWeek() {
     const results = DAY_LABELS.map((day, di) => {
       const statuses = getEffective(di);
-      const result = mode === "복부제"
+      const result = mode === "2부제"
         ? assignDouble(names, statuses, shift1Size, shift2Size)
         : assignSingle(names, statuses, singleSize);
       return { day, result };
@@ -317,13 +326,37 @@ export default function SchedulePage() {
     setDayResult(null);
   }
 
-  function canChakgeun(name: string): boolean {
-    if (mode === "단부제") return false;
-    const active = names.filter((n) => !EXCLUDED_SET.has(effectiveStatus(n) ?? ""));
-    return active.indexOf(name) >= shift1Size;
+  // 활성 인원 대기열(제외 제외)에서의 순번 인덱스
+  function activeQueueIndex(name: string): number {
+    const active = names.filter((n) => {
+      const s = effectiveStatus(n);
+      return s !== "찾근" && !EXCLUDED_SET.has(s ?? "");
+    });
+    return active.indexOf(name);
   }
 
-  // 현재 선택된 날짜에 대한 당번/찾근 카운트 (사용자가 체크한 것)
+  function canChakgeun(name: string): boolean {
+    if (mode === "단부제") return false;
+    return activeQueueIndex(name) >= shift1Size;
+  }
+
+  // 순번 위치에 따른 배정 구간 레이블
+  function getSlotLabel(name: string): { label: string; color: string } | null {
+    if (mode !== "2부제") return null;
+    const s = effectiveStatus(name);
+    if (s === "찾근") return { label: "투라운드", color: "#00bcd4" };
+    if (s === "조출") return { label: "1부↑", color: "#ff6b35" };
+    if (s === "후출") return { label: "2부↑", color: "#2196f3" };
+    if (EXCLUDED_SET.has(s ?? "")) return null;
+    const qi = activeQueueIndex(name);
+    if (qi < 0) return null;
+    if (qi < shift1Size)          return { label: `1부 #${qi + 1}`, color: "#1565c0" };
+    if (qi === shift1Size)        return { label: "1부스페어", color: "#e65100" };
+    if (qi <= shift1Size + shift2Size) return { label: `2부 #${qi - shift1Size}`, color: "#2e7d32" };
+    return { label: "2부스페어", color: "#6a1b9a" };
+  }
+
+  // 현재 선택된 날짜에 대한 체크 카운트
   const checkedCounts = {
     찾근: names.filter((n) => effectiveStatus(n) === "찾근").length,
     조출: names.filter((n) => effectiveStatus(n) === "조출").length,
@@ -353,7 +386,7 @@ export default function SchedulePage() {
           {/* 운영 모드 */}
           <label style={S.label}>운영 방식</label>
           <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
-            {(["복부제", "단부제"] as Mode[]).map((m) => (
+            {(["2부제", "단부제"] as Mode[]).map((m) => (
               <button key={m} onClick={() => setMode(m)}
                 style={{ ...S.modeBtn, background: mode === m ? "#1a1a2e" : "#f0f0f0", color: mode === m ? "#fff" : "#555" }}>
                 {m}
@@ -432,17 +465,30 @@ export default function SchedulePage() {
           )}
 
           {/* 팀수 입력 */}
-          {mode === "복부제" ? (
-            <div style={{ display: "flex", gap: "10px", marginBottom: "14px", marginTop: "14px" }}>
-              <div style={{ flex: 1 }}>
-                <label style={S.label}>1부 팀수</label>
-                <input type="number" value={shift1Size} min={1}
-                  onChange={(e) => setShift1Size(Number(e.target.value))} style={S.numInput} />
+          {mode === "2부제" ? (
+            <div style={{ marginBottom: "14px", marginTop: "14px" }}>
+              <div style={{ display: "flex", gap: "10px", marginBottom: "8px" }}>
+                <div style={{ flex: 1 }}>
+                  <label style={S.label}>총 팀수</label>
+                  <input type="number" value={totalSize} min={1}
+                    onChange={(e) => setTotalSize(Number(e.target.value))} style={S.numInput} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={S.label}>1부 팀수</label>
+                  <input type="number" value={shift1Size} min={1} max={totalSize}
+                    onChange={(e) => setShift1Size(Number(e.target.value))} style={S.numInput} />
+                </div>
               </div>
-              <div style={{ flex: 1 }}>
-                <label style={S.label}>2부 팀수</label>
-                <input type="number" value={shift2Size} min={1}
-                  onChange={(e) => setShift2Size(Number(e.target.value))} style={S.numInput} />
+              {/* 자동 계산 결과 표시 */}
+              <div style={S.calcBox}>
+                <span style={{ color: "#1565c0" }}>1부 {shift1Size}팀</span>
+                <span style={{ color: "#aaa" }}>+</span>
+                <span style={{ color: "#2e7d32" }}>2부 {shift2Size}팀</span>
+                <span style={{ color: "#aaa" }}>=</span>
+                <span style={{ fontWeight: 700 }}>총 {totalSize}팀</span>
+                <span style={{ color: "#aaa", margin: "0 4px" }}>│</span>
+                <span style={{ color: "#e65100", fontSize: "0.75rem" }}>1부스페어: {shift1Size + 1}번째</span>
+                <span style={{ color: "#6a1b9a", fontSize: "0.75rem" }}>2부스페어: {totalSize + 2}번째~</span>
               </div>
             </div>
           ) : (
@@ -516,8 +562,12 @@ export default function SchedulePage() {
             {/* 설정 정보 */}
             <div style={S.infoRow}>
               <span style={S.chip}>{mode}</span>
-              {mode === "복부제"
-                ? <span style={S.chip}>1부 {shift1Size}팀 · 2부 {shift2Size}팀</span>
+              {mode === "2부제"
+                ? <>
+                    <span style={S.chip}>1부 {shift1Size}팀</span>
+                    <span style={S.chip}>2부 {shift2Size}팀</span>
+                    <span style={{ ...S.chip, fontWeight: 700 }}>총 {totalSize}팀</span>
+                  </>
                 : <span style={S.chip}>{singleSize}팀</span>}
               <span style={S.chip}>총 {names.length}명</span>
               {rosterLoaded && (
@@ -529,62 +579,104 @@ export default function SchedulePage() {
               )}
             </div>
 
-            {/* 인원 리스트 */}
-            {names.map((name, idx) => {
-              const person = ROSTER_MAP[name];
-              const effS = effectiveStatus(name, dayOfWeek);
-              const isAutoHuму = !(name in manualStatuses) && effS === "휴무";
-
-              return (
-                <div key={name} style={{
-                  ...S.personRow,
-                  opacity: effS === "휴무" ? 0.55 : 1,
-                }}>
-                  <span style={S.personNum}>{idx + 1}</span>
-
-                  <div style={{ minWidth: "70px" }}>
-                    <div style={S.personName}>{name}</div>
-                    {person && (
-                      <span style={{
-                        fontSize: "0.62rem",
-                        padding: "1px 5px",
-                        borderRadius: "4px",
-                        background: GROUP_STYLE[person.group].bg,
-                        color: GROUP_STYLE[person.group].color,
-                        fontWeight: 700,
+            {/* 인원 리스트 (조별 구분) */}
+            {(() => {
+              const rows: React.ReactNode[] = [];
+              let lastGroup: number | null = null;
+              const JO_COLORS: Record<number, { bg: string; color: string }> = {
+                1: { bg: "#fce4ec", color: "#c62828" },
+                2: { bg: "#e8f5e9", color: "#2e7d32" },
+                3: { bg: "#e3f2fd", color: "#1565c0" },
+                4: { bg: "#fff8e1", color: "#f57f17" },
+              };
+              names.forEach((name, idx) => {
+                const person = ROSTER_MAP[name];
+                const joNum = person?.조;
+                // 조 구분 헤더
+                if (rosterLoaded && joNum !== undefined && joNum !== lastGroup) {
+                  lastGroup = joNum;
+                  const jc = JO_COLORS[joNum] ?? { bg: "#f5f5f5", color: "#555" };
+                  rows.push(
+                    <div key={`jo-${joNum}`} style={{
+                      display: "flex", alignItems: "center", gap: "8px",
+                      padding: "6px 0 4px", marginTop: idx === 0 ? "0" : "4px",
+                    }}>
+                      <div style={{
+                        background: jc.bg, color: jc.color,
+                        fontWeight: 700, fontSize: "0.78rem",
+                        padding: "2px 12px", borderRadius: "20px",
+                        border: `1px solid ${jc.color}44`,
                       }}>
-                        {GROUP_STYLE[person.group].label}
-                        {isAutoHuму ? " (자동)" : ""}
-                      </span>
-                    )}
-                  </div>
+                        {joNum}조
+                      </div>
+                      <div style={{ flex: 1, height: "1px", background: jc.color + "33" }} />
+                    </div>
+                  );
+                }
 
-                  <div style={S.btnGroup}>
-                    {STATUS_BUTTONS.filter((btn) =>
-                      mode !== "단부제" || (btn !== "조출" && btn !== "후출")
-                    ).map((btn) => {
-                      const active = effS === btn;
-                      const isAutoActive = active && isAutoHuму;
-                      const disabled = btn === "찾근" && !canChakgeun(name) && effS !== "찾근";
-                      const col = active ? STATUS_COLOR[btn!] : null;
-                      return (
-                        <button key={btn} disabled={disabled}
-                          onClick={() => toggleStatus(name, btn)}
-                          style={{
-                            ...S.statusBtn,
-                            background: active ? col!.bg : "#f0f0f0",
-                            color: active ? col!.color : disabled ? "#ccc" : "#555",
-                            border: isAutoActive ? `2px dashed ${col!.bg}` : active ? "none" : "1px solid #e0e0e0",
-                            opacity: disabled ? 0.4 : 1,
+                const effS = effectiveStatus(name, dayOfWeek);
+                const isAutoHumu = !(name in manualStatuses) && effS === "휴무";
+                const slotLabel = getSlotLabel(name);
+
+                rows.push(
+                  <div key={name} style={{
+                    ...S.personRow,
+                    opacity: effS === "휴무" ? 0.5 : 1,
+                  }}>
+                    <span style={S.personNum}>{person?.no ?? idx + 1}</span>
+
+                    <div style={{ minWidth: "72px" }}>
+                      <div style={S.personName}>{name}</div>
+                      <div style={{ display: "flex", gap: "3px", flexWrap: "wrap" }}>
+                        {person && (
+                          <span style={{
+                            fontSize: "0.6rem", padding: "1px 4px", borderRadius: "4px",
+                            background: GROUP_STYLE[person.group].bg,
+                            color: GROUP_STYLE[person.group].color, fontWeight: 700,
                           }}>
-                          {btn}
-                        </button>
-                      );
-                    })}
+                            {GROUP_STYLE[person.group].label}{isAutoHumu ? "(자동)" : ""}
+                          </span>
+                        )}
+                        {slotLabel && (
+                          <span style={{
+                            fontSize: "0.6rem", padding: "1px 4px", borderRadius: "4px",
+                            background: slotLabel.color + "18",
+                            color: slotLabel.color, fontWeight: 700,
+                          }}>
+                            {slotLabel.label}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={S.btnGroup}>
+                      {STATUS_BUTTONS.filter((btn) =>
+                        mode !== "단부제" || (btn !== "조출" && btn !== "후출")
+                      ).map((btn) => {
+                        const active = effS === btn;
+                        const isAutoActive = active && isAutoHumu;
+                        const disabled = btn === "찾근" && !canChakgeun(name) && effS !== "찾근";
+                        const col = active ? STATUS_COLOR[btn!] : null;
+                        return (
+                          <button key={btn} disabled={disabled}
+                            onClick={() => toggleStatus(name, btn)}
+                            style={{
+                              ...S.statusBtn,
+                              background: active ? col!.bg : "#f0f0f0",
+                              color: active ? col!.color : disabled ? "#ccc" : "#555",
+                              border: isAutoActive ? `2px dashed ${col!.bg}` : active ? "none" : "1px solid #e0e0e0",
+                              opacity: disabled ? 0.4 : 1,
+                            }}>
+                            {btn}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              });
+              return rows;
+            })()}
 
             <div style={{ display: "flex", gap: "8px", marginTop: "16px" }}>
               <button onClick={assign} style={{ ...S.primaryBtn, flex: 1 }}>배정하기</button>
@@ -593,6 +685,17 @@ export default function SchedulePage() {
               </button>
             </div>
           </div>
+
+          {/* 2부제 배정 기준 안내 */}
+          {mode === "2부제" && names.length > 0 && (
+            <div style={S.cutoffBox}>
+              <span style={{ fontWeight: 700, fontSize: "0.78rem", color: "#555", marginRight: "6px" }}>배정 기준</span>
+              <span style={{ color: "#1565c0", fontSize: "0.75rem" }}>1~{shift1Size}번 → 1부</span>
+              <span style={{ color: "#e65100", fontSize: "0.75rem" }}>{shift1Size + 1}번 → 1부스페어</span>
+              <span style={{ color: "#2e7d32", fontSize: "0.75rem" }}>{shift1Size + 2}~{totalSize + 1}번 → 2부</span>
+              <span style={{ color: "#6a1b9a", fontSize: "0.75rem" }}>{totalSize + 2}번~ → 2부스페어</span>
+            </div>
+          )}
 
           {/* 1일 결과 */}
           {dayResult && weekly.length === 0 && (
@@ -678,7 +781,7 @@ const CATS_SINGLE = [
 function DayResultView({ result, mode, compact = false }: {
   result: DayResult; mode: Mode; compact?: boolean;
 }) {
-  const cats = mode === "복부제" ? CATS_DOUBLE : CATS_SINGLE;
+  const cats = mode === "2부제" ? CATS_DOUBLE : CATS_SINGLE;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: compact ? "4px" : "10px" }}>
       {cats.map(({ key, label, badge }) => {
@@ -766,6 +869,16 @@ const S: Record<string, React.CSSProperties> = {
     minWidth: "28px", height: "28px", borderRadius: "8px",
     color: "white", display: "flex", alignItems: "center", justifyContent: "center",
     fontWeight: 700, fontSize: "0.85rem", flexShrink: 0, marginTop: "1px",
+  },
+  calcBox: {
+    display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center",
+    background: "#f8f9fa", borderRadius: "8px", padding: "8px 12px",
+    fontSize: "0.82rem", fontWeight: 600,
+  },
+  cutoffBox: {
+    display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center",
+    background: "#fafafa", borderRadius: "8px", padding: "8px 12px",
+    margin: "0 0 8px", border: "1px solid #e0e0e0",
   },
   dateGrid: {
     display: "grid", gridTemplateColumns: "repeat(5, 1fr)",
