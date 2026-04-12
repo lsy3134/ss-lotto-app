@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useLocation } from "wouter";
 import * as XLSX from "xlsx";
 import { ROSTER, isAutoOff, type GroupType, type PersonData } from "../data/roster";
+import { createWorker } from "tesseract.js";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -250,6 +251,73 @@ function buildNextDayQueue(
 
 
 
+// ── OCR 달력 파싱 ────────────────────────────────
+interface OcrWord {
+  text: string;
+  bbox: { x0: number; x1: number; y0: number; y1: number };
+}
+
+function parseCalendarOCR(words: OcrWord[]): Record<string, string[]> {
+  const dateNums: { date: number; cx: number; y: number }[] = [];
+  const korNames: { name: string; cx: number; y: number }[] = [];
+
+  for (const w of words) {
+    const raw = w.text.trim();
+    const cx = (w.bbox.x0 + w.bbox.x1) / 2;
+    const cy = (w.bbox.y0 + w.bbox.y1) / 2;
+
+    // 날짜 숫자 (1~31)
+    if (/^\d{1,2}$/.test(raw)) {
+      const n = parseInt(raw, 10);
+      if (n >= 1 && n <= 31) {
+        dateNums.push({ date: n, cx, y: cy });
+        continue;
+      }
+    }
+
+    // 한국어 이름 (2~4자)
+    const clean = raw.replace(/[^가-힣]/g, "");
+    if (/^[가-힣]{2,4}$/.test(clean)) {
+      korNames.push({ name: clean, cx, y: cy });
+    }
+  }
+
+  const result: Record<string, string[]> = {};
+
+  for (const nm of korNames) {
+    let bestDate: number | null = null;
+    let bestScore = Infinity;
+
+    for (const dn of dateNums) {
+      const dx = Math.abs(nm.cx - dn.cx);
+      const dy = nm.y - dn.y; // 양수 = 이름이 날짜 아래
+      if (dx > 120) continue;  // 다른 열
+      if (dy < -30) continue;  // 이름이 날짜 위에 너무 많이 올라가면 제외
+
+      const score = dx * 2 + Math.abs(dy) * 0.1;
+      if (score < bestScore) { bestScore = score; bestDate = dn.date; }
+    }
+
+    if (bestDate !== null) {
+      const key = String(bestDate);
+      if (!result[key]) result[key] = [];
+      if (!result[key].includes(nm.name)) result[key].push(nm.name);
+    }
+  }
+
+  return result;
+}
+
+async function runCalendarOCR(file: File): Promise<Record<string, string[]>> {
+  const worker = await createWorker("kor");
+  try {
+    const { data } = await worker.recognize(file);
+    return parseCalendarOCR(data.words as OcrWord[]);
+  } finally {
+    await worker.terminate();
+  }
+}
+
 // ── 메인 컴포넌트 ─────────────────────────────────
 export default function SchedulePage() {
   const [, setLocation] = useLocation();
@@ -332,6 +400,13 @@ export default function SchedulePage() {
 
   // 명단 보기 모달 (해당 상태인 사람만 표시)
   const [viewStatusModal, setViewStatusModal] = useState<"당번" | "휴무" | "병가" | null>(null);
+
+  // ── OCR 상태 ────────────────────────────────────
+  const ocrFileRef = useRef<HTMLInputElement>(null);
+  const [ocrState, setOcrState] = useState<"idle" | "running" | "done" | "error">("idle");
+  const [ocrProgress, setOcrProgress] = useState(0);
+  const [ocrAllDates, setOcrAllDates] = useState<Record<string, string[]>>({});
+  const [ocrPreview, setOcrPreview] = useState<string[]>([]);  // 현재 날짜 추출 이름들
 
   // ── 사용자 정의 순번표 (localStorage 영구 저장) ──
   const [customRoster, setCustomRoster] = useState<PersonData[]>(() => {
@@ -485,6 +560,81 @@ export default function SchedulePage() {
     setModalStatus(st);
     setModalSearch("");
   }
+
+  // OCR 핸들러: 이미지 업로드 → Tesseract OCR → 날짜별 이름 추출
+  async function handleOcrFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+
+    setOcrState("running");
+    setOcrProgress(0);
+    setOcrPreview([]);
+
+    try {
+      // Tesseract.js는 파일 크기에 따라 30초~2분 소요
+      // progress 가상 타이머 (UI 피드백용)
+      const timer = setInterval(() => {
+        setOcrProgress((p) => Math.min(p + 4, 90));
+      }, 600);
+
+      const result = await runCalendarOCR(file);
+
+      clearInterval(timer);
+      setOcrProgress(100);
+      setOcrAllDates(result);
+
+      // 현재 선택된 날짜의 결과를 미리보기로 표시
+      if (currentDateKey) {
+        const dayNum = currentDateKey.split(".")[1]?.split(" ")[0]?.replace(/^0/, "");
+        const dayNames = dayNum ? (result[dayNum] ?? []) : [];
+        setOcrPreview(dayNames);
+      }
+
+      setOcrState("done");
+    } catch (err) {
+      console.error("OCR error:", err);
+      setOcrState("error");
+    }
+  }
+
+  // OCR 결과를 현재 날짜에 휴무로 자동 적용
+  function applyOcrToCurrentDate() {
+    if (!currentDateKey || ocrPreview.length === 0) return;
+
+    // 순번표가 없으면 자동 로드
+    let currentNames = names;
+    if (currentNames.length === 0) {
+      currentNames = sortedCustomRoster.map((p) => p.name);
+      setNames(currentNames);
+      setRosterLoaded(true);
+    }
+
+    setManualStatuses((prev) => {
+      const next = { ...prev };
+      for (const ocrName of ocrPreview) {
+        // 순번표에 있는 이름과 매칭 (이름이 포함되어 있거나 앞 2자가 같을 때)
+        const matched = currentNames.find(
+          (n) => n === ocrName || n.startsWith(ocrName.slice(0, 2))
+        );
+        const key = matched ?? ocrName;
+        next[key] = "휴무";
+      }
+      return next;
+    });
+
+    setOcrPreview([]);
+    setOcrState("idle");
+  }
+
+  // OCR 전체 결과에서 현재 날짜 미리보기 갱신
+  useEffect(() => {
+    if (ocrState === "done" && currentDateKey && Object.keys(ocrAllDates).length > 0) {
+      const dayNum = currentDateKey.split(".")[1]?.split(" ")[0]?.replace(/^0/, "");
+      const preview = dayNum ? (ocrAllDates[dayNum] ?? []) : [];
+      setOcrPreview(preview);
+    }
+  }, [currentDateKey, ocrAllDates, ocrState]);
 
   function assign() {
     const statuses = getEffective(dayOfWeek);
@@ -710,6 +860,109 @@ export default function SchedulePage() {
                   ⚠ 예약팀수 미입력 — 아래에서 직접 팀수를 입력해 주세요
                 </div>
               )}
+
+              {/* ── OCR 휴무 달력 자동 적용 ── */}
+              <div style={{ marginTop: "12px", borderTop: "1px solid #e0e0e0", paddingTop: "10px" }}>
+                <input
+                  ref={ocrFileRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: "none" }}
+                  onChange={handleOcrFile}
+                />
+                {ocrState === "idle" && (
+                  <button
+                    onClick={() => ocrFileRef.current?.click()}
+                    style={{
+                      width: "100%", padding: "9px", borderRadius: "10px",
+                      border: "1.5px dashed #90a4ae", background: "#f8fbff",
+                      color: "#546e7a", fontSize: "0.82rem", fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    📷 휴무 달력 이미지 업로드 → 자동 OCR
+                  </button>
+                )}
+
+                {ocrState === "running" && (
+                  <div style={{ textAlign: "center", padding: "10px 0" }}>
+                    <div style={{ fontSize: "0.8rem", color: "#1565c0", marginBottom: "6px" }}>
+                      🔍 이미지 분석 중... {ocrProgress}%
+                    </div>
+                    <div style={{
+                      height: "6px", background: "#e3f2fd", borderRadius: "4px", overflow: "hidden",
+                    }}>
+                      <div style={{
+                        height: "100%", width: `${ocrProgress}%`,
+                        background: "#1565c0", borderRadius: "4px",
+                        transition: "width 0.5s",
+                      }} />
+                    </div>
+                    <div style={{ fontSize: "0.72rem", color: "#90a4ae", marginTop: "4px" }}>
+                      한국어 OCR 처리 중 (30초~2분 소요)
+                    </div>
+                  </div>
+                )}
+
+                {ocrState === "error" && (
+                  <div style={{ fontSize: "0.78rem", color: "#c62828", textAlign: "center", padding: "8px" }}>
+                    ❌ OCR 실패 — 다시 시도해 주세요
+                    <button
+                      onClick={() => setOcrState("idle")}
+                      style={{ marginLeft: "8px", background: "none", border: "none", color: "#1565c0", cursor: "pointer", fontSize: "0.78rem" }}
+                    >
+                      다시 업로드
+                    </button>
+                  </div>
+                )}
+
+                {ocrState === "done" && (
+                  <div style={{ fontSize: "0.8rem" }}>
+                    <div style={{ fontWeight: 700, color: "#1a1a2e", marginBottom: "6px" }}>
+                      📋 {selectedDate.dateLabel} OCR 결과 ({ocrPreview.length}명)
+                    </div>
+                    {ocrPreview.length === 0 ? (
+                      <div style={{ color: "#9e9e9e", fontSize: "0.75rem" }}>
+                        이 날짜에 추출된 휴무자가 없습니다
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{
+                          display: "flex", flexWrap: "wrap", gap: "5px", marginBottom: "8px",
+                        }}>
+                          {ocrPreview.map((n) => (
+                            <span key={n} style={{
+                              padding: "2px 8px", borderRadius: "8px",
+                              background: "#e3f2fd", color: "#1565c0",
+                              fontSize: "0.78rem", fontWeight: 600,
+                            }}>{n}</span>
+                          ))}
+                        </div>
+                        <button
+                          onClick={applyOcrToCurrentDate}
+                          style={{
+                            width: "100%", padding: "9px", borderRadius: "10px",
+                            border: "none", background: "#1565c0", color: "#fff",
+                            fontSize: "0.85rem", fontWeight: 800, cursor: "pointer",
+                          }}
+                        >
+                          ✅ {ocrPreview.length}명 휴무 자동 적용
+                        </button>
+                      </>
+                    )}
+                    <button
+                      onClick={() => { setOcrState("idle"); setOcrAllDates({}); setOcrPreview([]); }}
+                      style={{
+                        marginTop: "6px", width: "100%", padding: "6px",
+                        borderRadius: "8px", border: "1px solid #ddd",
+                        background: "none", color: "#9e9e9e", fontSize: "0.75rem", cursor: "pointer",
+                      }}
+                    >
+                      초기화
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
