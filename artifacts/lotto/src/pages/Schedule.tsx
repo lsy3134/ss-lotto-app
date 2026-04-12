@@ -300,6 +300,10 @@ export default function SchedulePage() {
   const [weekly, setWeekly] = useState<{ day: string; result: DayResult }[]>([]);
   const [view, setView] = useState<"input" | "assign">("input");
 
+  // 상태 선택 모달
+  const [modalStatus, setModalStatus] = useState<StatusType | null>(null);
+  const [modalSearch, setModalSearch] = useState("");
+
   // 현재 요일의 유효 상태 반환
   function effectiveStatus(name: string, dayIdx: number = dayOfWeek): StatusType {
     if (name in manualStatuses) return manualStatuses[name];
@@ -596,6 +600,199 @@ export default function SchedulePage() {
       {/* ─── 배정 단계 ─── */}
       {view === "assign" && (
         <>
+          {/* ── 상태 선택 모달 ── */}
+          {modalStatus && (
+            <div style={{
+              position: "fixed", inset: 0, zIndex: 200,
+              background: "rgba(0,0,0,0.45)",
+              display: "flex", flexDirection: "column", justifyContent: "flex-end",
+            }}
+              onClick={(e) => { if (e.target === e.currentTarget) setModalStatus(null); }}
+            >
+              <div style={{
+                background: "#fff", borderRadius: "18px 18px 0 0",
+                maxHeight: "88vh", display: "flex", flexDirection: "column",
+                overflow: "hidden",
+              }}>
+                {/* 모달 헤더 */}
+                <div style={{
+                  display: "flex", alignItems: "center", padding: "14px 16px",
+                  borderBottom: "1px solid #f0f0f0",
+                  background: (STATUS_COLOR[modalStatus!] ?? { bg: "#f5f5f5" }).bg,
+                }}>
+                  <span style={{ fontWeight: 800, fontSize: "1rem", color: (STATUS_COLOR[modalStatus!] ?? { color: "#333" }).color }}>
+                    {modalStatus} 배정
+                  </span>
+                  <span style={{ marginLeft: "8px", fontSize: "0.78rem", color: "#666" }}>
+                    현재 {names.filter(n => effectiveStatus(n) === modalStatus).length}명 선택됨
+                  </span>
+                  <button onClick={() => setModalStatus(null)}
+                    style={{
+                      marginLeft: "auto", background: "rgba(0,0,0,0.08)", border: "none",
+                      borderRadius: "50%", width: "30px", height: "30px",
+                      cursor: "pointer", fontSize: "1rem", fontWeight: 700, color: "#555",
+                    }}>✕</button>
+                </div>
+
+                {/* 검색창 */}
+                <div style={{ padding: "10px 14px", borderBottom: "1px solid #f0f0f0" }}>
+                  <input
+                    value={modalSearch}
+                    onChange={(e) => setModalSearch(e.target.value)}
+                    placeholder="🔍 이름 검색..."
+                    autoFocus
+                    style={{
+                      width: "100%", padding: "8px 12px", borderRadius: "10px",
+                      border: "1.5px solid #e0e0e0", fontSize: "0.9rem",
+                      outline: "none", boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+
+                {/* 현재 선택된 사람 칩 */}
+                {names.filter(n => effectiveStatus(n) === modalStatus).length > 0 && (
+                  <div style={{ padding: "8px 14px 4px", display: "flex", flexWrap: "wrap", gap: "5px", borderBottom: "1px solid #f0f0f0" }}>
+                    {names.filter(n => effectiveStatus(n) === modalStatus).map(n => (
+                      <span key={n}
+                        onClick={() => toggleStatus(n, modalStatus!)}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: "4px",
+                          padding: "3px 10px", borderRadius: "20px",
+                          background: (STATUS_COLOR[modalStatus!] ?? { bg: "#eee" }).bg,
+                          color: (STATUS_COLOR[modalStatus!] ?? { color: "#333" }).color,
+                          fontWeight: 700, fontSize: "0.8rem", cursor: "pointer",
+                          border: `1.5px solid ${(STATUS_COLOR[modalStatus!] ?? { color: "#888" }).color}44`,
+                        }}>
+                        {n} <span style={{ fontSize: "0.75rem" }}>✕</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* 순번표 목록 */}
+                <div style={{ overflowY: "auto", flex: 1, padding: "6px 0 16px" }}>
+                  {(() => {
+                    const query = modalSearch.trim().toLowerCase();
+                    const filtered = names.filter(n =>
+                      !query || n.toLowerCase().includes(query) ||
+                      (ROSTER_MAP[n]?.조?.toString() ?? "").includes(query)
+                    );
+                    const JO_COLORS: Record<number, { bg: string; color: string }> = {
+                      1: { bg: "#fce4ec", color: "#c62828" },
+                      2: { bg: "#e8f5e9", color: "#2e7d32" },
+                      3: { bg: "#e3f2fd", color: "#1565c0" },
+                      4: { bg: "#fff8e1", color: "#f57f17" },
+                    };
+                    let lastJo: number | null = null;
+                    const items: React.ReactNode[] = [];
+
+                    filtered.forEach((name) => {
+                      const person = ROSTER_MAP[name];
+                      const joNum = person?.조;
+                      const effS = effectiveStatus(name);
+                      const isSelected = effS === modalStatus;
+                      const isDifferent = effS !== null && effS !== modalStatus;
+
+                      // 조 헤더 (검색 없을 때만)
+                      if (!query && rosterLoaded && joNum !== undefined && joNum !== lastJo) {
+                        lastJo = joNum;
+                        const jc = JO_COLORS[joNum] ?? { bg: "#f5f5f5", color: "#555" };
+                        items.push(
+                          <div key={`h-${joNum}`} style={{
+                            padding: "5px 14px 3px",
+                            display: "flex", alignItems: "center", gap: "8px",
+                          }}>
+                            <span style={{
+                              background: jc.bg, color: jc.color, fontWeight: 700,
+                              fontSize: "0.72rem", padding: "1px 10px", borderRadius: "20px",
+                              border: `1px solid ${jc.color}44`,
+                            }}>{joNum}조</span>
+                            <div style={{ flex: 1, height: "1px", background: jc.color + "33" }} />
+                          </div>
+                        );
+                      }
+
+                      // 개별 사람 항목
+                      // 찾근: canChakgeun / 조출: cho가능 + count < 4 / 후출: count < 4 검사
+                      const isDisabled = (() => {
+                        if (isSelected) return false; // 해제는 항상 가능
+                        if (modalStatus === "찾근") return !canChakgeun(name);
+                        if (modalStatus === "조출") return !cho가능 || (cho현재수 >= 4);
+                        if (modalStatus === "후출") return hu현재수 >= 4;
+                        return false;
+                      })();
+
+                      items.push(
+                        <div key={name}
+                          onClick={() => !isDisabled && toggleStatus(name, modalStatus!)}
+                          style={{
+                            display: "flex", alignItems: "center", gap: "10px",
+                            padding: "9px 14px",
+                            background: isSelected ? (STATUS_COLOR[modalStatus!] ?? { bg: "#eee" }).bg + "55" : "transparent",
+                            borderLeft: isSelected ? `3px solid ${(STATUS_COLOR[modalStatus!] ?? { color: "#888" }).color}` : "3px solid transparent",
+                            cursor: isDisabled ? "not-allowed" : "pointer",
+                            opacity: isDisabled ? 0.4 : 1,
+                          }}
+                        >
+                          {/* 체크박스 */}
+                          <div style={{
+                            width: "22px", height: "22px", borderRadius: "6px", flexShrink: 0,
+                            border: `2px solid ${isSelected ? (STATUS_COLOR[modalStatus!] ?? { color: "#888" }).color : "#ddd"}`,
+                            background: isSelected ? (STATUS_COLOR[modalStatus!] ?? { bg: "#eee" }).bg : "#fff",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                          }}>
+                            {isSelected && <span style={{ fontSize: "0.85rem", color: (STATUS_COLOR[modalStatus!] ?? { color: "#333" }).color, fontWeight: 900 }}>✓</span>}
+                          </div>
+                          {/* 이름 + 조 */}
+                          <div style={{ flex: 1 }}>
+                            <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>{name}</span>
+                            {person && (
+                              <span style={{
+                                marginLeft: "6px", fontSize: "0.65rem",
+                                color: GROUP_STYLE[person.group].color, fontWeight: 600,
+                              }}>
+                                {person.조}조 · {GROUP_STYLE[person.group].label}
+                              </span>
+                            )}
+                          </div>
+                          {/* 현재 다른 상태 배지 */}
+                          {isDifferent && (
+                            <span style={{
+                              padding: "2px 8px", borderRadius: "12px", fontSize: "0.7rem", fontWeight: 700,
+                              background: (STATUS_COLOR[effS!] ?? { bg: "#eee" }).bg,
+                              color: (STATUS_COLOR[effS!] ?? { color: "#555" }).color,
+                            }}>{effS}</span>
+                          )}
+                          {isDisabled && !isSelected && (
+                            <span style={{ fontSize: "0.65rem", color: "#bbb" }}>불가</span>
+                          )}
+                        </div>
+                      );
+                    });
+
+                    if (items.length === 0) {
+                      return <div style={{ textAlign: "center", color: "#bbb", padding: "30px" }}>검색 결과 없음</div>;
+                    }
+                    return items;
+                  })()}
+                </div>
+
+                {/* 하단 완료 버튼 */}
+                <div style={{ padding: "10px 14px", borderTop: "1px solid #f0f0f0" }}>
+                  <button onClick={() => setModalStatus(null)}
+                    style={{
+                      width: "100%", padding: "12px", borderRadius: "12px", border: "none",
+                      background: (STATUS_COLOR[modalStatus!] ?? { bg: "#1a1a2e" }).bg,
+                      color: (STATUS_COLOR[modalStatus!] ?? { color: "#fff" }).color,
+                      fontWeight: 700, fontSize: "0.95rem", cursor: "pointer",
+                    }}>
+                    완료 ({names.filter(n => effectiveStatus(n) === modalStatus).length}명 선택됨)
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div style={S.card}>
             {/* 요일 선택 */}
             <label style={{ ...S.label, marginBottom: "8px" }}>오늘 요일</label>
@@ -627,52 +824,105 @@ export default function SchedulePage() {
               </div>
             )}
 
-            {/* 조출·후출·찾근 규정 안내 */}
-            {mode === "2부제" && (
-              <div style={{
-                background: "#f8f9ff", border: "1px solid #e0e4ff", borderRadius: "10px",
-                padding: "10px 12px", marginBottom: "10px", fontSize: "0.75rem", color: "#444",
-              }}>
-                <div style={{ fontWeight: 700, color: "#3f51b5", marginBottom: "6px" }}>
-                  📘 조출·후출·찾근 규정 (PDF 기준)
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px" }}>
-                  <div style={{ background: "#fff3ee", borderRadius: "7px", padding: "5px 7px", borderLeft: "3px solid #ff6b35" }}>
-                    <div style={{ fontWeight: 700, color: "#ff6b35" }}>조출</div>
-                    <div>1부 배치 (앞)</div>
-                    <div>최대 4명</div>
-                    <div style={{ color: shift1Size >= 6 ? "#2e7d32" : "#c62828", fontWeight: 600 }}>
-                      {shift1Size >= 6 ? `✓ 사용 가능` : `✗ 1부 6팀+`}
-                    </div>
-                  </div>
-                  <div style={{ background: "#e8f4ff", borderRadius: "7px", padding: "5px 7px", borderLeft: "3px solid #2196f3" }}>
-                    <div style={{ fontWeight: 700, color: "#2196f3" }}>후출</div>
-                    <div>2부 배치 (뒤)</div>
-                    <div>최대 4명</div>
-                    <div style={{ color: "#2e7d32", fontWeight: 600 }}>뒤에서 3번째</div>
-                  </div>
-                  <div style={{ background: "#e0faf9", borderRadius: "7px", padding: "5px 7px", borderLeft: "3px solid #00bcd4" }}>
-                    <div style={{ fontWeight: 700, color: "#00838f" }}>찾근</div>
-                    <div>1부+2부 투라운드</div>
-                    <div>조출자보다 앞</div>
-                    <div style={{ color: shift1Size >= 6 ? "#2e7d32" : "#c62828", fontWeight: 600 }}>
-                      {shift1Size >= 6 ? `✓ 2부순번~` : `✗ 1부 6팀+`}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* 현재 체크 현황 */}
+            {/* ── 빠른 상태 배정 버튼 ── */}
             {names.length > 0 && (
-              <div style={{ display: "flex", gap: "5px", marginBottom: "10px", flexWrap: "wrap" }}>
-                {checkedCounts.찾근 > 0 && <MiniCount label="찾근" count={checkedCounts.찾근} color="#00bcd4" />}
-                {checkedCounts.조출 > 0 && <MiniCount label={`조출 (${cho현재수}/4)`} count={checkedCounts.조출} color="#ff6b35" />}
-                {checkedCounts.후출 > 0 && <MiniCount label={`후출 (${hu현재수}/4)`} count={checkedCounts.후출} color="#2196f3" />}
-                {checkedCounts.당번 > 0 && <MiniCount label="당번" count={checkedCounts.당번} color="#e53935" />}
-                {checkedCounts.병가 > 0 && <MiniCount label="병가" count={checkedCounts.병가} color="#9e9e9e" />}
-                {checkedCounts.휴무 > 0 && <MiniCount label="휴무" count={checkedCounts.휴무} color="#bdbdbd" />}
-              </div>
+              <>
+                {/* 조출·후출·찾근 (2부제만) */}
+                {mode === "2부제" && (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "7px", marginBottom: "8px" }}>
+                    {[
+                      {
+                        status: "조출" as StatusType,
+                        icon: "⬆", color: "#ff6b35", bg: "#fff3ee",
+                        label: "조출", sub: `1부 앞배치`,
+                        count: cho현재수, max: 4,
+                        disabled: !cho가능,
+                        hint: !cho가능 ? "1부 6팀+" : ""
+                      },
+                      {
+                        status: "후출" as StatusType,
+                        icon: "⬇", color: "#2196f3", bg: "#e8f4ff",
+                        label: "후출", sub: `2부 뒤배치`,
+                        count: hu현재수, max: 4, disabled: false, hint: ""
+                      },
+                      {
+                        status: "찾근" as StatusType,
+                        icon: "🔄", color: "#00838f", bg: "#e0faf9",
+                        label: "찾근", sub: `1+2부 투라운드`,
+                        count: checkedCounts.찾근 ?? 0, max: null,
+                        disabled: !cho가능,
+                        hint: !cho가능 ? "1부 6팀+" : ""
+                      },
+                    ].map(({ status, icon, color, bg, label, sub, count, max, disabled, hint }) => (
+                      <button key={status}
+                        onClick={() => { if (!disabled) { setModalStatus(status); setModalSearch(""); } }}
+                        style={{
+                          background: disabled ? "#f5f5f5" : bg,
+                          border: `1.5px solid ${disabled ? "#e0e0e0" : color + "66"}`,
+                          borderRadius: "10px", padding: "8px 6px",
+                          cursor: disabled ? "not-allowed" : "pointer",
+                          textAlign: "center", opacity: disabled ? 0.55 : 1,
+                        }}
+                        title={hint}
+                      >
+                        <div style={{ fontSize: "1.2rem", marginBottom: "2px" }}>{icon}</div>
+                        <div style={{ fontWeight: 700, fontSize: "0.82rem", color: disabled ? "#aaa" : color }}>{label}</div>
+                        <div style={{ fontSize: "0.68rem", color: "#888" }}>{sub}</div>
+                        <div style={{
+                          marginTop: "4px", fontWeight: 700, fontSize: "0.9rem",
+                          color: count > 0 ? color : "#bbb",
+                        }}>
+                          {count}{max ? `/${max}` : ""}명
+                        </div>
+                        {hint && <div style={{ fontSize: "0.6rem", color: "#c62828", marginTop: "2px" }}>{hint}</div>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* 당번·휴무·병가 */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "7px", marginBottom: "10px" }}>
+                  {[
+                    {
+                      status: "당번" as StatusType,
+                      icon: "📋", color: "#e53935", bg: "#ffebee",
+                      label: "당번", sub: "당일 당번 근무",
+                      count: checkedCounts.당번 ?? 0
+                    },
+                    {
+                      status: "휴무" as StatusType,
+                      icon: "🌿", color: "#757575", bg: "#f5f5f5",
+                      label: "휴무", sub: "오늘 휴무",
+                      count: checkedCounts.휴무 ?? 0
+                    },
+                    {
+                      status: "병가" as StatusType,
+                      icon: "🏥", color: "#9e9e9e", bg: "#fafafa",
+                      label: "병가", sub: "병가 처리",
+                      count: checkedCounts.병가 ?? 0
+                    },
+                  ].map(({ status, icon, color, bg, label, sub, count }) => (
+                    <button key={status}
+                      onClick={() => { setModalStatus(status); setModalSearch(""); }}
+                      style={{
+                        background: bg, border: `1.5px solid ${color}44`,
+                        borderRadius: "10px", padding: "8px 6px",
+                        cursor: "pointer", textAlign: "center",
+                      }}
+                    >
+                      <div style={{ fontSize: "1.2rem", marginBottom: "2px" }}>{icon}</div>
+                      <div style={{ fontWeight: 700, fontSize: "0.82rem", color }}>{label}</div>
+                      <div style={{ fontSize: "0.68rem", color: "#888" }}>{sub}</div>
+                      <div style={{
+                        marginTop: "4px", fontWeight: 700, fontSize: "0.9rem",
+                        color: count > 0 ? color : "#bbb",
+                      }}>
+                        {count}명
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </>
             )}
 
             {/* 설정 정보 */}
