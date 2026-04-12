@@ -3133,28 +3133,11 @@ export default function SchedulePage() {
               </div>
 
               {mode === "2부제" ? (() => {
-                const tr = livePreview.twoRound ?? [];
                 const s1 = livePreview.shift1 ?? [];
                 const s2 = livePreview.shift2 ?? [];
                 const sp1 = livePreview.spare1 ?? [];
                 const sp2 = livePreview.spare2 ?? [];
                 const cutRows: React.ReactNode[] = [];
-
-                if (tr.length > 0) {
-                  cutRows.push(
-                    <div key="tr-cut" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{
-                        fontSize: "0.7rem", fontWeight: 800, color: "#0e7490",
-                        background: "#cffafe", borderRadius: 6, padding: "2px 8px",
-                        minWidth: 76, textAlign: "center", flexShrink: 0,
-                      }}>🔄 투라운드컷</span>
-                      <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0e7490" }}>
-                        {tr[tr.length - 1]}
-                      </span>
-                      <span style={{ fontSize: "0.72rem", color: "#90a4ae" }}>까지</span>
-                    </div>
-                  );
-                }
 
                 if (s1.length > 0) {
                   cutRows.push(
