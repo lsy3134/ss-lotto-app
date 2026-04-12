@@ -369,7 +369,23 @@ export default function SchedulePage() {
   // 선택된 날짜 (엑셀 날짜)
   const [selectedDate, setSelectedDate] = useState<ExcelDayData | null>(null);
 
-  // 엑셀 로드 완료 시 오늘 날짜 자동 선택
+  // 월 네비게이션 상태 ("04", "05", "06" …)
+  const [viewMonth, setViewMonth] = useState<string>(() => {
+    const now = new Date();
+    return String(now.getMonth() + 1).padStart(2, "0");
+  });
+
+  // 엑셀에 존재하는 월 목록 (정렬)
+  const availableMonths = useMemo(() => {
+    const set = new Set<string>();
+    excelDays.forEach(d => {
+      const m = d.dateLabel.substring(0, 2);
+      if (m) set.add(m);
+    });
+    return Array.from(set).sort();
+  }, [excelDays]);
+
+  // 엑셀 로드 완료 시 오늘 날짜 자동 선택 + viewMonth 맞춤
   useEffect(() => {
     if (excelDays.length > 0 && !selectedDate) {
       const now = new Date();
@@ -377,10 +393,23 @@ export default function SchedulePage() {
       const dd = String(now.getDate()).padStart(2, "0");
       const todayPrefix = `${mm}.${dd}`;
       const today = excelDays.find((d) => d.dateLabel.startsWith(todayPrefix));
-      if (today) selectExcelDate(today);
+      if (today) {
+        selectExcelDate(today);
+        setViewMonth(mm);
+      } else if (availableMonths.length > 0) {
+        setViewMonth(availableMonths[0]);
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [excelDays]);
+
+  // 선택 날짜가 바뀌면 viewMonth도 해당 달로 이동
+  useEffect(() => {
+    if (selectedDate) {
+      const m = selectedDate.dateLabel.substring(0, 2);
+      setViewMonth(m);
+    }
+  }, [selectedDate]);
 
   // 인원
   const [names, setNames] = useState<string[]>([]);
@@ -973,53 +1002,90 @@ export default function SchedulePage() {
             {xlError && <span style={{ color: "#e53935", fontWeight: 400, marginLeft: "6px" }}>{xlError}</span>}
           </label>
 
-          {excelDays.length > 0 && (
-            <div style={S.dateGrid}>
-              {excelDays.map((d) => {
-                const isSelected = selectedDate?.dateLabel === d.dateLabel;
-                const isWeekend = d.dayIdx === 5 || d.dayIdx === 6;
-                const hasTeams = d.예약팀수 > 0;
-                // 이 날짜에 저장된 수동 배정
-                const savedStatuses = dateStatuses[d.dateLabel] ?? {};
-                const manualHumuCnt = Object.values(savedStatuses).filter(s => s === "휴무").length;
-                const manualDangbunCnt = Object.values(savedStatuses).filter(s => s === "당번").length;
-                const hasManual = Object.keys(savedStatuses).length > 0;
-                return (
+          {excelDays.length > 0 && (() => {
+            const monthIdx = availableMonths.indexOf(viewMonth);
+            const prevMonth = monthIdx > 0 ? availableMonths[monthIdx - 1] : null;
+            const nextMonth = monthIdx < availableMonths.length - 1 ? availableMonths[monthIdx + 1] : null;
+            const viewDays = excelDays.filter(d => d.dateLabel.startsWith(viewMonth + "."));
+            const monthName = parseInt(viewMonth, 10) + "월";
+            return (
+              <>
+                {/* ── 월 네비게이션 ── */}
+                <div style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  marginBottom: "8px", background: "#1a1a2e", borderRadius: "10px",
+                  padding: "6px 10px",
+                }}>
                   <button
-                    key={d.dateLabel}
-                    onClick={() => selectExcelDate(d)}
+                    onClick={() => prevMonth && setViewMonth(prevMonth)}
+                    disabled={!prevMonth}
                     style={{
-                      ...S.dateBtn,
-                      background: isSelected ? "#1a1a2e" : hasManual ? "#f0f4ff" : "#f8f9fa",
-                      color: isSelected ? "#fff" : isWeekend ? "#c62828" : "#333",
-                      border: isSelected ? "2px solid #1a1a2e" : hasManual ? "2px solid #7986cb" : hasTeams ? "2px solid #1565c0" : "1px solid #e0e0e0",
+                      background: "none", border: "none", color: prevMonth ? "#fff" : "rgba(255,255,255,0.25)",
+                      fontSize: "1.1rem", cursor: prevMonth ? "pointer" : "default", padding: "2px 8px",
                     }}
-                  >
-                    <span style={{ fontSize: "0.72rem", fontWeight: 700 }}>{d.dateLabel.split(" ")[0]}</span>
-                    <span style={{ fontSize: "0.65rem", opacity: 0.7 }}>{d.dayName}</span>
-                    {d.가용인원 > 0 && (
-                      <span style={{
-                        fontSize: "0.6rem", fontWeight: 700,
-                        color: isSelected ? "#fff" : "#2e7d32",
-                        lineHeight: 1,
-                      }}>
-                        {d.가용인원}명
-                      </span>
-                    )}
-                    {hasTeams && (
-                      <span style={{
-                        fontSize: "0.55rem", fontWeight: 700,
-                        color: isSelected ? "rgba(255,255,255,0.75)" : "#1565c0",
-                        lineHeight: 1,
-                      }}>
-                        {d.예약팀수}팀
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          )}
+                  >‹</button>
+                  <span style={{ color: "#fff", fontWeight: 700, fontSize: "0.95rem" }}>
+                    {monthName}
+                    <span style={{ fontWeight: 400, fontSize: "0.75rem", marginLeft: "6px", opacity: 0.6 }}>
+                      ({viewDays.length}일)
+                    </span>
+                  </span>
+                  <button
+                    onClick={() => nextMonth && setViewMonth(nextMonth)}
+                    disabled={!nextMonth}
+                    style={{
+                      background: "none", border: "none", color: nextMonth ? "#fff" : "rgba(255,255,255,0.25)",
+                      fontSize: "1.1rem", cursor: nextMonth ? "pointer" : "default", padding: "2px 8px",
+                    }}
+                  >›</button>
+                </div>
+
+                {/* ── 날짜 그리드 (현재 월만) ── */}
+                <div style={S.dateGrid}>
+                  {viewDays.map((d) => {
+                    const isSelected = selectedDate?.dateLabel === d.dateLabel;
+                    const isWeekend = d.dayIdx === 5 || d.dayIdx === 6;
+                    const hasTeams = d.예약팀수 > 0;
+                    const savedStatuses = dateStatuses[d.dateLabel] ?? {};
+                    const hasManual = Object.keys(savedStatuses).length > 0;
+                    return (
+                      <button
+                        key={d.dateLabel}
+                        onClick={() => selectExcelDate(d)}
+                        style={{
+                          ...S.dateBtn,
+                          background: isSelected ? "#1a1a2e" : hasManual ? "#f0f4ff" : "#f8f9fa",
+                          color: isSelected ? "#fff" : isWeekend ? "#c62828" : "#333",
+                          border: isSelected ? "2px solid #1a1a2e" : hasManual ? "2px solid #7986cb" : hasTeams ? "2px solid #1565c0" : "1px solid #e0e0e0",
+                        }}
+                      >
+                        <span style={{ fontSize: "0.72rem", fontWeight: 700 }}>{d.dateLabel.split(" ")[0]}</span>
+                        <span style={{ fontSize: "0.65rem", opacity: 0.7 }}>{d.dayName}</span>
+                        {d.가용인원 > 0 && (
+                          <span style={{
+                            fontSize: "0.6rem", fontWeight: 700,
+                            color: isSelected ? "#fff" : "#2e7d32",
+                            lineHeight: 1,
+                          }}>
+                            {d.가용인원}명
+                          </span>
+                        )}
+                        {hasTeams && (
+                          <span style={{
+                            fontSize: "0.55rem", fontWeight: 700,
+                            color: isSelected ? "rgba(255,255,255,0.75)" : "#1565c0",
+                            lineHeight: 1,
+                          }}>
+                            {d.예약팀수}팀
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            );
+          })()}
 
           {/* 선택된 날짜 정보 */}
           {selectedDate && (
