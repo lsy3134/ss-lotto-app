@@ -627,6 +627,10 @@ export default function SchedulePage() {
   // 대근 모달 (어느 사람의 대근 선택 중인지)
   const [daegeunModal, setDaegeunModal] = useState<string | null>(null);
 
+  // 대근 일괄 모달 (비근무 그룹 전체 목록)
+  const [batchDaegeunOpen, setBatchDaegeunOpen] = useState(false);
+  const [batchDaegeunSearch, setBatchDaegeunSearch] = useState("");
+
   function setDaegeunForDate(name: string, type: DaegeunType) {
     if (!currentDateKey) return;
     setDateDaegeun(prev => ({
@@ -1362,10 +1366,39 @@ export default function SchedulePage() {
                   </span>
                 )}
               </div>
-              {/* 가용인원 · 예약팀수 요약 */}
-              <div style={S.excelStatRow}>
+              {/* 가용인원 · 예약팀수 · 대근 요약 */}
+              <div style={{ ...S.excelStatRow, alignItems: "center" }}>
                 <StatBadge label="가용인원" value={selectedDate.가용인원} color="#1565c0" />
                 <StatBadge label="예약팀수" value={selectedDate.예약팀수 || "미입력"} color={selectedDate.예약팀수 > 0 ? "#2e7d32" : "#9e9e9e"} />
+                {(() => {
+                  const daegeunCandidates = names.filter(n => {
+                    const p = customRosterMap[n];
+                    return p != null && isAutoOff(p.group, dayOfWeek) && !(n in manualStatuses);
+                  });
+                  const activeDaegeun = daegeunCandidates.filter(n => currentDaegeun[n]);
+                  return (
+                    <button
+                      onClick={() => { setBatchDaegeunOpen(true); setBatchDaegeunSearch(""); }}
+                      style={{
+                        display: "flex", flexDirection: "column",
+                        alignItems: "center", justifyContent: "center",
+                        gap: "2px", padding: "6px 12px",
+                        borderRadius: "10px",
+                        border: activeDaegeun.length > 0 ? "2px solid #f59e0b" : "2px solid #f59e0b55",
+                        background: activeDaegeun.length > 0 ? "#fef3c7" : "#fffbeb",
+                        cursor: "pointer",
+                        WebkitTapHighlightColor: "transparent",
+                      }}>
+                      <span style={{ fontSize: "0.75rem", fontWeight: 800, color: "#92400e" }}>대근</span>
+                      <span style={{ fontSize: "1rem", fontWeight: 900, color: activeDaegeun.length > 0 ? "#f59e0b" : "#d1d5db", lineHeight: 1 }}>
+                        {activeDaegeun.length > 0 ? activeDaegeun.length : daegeunCandidates.length}
+                      </span>
+                      <span style={{ fontSize: "0.55rem", color: "#92400e99" }}>
+                        {activeDaegeun.length > 0 ? "명 투입" : "명 대기"}
+                      </span>
+                    </button>
+                  );
+                })()}
               </div>
 
               {/* ── 6개 상태 선택 버튼 ── */}
@@ -2723,6 +2756,166 @@ export default function SchedulePage() {
                   style={{
                     width: "100%", padding: "13px", borderRadius: "12px", border: "none",
                     background: sc.bg, color: sc.color,
+                    fontWeight: 700, fontSize: "0.95rem", cursor: "pointer",
+                  }}>
+                  닫기
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ─── 대근 일괄 모달 ─── */}
+      {batchDaegeunOpen && (() => {
+        const candidates = names.filter(n => {
+          const p = customRosterMap[n];
+          return p != null && isAutoOff(p.group, dayOfWeek) && !(n in manualStatuses);
+        });
+        const filtered = batchDaegeunSearch.trim()
+          ? candidates.filter(n => n.includes(batchDaegeunSearch.trim()))
+          : candidates;
+        const activeCnt = candidates.filter(n => currentDaegeun[n]).length;
+        const groupLabel = dayOfWeek <= 3 ? "주말반" : dayOfWeek >= 5 ? "주중반" : "비근무";
+        return (
+          <div style={{
+            position: "fixed", inset: 0, zIndex: 490,
+            background: "rgba(0,0,0,0.55)",
+            display: "flex", flexDirection: "column", justifyContent: "flex-end",
+          }}
+            onClick={(e) => { if (e.target === e.currentTarget) setBatchDaegeunOpen(false); }}
+          >
+            <div style={{
+              background: "#fff", borderRadius: "20px 20px 0 0",
+              maxHeight: "82vh", display: "flex", flexDirection: "column",
+              overflow: "hidden",
+            }}>
+              {/* 헤더 */}
+              <div style={{
+                padding: "16px 16px 10px",
+                background: "linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)",
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                flexShrink: 0,
+              }}>
+                <div>
+                  <span style={{ fontWeight: 800, fontSize: "1rem", color: "#78350f" }}>
+                    대근 관리
+                  </span>
+                  <span style={{
+                    marginLeft: "8px", fontSize: "0.75rem", color: "#92400e",
+                    background: "#fef3c7", padding: "2px 8px", borderRadius: "8px",
+                    fontWeight: 700,
+                  }}>
+                    {groupLabel} {candidates.length}명
+                  </span>
+                  {activeCnt > 0 && (
+                    <span style={{
+                      marginLeft: "6px", fontSize: "0.75rem", color: "#fff",
+                      background: "#f59e0b", padding: "2px 8px", borderRadius: "8px",
+                      fontWeight: 700,
+                    }}>
+                      투입 {activeCnt}명
+                    </span>
+                  )}
+                </div>
+                <button onClick={() => setBatchDaegeunOpen(false)}
+                  style={{
+                    background: "transparent", border: "none",
+                    fontSize: "1.3rem", cursor: "pointer", color: "#92400e", lineHeight: 1,
+                  }}>✕</button>
+              </div>
+
+              {/* 검색 */}
+              <div style={{ padding: "10px 14px 6px", flexShrink: 0, borderBottom: "1px solid #f3f4f6" }}>
+                <input
+                  type="text"
+                  placeholder="이름 검색..."
+                  value={batchDaegeunSearch}
+                  onChange={(e) => setBatchDaegeunSearch(e.target.value)}
+                  style={{
+                    width: "100%", padding: "9px 12px", borderRadius: "10px",
+                    border: "1.5px solid #e5e7eb", fontSize: "0.9rem",
+                    outline: "none", boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              {/* 인원 목록 */}
+              <div style={{ overflowY: "auto", flex: 1, padding: "8px 14px 20px" }}>
+                {filtered.length === 0 ? (
+                  <div style={{ textAlign: "center", color: "#bbb", padding: "40px 0", fontSize: "0.9rem" }}>
+                    대상 인원이 없습니다
+                  </div>
+                ) : (
+                  filtered.map((name) => {
+                    const p = customRosterMap[name];
+                    const dg: DaegeunType | undefined = currentDaegeun[name];
+                    return (
+                      <div key={name} style={{
+                        display: "flex", alignItems: "center", gap: "10px",
+                        padding: "10px 12px", borderRadius: "12px", marginBottom: "7px",
+                        background: dg ? "#fef9ee" : "#fafafa",
+                        border: dg ? "1.5px solid #f59e0b66" : "1px solid #f3f4f6",
+                      }}>
+                        {/* 아바타 */}
+                        <div style={{
+                          width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontWeight: 800, fontSize: "0.82rem", color: "#fff",
+                          background: dg ? "#f59e0b" : (p?.group === "주중" ? "#4e89ae" : "#f8b400"),
+                        }}>
+                          {name.charAt(0)}
+                        </div>
+
+                        {/* 이름 + 그룹 */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 700, fontSize: "0.9rem", color: "#1a1a2e" }}>
+                            {name}
+                            {dg && (
+                              <span style={{
+                                marginLeft: "6px", fontSize: "0.68rem",
+                                background: "#f59e0b", color: "#fff",
+                                padding: "1px 6px", borderRadius: "6px", fontWeight: 700,
+                              }}>
+                                대근-{dg}
+                              </span>
+                            )}
+                          </div>
+                          {p && (
+                            <div style={{ fontSize: "0.65rem", color: GROUP_STYLE[p.group].color }}>
+                              {p.조}조 · {GROUP_STYLE[p.group].label}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 대근 유형 버튼 */}
+                        <div style={{ display: "flex", gap: "5px", flexShrink: 0 }}>
+                          {(["1부", "2부", "투라운드"] as DaegeunType[]).map((type) => (
+                            <button key={type}
+                              onClick={() => dg === type ? cancelDaegeun(name) : setDaegeunForDate(name, type)}
+                              style={{
+                                padding: "5px 8px", borderRadius: "8px", border: "none",
+                                background: dg === type ? "#f59e0b" : "#f3f4f6",
+                                color: dg === type ? "#fff" : "#6b7280",
+                                fontWeight: 700, fontSize: "0.68rem", cursor: "pointer",
+                                whiteSpace: "nowrap",
+                              }}>
+                              {type === "투라운드" ? "투R" : type}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* 하단 닫기 */}
+              <div style={{ padding: "10px 14px", borderTop: "1px solid #f0f0f0", flexShrink: 0 }}>
+                <button onClick={() => setBatchDaegeunOpen(false)}
+                  style={{
+                    width: "100%", padding: "13px", borderRadius: "12px", border: "none",
+                    background: "#fef3c7", color: "#92400e",
                     fontWeight: 700, fontSize: "0.95rem", cursor: "pointer",
                   }}>
                   닫기
