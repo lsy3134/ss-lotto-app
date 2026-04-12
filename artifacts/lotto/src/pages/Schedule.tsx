@@ -700,17 +700,14 @@ export default function SchedulePage() {
     }
   }
 
-  // ── 첫번호 지정 ────────────────────────────────
-  const [queueStartName, setQueueStartName] = useState<string | null>(() => {
-    try { return localStorage.getItem("lotto_queueStart") ?? null; } catch { return null; }
-  });
+  // ── 첫번호 지정 (세션 전용 — localStorage 저장 X, 다음날 이어지지 않음) ───
+  const [queueStartName, setQueueStartName] = useState<string | null>(null);
   const [queueModal, setQueueModal] = useState<"ask" | "pick" | null>(null);
   const [queuePickSearch, setQueuePickSearch] = useState("");
 
   function saveQueueStart(name: string | null) {
     setQueueStartName(name);
-    if (name) localStorage.setItem("lotto_queueStart", name);
-    else localStorage.removeItem("lotto_queueStart");
+    // 의도적으로 localStorage에 저장하지 않음 — 그날만 유효
   }
 
   // 이름 배열을 startName 위치부터 회전
@@ -732,16 +729,9 @@ export default function SchedulePage() {
     setView("assign");
   }
 
-  // 순번표 불러오기 (1조→2조→3조→4조 순서)
+  // 순번표 불러오기 → 항상 ask 모달 (하겠다/안하겠다 선택)
   function loadRoster() {
-    if (queueStartName) {
-      // 저장된 첫번호가 있으면 → 이 순번대로 할지 묻기
-      setQueueModal("ask");
-    } else {
-      // 없으면 → 첫번호 지정 모달
-      setQueuePickSearch("");
-      setQueueModal("pick");
-    }
+    setQueueModal("ask");
   }
 
   // 직접 입력으로 다음 단계
@@ -1746,8 +1736,8 @@ export default function SchedulePage() {
           }}>
             <span style={{ fontSize: 14, flex: 1, color: queueStartName ? "#1565c0" : "#999" }}>
               {queueStartName
-                ? <><span style={{ fontWeight: 700 }}>첫번호 </span><span style={{ fontWeight: 800 }}>"{queueStartName}"</span> 부터 시작</>
-                : "첫번호 미지정 — 1조 1번부터 시작"}
+                ? <><span style={{ fontWeight: 700 }}>오늘 첫번호 </span><span style={{ fontWeight: 800 }}>"{queueStartName}"</span> <span style={{ fontSize: 11, color: "#90caf9" }}>(오늘만)</span></>
+                : "순번표 불러오기 → 첫번호 또는 스페어 선택"}
             </span>
             <button
               onClick={() => { setQueuePickSearch(""); setQueueModal("pick"); }}
