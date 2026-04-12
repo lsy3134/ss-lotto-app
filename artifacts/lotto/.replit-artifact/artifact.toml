@@ -1,6 +1,6 @@
 kind = "web"
 previewPath = "/"
-title = "로또 번호 추출기"
+title = "SS앱"
 version = "1.0.0"
 id = "artifacts/lotto"
 router = "path"
