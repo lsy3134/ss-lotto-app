@@ -272,8 +272,41 @@ export default function SchedulePage() {
   const [names, setNames] = useState<string[]>([]);
   const [rosterLoaded, setRosterLoaded] = useState(false);
 
-  // 수동 상태
-  const [manualStatuses, setManualStatuses] = useState<Record<string, StatusType>>({});
+  // 날짜별 수동 상태 (localStorage 영구 저장)
+  const [dateStatuses, setDateStatuses] = useState<Record<string, Record<string, StatusType>>>(() => {
+    try {
+      const saved = localStorage.getItem("lotto_dateStatuses");
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
+  useEffect(() => {
+    localStorage.setItem("lotto_dateStatuses", JSON.stringify(dateStatuses));
+  }, [dateStatuses]);
+
+  // 현재 선택 날짜 키 (e.g. "04.01 (수)")
+  const currentDateKey = selectedDate?.dateLabel ?? "";
+
+  // 현재 날짜의 수동 상태 (derived)
+  const manualStatuses = useMemo(
+    () => dateStatuses[currentDateKey] ?? {},
+    [dateStatuses, currentDateKey]
+  );
+
+  // 현재 날짜 수동 상태 세터
+  function setManualStatuses(
+    updater: ((prev: Record<string, StatusType>) => Record<string, StatusType>) | Record<string, StatusType>
+  ) {
+    setDateStatuses((prev) => {
+      const cur = prev[currentDateKey] ?? {};
+      const next = typeof updater === "function" ? updater(cur) : updater;
+      if (Object.keys(next).length === 0) {
+        const updated = { ...prev };
+        delete updated[currentDateKey];
+        return updated;
+      }
+      return { ...prev, [currentDateKey]: next };
+    });
+  }
 
   // 결과
   const [dayResult, setDayResult] = useState<DayResult | null>(null);
@@ -356,7 +389,6 @@ export default function SchedulePage() {
     const loaded = sortedCustomRoster.map((p) => p.name);
     setNames(loaded);
     setRosterLoaded(true);
-    setManualStatuses({});
     setDayResult(null);
     setWeekly([]);
     setView("assign");
@@ -368,7 +400,6 @@ export default function SchedulePage() {
     if (!parsed.length) return;
     setNames(parsed);
     setRosterLoaded(false);
-    setManualStatuses({});
     setDayResult(null);
     setWeekly([]);
     setView("assign");
@@ -543,15 +574,20 @@ export default function SchedulePage() {
                 const isSelected = selectedDate?.dateLabel === d.dateLabel;
                 const isWeekend = d.dayIdx === 5 || d.dayIdx === 6;
                 const hasTeams = d.예약팀수 > 0;
+                // 이 날짜에 저장된 수동 배정
+                const savedStatuses = dateStatuses[d.dateLabel] ?? {};
+                const manualHumuCnt = Object.values(savedStatuses).filter(s => s === "휴무").length;
+                const manualDangbunCnt = Object.values(savedStatuses).filter(s => s === "당번").length;
+                const hasManual = Object.keys(savedStatuses).length > 0;
                 return (
                   <button
                     key={d.dateLabel}
                     onClick={() => selectExcelDate(d)}
                     style={{
                       ...S.dateBtn,
-                      background: isSelected ? "#1a1a2e" : "#f8f9fa",
+                      background: isSelected ? "#1a1a2e" : hasManual ? "#f0f4ff" : "#f8f9fa",
                       color: isSelected ? "#fff" : isWeekend ? "#c62828" : "#333",
-                      border: isSelected ? "2px solid #1a1a2e" : hasTeams ? "2px solid #1565c0" : "1px solid #e0e0e0",
+                      border: isSelected ? "2px solid #1a1a2e" : hasManual ? "2px solid #7986cb" : hasTeams ? "2px solid #1565c0" : "1px solid #e0e0e0",
                     }}
                   >
                     <span style={{ fontSize: "0.72rem", fontWeight: 700 }}>{d.dateLabel.split(" ")[0]}</span>
@@ -568,23 +604,23 @@ export default function SchedulePage() {
                         {d.예약팀수}팀
                       </span>
                     )}
-                    {/* 당번·휴무 자동 표시 */}
-                    {d.당번 > 0 && (
+                    {/* 당번·휴무: 수동 배정 있으면 실제 수, 없으면 엑셀 수 */}
+                    {(manualDangbunCnt > 0 || d.당번 > 0) && (
                       <span style={{
                         fontSize: "0.55rem", fontWeight: 700,
                         color: isSelected ? "#90caf9" : "#1565c0",
                         lineHeight: 1,
                       }}>
-                        당{d.당번}
+                        당{manualDangbunCnt > 0 ? manualDangbunCnt : d.당번}
                       </span>
                     )}
-                    {d.휴무 > 0 && (
+                    {(manualHumuCnt > 0 || d.휴무 > 0) && (
                       <span style={{
                         fontSize: "0.55rem", fontWeight: 700,
-                        color: isSelected ? "#ccc" : "#9e9e9e",
+                        color: isSelected ? "#ccc" : manualHumuCnt > 0 ? "#555" : "#9e9e9e",
                         lineHeight: 1,
                       }}>
-                        휴{d.휴무}
+                        휴{manualHumuCnt > 0 ? manualHumuCnt : d.휴무}
                       </span>
                     )}
                   </button>
