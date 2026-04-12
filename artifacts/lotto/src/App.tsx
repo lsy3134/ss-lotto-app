@@ -61,7 +61,7 @@ export default function App() {
 
   function addLatest() {
     const nums = input
-      .split(",")
+      .split(/[\s,]+/)
       .map((n) => Number(n.trim()))
       .filter((n) => n >= 1 && n <= 45)
       .sort((a, b) => a - b);
