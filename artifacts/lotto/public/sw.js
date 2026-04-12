@@ -1,13 +1,12 @@
-// ── Check:Bite Service Worker ──────────────────────────────
-const CACHE_NAME = "checkbite-v1";
+// ── SS앱 Service Worker ──────────────────────────────
+const CACHE_NAME = "ssapp-v2";
 const OFFLINE_URL = "./";
 
 // 설치 시 캐시할 핵심 리소스
 const PRECACHE_URLS = [
   "./",
   "./manifest.json",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png",
+  "./icon.png",
 ];
 
 // ── Install: 핵심 리소스 사전 캐싱 ──────────────────────────
