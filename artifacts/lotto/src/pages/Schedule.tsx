@@ -13,6 +13,7 @@ type StatusType =
   | null;
 
 type Mode = "2부제" | "단부제";
+type DaegeunType = "1부" | "2부" | "투라운드";
 
 const STATUS_BUTTONS: StatusType[] = [
   "대기", "조출", "후출", "찾근", "당번", "병가", "휴무", "하우스",
@@ -539,6 +540,18 @@ export default function SchedulePage() {
     localStorage.setItem(DS_KEY, JSON.stringify(dateStatuses));
   }, [dateStatuses, DS_KEY]);
 
+  // 대근 날짜별 저장 (localStorage)
+  const DG_KEY = `lotto_daegeun_${new Date().getFullYear()}`;
+  const [dateDaegeun, setDateDaegeun] = useState<Record<string, Record<string, DaegeunType>>>(() => {
+    try {
+      const saved = localStorage.getItem(`lotto_daegeun_${new Date().getFullYear()}`);
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
+  useEffect(() => {
+    localStorage.setItem(DG_KEY, JSON.stringify(dateDaegeun));
+  }, [dateDaegeun, DG_KEY]);
+
   // VIP 날짜별 저장 (localStorage)
   type VipRound = "1부" | "2부" | null;
   interface VipEntry { count: number; round: VipRound; members: string[] }
@@ -604,6 +617,39 @@ export default function SchedulePage() {
     () => dateStatuses[currentDateKey] ?? {},
     [dateStatuses, currentDateKey]
   );
+
+  // 현재 날짜의 대근 맵 (derived)
+  const currentDaegeun = useMemo(
+    () => dateDaegeun[currentDateKey] ?? {},
+    [dateDaegeun, currentDateKey]
+  );
+
+  // 대근 모달 (어느 사람의 대근 선택 중인지)
+  const [daegeunModal, setDaegeunModal] = useState<string | null>(null);
+
+  function setDaegeunForDate(name: string, type: DaegeunType) {
+    if (!currentDateKey) return;
+    setDateDaegeun(prev => ({
+      ...prev,
+      [currentDateKey]: { ...(prev[currentDateKey] ?? {}), [name]: type },
+    }));
+    setDaegeunModal(null);
+  }
+
+  function cancelDaegeun(name: string) {
+    if (!currentDateKey) return;
+    setDateDaegeun(prev => {
+      const cur = { ...(prev[currentDateKey] ?? {}) };
+      delete cur[name];
+      if (Object.keys(cur).length === 0) {
+        const updated = { ...prev };
+        delete updated[currentDateKey];
+        return updated;
+      }
+      return { ...prev, [currentDateKey]: cur };
+    });
+    setDaegeunModal(null);
+  }
 
   // 현재 날짜 수동 상태 세터
   function setManualStatuses(
@@ -672,7 +718,12 @@ export default function SchedulePage() {
   function effectiveStatus(name: string, dayIdx: number = dayOfWeek): StatusType {
     if (name in manualStatuses) return manualStatuses[name];
     const person = customRosterMap[name];
-    if (person && isAutoOff(person.group, dayIdx)) return "휴무";
+    if (person && isAutoOff(person.group, dayIdx)) {
+      const dg = currentDaegeun[name];
+      if (dg === "투라운드") return "찾근";
+      if (dg === "1부" || dg === "2부") return null;
+      return "휴무";
+    }
     return null;
   }
 
@@ -837,18 +888,12 @@ export default function SchedulePage() {
   // 현재 상태(휴무/조출/...)를 반영한 배정 경계 계산 (배정 버튼 누르지 않아도 표시)
   const livePreview = useMemo(() => {
     if (names.length === 0) return null;
-    const statuses: Record<string, StatusType> = {};
-    names.forEach((n) => {
-      if (n in manualStatuses) { statuses[n] = manualStatuses[n]; return; }
-      const person = customRosterMap[n];
-      if (person && isAutoOff(person.group, dayOfWeek)) { statuses[n] = "휴무"; return; }
-      statuses[n] = null;
-    });
+    const statuses = getEffective(dayOfWeek);
     return mode === "2부제"
       ? assignDouble(names, statuses, shift1Size, shift2Size)
       : assignSingle(names, statuses, singleSize);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [names, manualStatuses, mode, shift1Size, shift2Size, singleSize, dayOfWeek, customRosterMap]);
+  }, [names, manualStatuses, currentDaegeun, mode, shift1Size, shift2Size, singleSize, dayOfWeek, customRosterMap]);
 
   // 이름 → 배정 카테고리 맵 (live)
   const liveCategoryMap = useMemo<Record<string, "1부" | "1부스페어" | "2부" | "2부스페어" | "스페어" | "단부" | "찾근" | "제외">>(() => {
@@ -2688,6 +2733,66 @@ export default function SchedulePage() {
         );
       })()}
 
+      {/* ─── 대근 선택 모달 ─── */}
+      {daegeunModal && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 500,
+          background: "rgba(0,0,0,0.6)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}
+          onClick={(e) => { if (e.target === e.currentTarget) setDaegeunModal(null); }}
+        >
+          <div style={{
+            background: "#fff", borderRadius: 20, padding: "24px 20px 20px",
+            maxWidth: 300, width: "90%", textAlign: "center",
+            boxShadow: "0 8px 40px rgba(0,0,0,0.28)",
+          }}>
+            <div style={{ fontWeight: 800, fontSize: "1rem", color: "#1a1a2e", marginBottom: "4px" }}>
+              대근 유형 선택
+            </div>
+            <div style={{ fontSize: "0.82rem", color: "#888", marginBottom: "18px" }}>
+              {daegeunModal}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "14px" }}>
+              {(["1부", "2부", "투라운드"] as DaegeunType[]).map((type) => (
+                <button key={type}
+                  onClick={() => setDaegeunForDate(daegeunModal, type)}
+                  style={{
+                    padding: "13px", borderRadius: "12px", border: "none",
+                    background: currentDaegeun[daegeunModal] === type ? "#f59e0b" : "#fef3c7",
+                    color: currentDaegeun[daegeunModal] === type ? "#fff" : "#78350f",
+                    fontWeight: 700, fontSize: "0.95rem", cursor: "pointer",
+                    boxShadow: currentDaegeun[daegeunModal] === type ? "0 2px 8px #f59e0b66" : "none",
+                  }}>
+                  {type === "투라운드" ? "투라운드 (1부+2부)" : type}
+                </button>
+              ))}
+            </div>
+            {currentDaegeun[daegeunModal] && (
+              <button
+                onClick={() => cancelDaegeun(daegeunModal)}
+                style={{
+                  width: "100%", padding: "10px", borderRadius: "10px",
+                  border: "1px solid #e5e7eb", background: "#f9fafb",
+                  color: "#6b7280", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer",
+                  marginBottom: "8px",
+                }}>
+                대근 해제
+              </button>
+            )}
+            <button
+              onClick={() => setDaegeunModal(null)}
+              style={{
+                width: "100%", padding: "10px", borderRadius: "10px",
+                border: "none", background: "#f3f4f6",
+                color: "#6b7280", fontWeight: 600, fontSize: "0.85rem", cursor: "pointer",
+              }}>
+              취소
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ─── 배정 단계 ─── */}
       {view === "assign" && (
         <>
@@ -2881,6 +2986,8 @@ export default function SchedulePage() {
                 const effS = effectiveStatus(name, dayOfWeek);
                 const isAutoHumu = !(name in manualStatuses) && effS === "휴무";
                 const slotLabel = getSlotLabel(name);
+                const isWeekendOnWeekday = person?.group === "주말" && isAutoOff("주말", dayOfWeek) && !(name in manualStatuses);
+                const daegeunType: DaegeunType | undefined = currentDaegeun[name];
 
                 rows.push(
                   <div key={name} style={{
@@ -2916,6 +3023,14 @@ export default function SchedulePage() {
                             {GROUP_STYLE[person.group].label}{isAutoHumu ? "(자동)" : ""}
                           </span>
                         )}
+                        {isWeekendOnWeekday && daegeunType && (
+                          <span style={{
+                            fontSize: "0.6rem", padding: "1px 4px", borderRadius: "4px",
+                            background: "#fef3c7", color: "#92400e", fontWeight: 700,
+                          }}>
+                            대근-{daegeunType}
+                          </span>
+                        )}
                         {slotLabel && (
                           <span style={{
                             fontSize: "0.6rem", padding: "1px 4px", borderRadius: "4px",
@@ -2929,38 +3044,50 @@ export default function SchedulePage() {
                     </div>
 
                     <div style={S.btnGroup}>
-                      {STATUS_BUTTONS.filter((btn) =>
-                        mode !== "단부제" || (btn !== "조출" && btn !== "후출")
-                      ).map((btn) => {
-                        const active = effS === btn;
-                        const isAutoActive = active && isAutoHumu;
-                        // 조출: 1부 6팀 미만이면 비활성화
-                        const disabled =
-                          (btn === "조출" && !cho가능 && effS !== "조출");
-                        const col = active ? STATUS_COLOR[btn!] : null;
-                        // 조출/후출 최대 4명 초과 시 비활성화
-                        const maxReached =
-                          (btn === "조출" && cho현재수 >= 4 && effS !== "조출") ||
-                          (btn === "후출" && hu현재수 >= 4 && effS !== "후출");
-                        return (
-                          <button key={btn} disabled={disabled || maxReached}
-                            onClick={() => toggleStatus(name, btn)}
-                            title={
-                              btn === "조출" && !cho가능 ? "1부 6팀 이상일 때만 사용 가능" :
-                              btn === "조출" && maxReached ? "조출 최대 4명" :
-                              btn === "후출" && maxReached ? "후출 최대 4명" : ""
-                            }
-                            style={{
-                              ...S.statusBtn,
-                              background: active ? col!.bg : "#f0f0f0",
-                              color: active ? col!.color : (disabled || maxReached) ? "#ccc" : "#555",
-                              border: isAutoActive ? `2px dashed ${col!.bg}` : active ? "none" : "1px solid #e0e0e0",
-                              opacity: (disabled || maxReached) ? 0.35 : 1,
-                            }}>
-                            {btn}
-                          </button>
-                        );
-                      })}
+                      {isWeekendOnWeekday ? (
+                        <button
+                          onClick={() => setDaegeunModal(name)}
+                          style={{
+                            ...S.statusBtn,
+                            background: daegeunType ? "#fbbf24" : "#f0f0f0",
+                            color: daegeunType ? "#78350f" : "#555",
+                            border: daegeunType ? "2px solid #f59e0b" : "1px solid #e0e0e0",
+                            fontWeight: 700,
+                            minWidth: "70px",
+                          }}>
+                          {daegeunType ? `대근-${daegeunType}` : "대근"}
+                        </button>
+                      ) : (
+                        STATUS_BUTTONS.filter((btn) =>
+                          mode !== "단부제" || (btn !== "조출" && btn !== "후출")
+                        ).map((btn) => {
+                          const active = effS === btn;
+                          const isAutoActive = active && isAutoHumu;
+                          const disabled = (btn === "조출" && !cho가능 && effS !== "조출");
+                          const col = active ? STATUS_COLOR[btn!] : null;
+                          const maxReached =
+                            (btn === "조출" && cho현재수 >= 4 && effS !== "조출") ||
+                            (btn === "후출" && hu현재수 >= 4 && effS !== "후출");
+                          return (
+                            <button key={btn} disabled={disabled || maxReached}
+                              onClick={() => toggleStatus(name, btn)}
+                              title={
+                                btn === "조출" && !cho가능 ? "1부 6팀 이상일 때만 사용 가능" :
+                                btn === "조출" && maxReached ? "조출 최대 4명" :
+                                btn === "후출" && maxReached ? "후출 최대 4명" : ""
+                              }
+                              style={{
+                                ...S.statusBtn,
+                                background: active ? col!.bg : "#f0f0f0",
+                                color: active ? col!.color : (disabled || maxReached) ? "#ccc" : "#555",
+                                border: isAutoActive ? `2px dashed ${col!.bg}` : active ? "none" : "1px solid #e0e0e0",
+                                opacity: (disabled || maxReached) ? 0.35 : 1,
+                              }}>
+                              {btn}
+                            </button>
+                          );
+                        })
+                      )}
                     </div>
                   </div>
                 );
