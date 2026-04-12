@@ -1904,6 +1904,46 @@ export default function SchedulePage() {
                 style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#888" }}
               >×</button>
             </div>
+            {/* ── 빠른 선택: 현재 저장된 첫번호 ── */}
+            {queueStartName && sortedCustomRoster.some(p => p.name === queueStartName) && (
+              <div style={{ padding: "8px 14px", borderBottom: "1px solid #eee" }}>
+                <div style={{ fontSize: 11, color: "#888", marginBottom: 6 }}>⚡ 빠른 선택 (이전 첫번호)</div>
+                <button
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    saveQueueStart(queueStartName);
+                    applyRoster(queueStartName);
+                    setQueueModal(null);
+                  }}
+                  onClick={() => {
+                    saveQueueStart(queueStartName);
+                    applyRoster(queueStartName);
+                    setQueueModal(null);
+                  }}
+                  style={{
+                    width: "100%", padding: "12px 16px", borderRadius: 12,
+                    border: "2px solid #1565c0", background: "#e3f2fd",
+                    display: "flex", alignItems: "center", gap: 10, cursor: "pointer",
+                    touchAction: "manipulation",
+                  }}
+                >
+                  {(() => {
+                    const person = sortedCustomRoster.find(p => p.name === queueStartName);
+                    return <>
+                      <span style={{
+                        background: "#1565c0", borderRadius: 8, padding: "2px 8px",
+                        fontSize: 11, color: "#fff", fontWeight: 700, minWidth: 44,
+                      }}>
+                        {person?.조}조 {person?.no}번
+                      </span>
+                      <span style={{ fontWeight: 800, fontSize: 16, color: "#1565c0" }}>{queueStartName}</span>
+                      <span style={{ marginLeft: "auto", fontSize: 12, color: "#1565c0", fontWeight: 700 }}>✓ 선택 →</span>
+                    </>;
+                  })()}
+                </button>
+              </div>
+            )}
+
             {/* 검색 */}
             <div style={{ padding: "10px 14px" }}>
               <input
@@ -1923,6 +1963,12 @@ export default function SchedulePage() {
                 .map(p => (
                   <button
                     key={p.name}
+                    onTouchEnd={(e) => {
+                      e.preventDefault();
+                      saveQueueStart(p.name);
+                      applyRoster(p.name);
+                      setQueueModal(null);
+                    }}
                     onClick={() => {
                       saveQueueStart(p.name);
                       applyRoster(p.name);
@@ -1933,6 +1979,7 @@ export default function SchedulePage() {
                       alignItems: "center", gap: 10, border: "none",
                       background: p.name === queueStartName ? "#e3f2fd" : "transparent",
                       cursor: "pointer", textAlign: "left",
+                      touchAction: "manipulation",
                     }}
                   >
                     <span style={{
