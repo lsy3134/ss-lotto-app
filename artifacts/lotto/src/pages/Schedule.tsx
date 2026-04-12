@@ -965,21 +965,42 @@ export default function SchedulePage() {
         ? assignDouble(currentNames, statuses, s1, s2)
         : assignSingle(currentNames, statuses, ss);
 
-      // ★ Bug2 수정: 다음날 첫번호 — spare2 중 다음날 실제 근무 가능한 첫번째 인원
-      const nextAbsIdx = absIdx + 1;
-      const nextWeekDay = nextAbsIdx >= 0 && nextAbsIdx < excelDays.length ? excelDays[nextAbsIdx] : null;
-      const nextDateLabel = nextWeekDay?.dateLabel ?? "";
-      const nextDayIdx = nextWeekDay?.dayIdx ?? ((di + 1) % 7);
-      const nextSaved = dateStatuses[nextDateLabel] ?? {};
-      const nextFirst = result.spare2.find(name => {
-        const s = nextSaved[name] ?? null;
-        if (EXCLUDED_SET.has(s ?? "")) return false;
-        const person = customRosterMap[name];
-        if (person && isAutoOff(person.group, nextDayIdx)) return false;
-        return true;
-      }) ?? result.spare2[0] ?? null; // 실제 근무 가능자 없으면 spare2[0]로 fallback
-      if (nextFirst) {
-        currentNames = rotateNames(currentNames, nextFirst);
+      // ── 다음날 currentNames 재정렬 (규정: spare2앞번호 → 찾근 → 근무자 → 오늘휴무) ──
+      {
+        const spare2Set = new Set(result.spare2);
+        const twoRndSet = new Set(result.twoRound);
+        const exclNow   = new Set(result.excluded);
+
+        // ① 오늘 2부스페어 → 앞번호 순서 유지
+        const nextSpares  = [...result.spare2];
+
+        // ② 오늘 찾근자 → 원래 큐 순서
+        const nextTwoRnd  = currentNames.filter(n => twoRndSet.has(n));
+
+        // ③ 일반 근무자 + 오늘 휴무/제외자 (큐 위치 유지 — 내일 상태는 날짜별 별도 결정)
+        let nextWorkers = currentNames.filter(
+          n => !spare2Set.has(n) && !twoRndSet.has(n)
+        );
+
+        if (result.spare2.length > 0) {
+          // spare2 있음: workers 순서는 그대로 유지
+          // (spare2[0]가 현재 큐에서 처음 남은 사람 → workers 상대 순서 유지)
+        } else {
+          // spare2 없음: 오늘 마지막으로 근무한 일반 근무자 다음 번호부터 내일 시작
+          // 2부제: shift2 마지막 찾근 제외 일반 근무자, 단부제: shift1 마지막
+          const todayLast = (mode === "2부제" ? result.shift2 : result.shift1)
+            .filter(n => !twoRndSet.has(n))
+            .at(-1);
+          if (todayLast) {
+            const li = nextWorkers.indexOf(todayLast);
+            if (li >= 0 && nextWorkers.length > 1) {
+              const startAt = (li + 1) % nextWorkers.length;
+              nextWorkers = [...nextWorkers.slice(startAt), ...nextWorkers.slice(0, startAt)];
+            }
+          }
+        }
+
+        currentNames = [...nextSpares, ...nextTwoRnd, ...nextWorkers];
       }
 
       return [...acc, { day: dateLabel || day, result }];
