@@ -3072,16 +3072,20 @@ export default function SchedulePage() {
                   </div>
                 )}
 
-                {/* 2부 스페어 — 1부스페어와 동급 강조 */}
-                {livePreview.spare2.length > 0 && (
-                  <div style={{
-                    display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
-                    background: "#fffbeb", border: "1.5px solid #fcd34d", borderRadius: 8, padding: "5px 10px",
-                  }}>
-                    <span style={{
-                      fontSize: "0.7rem", fontWeight: 800, color: "#92400e",
-                      background: "#fef3c7", borderRadius: 6, padding: "2px 7px", minWidth: 70, textAlign: "center", flexShrink: 0,
-                    }}>🏁 2부스페어</span>
+                {/* 2부 스페어 — 항상 표시 */}
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
+                  background: livePreview.spare2.length > 0 ? "#fffbeb" : "#f9f9f9",
+                  border: `1.5px solid ${livePreview.spare2.length > 0 ? "#fcd34d" : "#e0e0e0"}`,
+                  borderRadius: 8, padding: "5px 10px",
+                }}>
+                  <span style={{
+                    fontSize: "0.7rem", fontWeight: 800,
+                    color: livePreview.spare2.length > 0 ? "#92400e" : "#999",
+                    background: livePreview.spare2.length > 0 ? "#fef3c7" : "#f0f0f0",
+                    borderRadius: 6, padding: "2px 7px", minWidth: 70, textAlign: "center", flexShrink: 0,
+                  }}>🏁 2부스페어</span>
+                  {livePreview.spare2.length > 0 ? (<>
                     <span style={{ fontSize: 15, fontWeight: 800, color: "#b45309" }}>
                       {livePreview.spare2.join("  ·  ")}
                     </span>
@@ -3092,8 +3096,10 @@ export default function SchedulePage() {
                       marginLeft: "auto", fontSize: "0.72rem", fontWeight: 700,
                       color: "#92400e", background: "#fcd34d", borderRadius: 5, padding: "1px 7px", flexShrink: 0,
                     }}>→ 내일 첫번호</span>
-                  </div>
-                )}
+                  </>) : (
+                    <span style={{ fontSize: "0.8rem", color: "#bbb" }}>없음 (전원 2부 배정)</span>
+                  )}
+                </div>
               </>) : (<>
                 {/* 단부제: 단부 마지막 & 스페어 */}
                 {livePreview.shift1.length > 0 && (
