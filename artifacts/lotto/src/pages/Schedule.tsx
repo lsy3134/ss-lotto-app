@@ -1774,74 +1774,116 @@ export default function SchedulePage() {
       )}
 
       {/* ── 첫번호: 이 순번대로 가시겠습니까? ── */}
-      {queueModal === "ask" && (
-        <div style={{
-          position: "fixed", inset: 0, zIndex: 400,
-          background: "rgba(0,0,0,0.55)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}>
+      {queueModal === "ask" && (() => {
+        // 가장 최근 저장된 2부스페어 첫번째 찾기
+        const spare2First: string | null = (() => {
+          // 선택된 날짜 전날 스페어 우선
+          if (todayFirstHint) return todayFirstHint;
+          // 없으면 savedSpare2에서 가장 최근 날짜의 첫번째
+          const entries = Object.entries(savedSpare2);
+          if (!entries.length) return null;
+          entries.sort((a, b) => a[0].localeCompare(b[0]));
+          return entries[entries.length - 1][1][0] ?? null;
+        })();
+
+        return (
           <div style={{
-            background: "#fff", borderRadius: 18, padding: "28px 24px",
-            maxWidth: 320, width: "90%", textAlign: "center",
-            boxShadow: "0 8px 32px rgba(0,0,0,0.22)",
+            position: "fixed", inset: 0, zIndex: 400,
+            background: "rgba(0,0,0,0.65)",
+            display: "flex", alignItems: "center", justifyContent: "center",
           }}>
-            <div style={{ fontSize: 36, marginBottom: 8 }}>🔢</div>
-            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 6 }}>저장된 순번이 있어요</div>
-            <div style={{ fontSize: 14, color: "#555", marginBottom: 4 }}>
-              마지막 첫번호
-            </div>
             <div style={{
-              fontSize: 20, fontWeight: 800, color: "#1565c0",
-              background: "#e3f2fd", borderRadius: 10, padding: "8px 20px",
-              display: "inline-block", marginBottom: 20,
+              background: "#fff", borderRadius: 20, padding: "28px 24px 22px",
+              maxWidth: 330, width: "90%", textAlign: "center",
+              boxShadow: "0 8px 40px rgba(0,0,0,0.28)",
             }}>
-              {queueStartName}
-            </div>
-            <div style={{ fontSize: 14, color: "#333", marginBottom: 20, lineHeight: 1.5 }}>
-              이 순번대로 진행하시겠습니까?
-            </div>
-            <div style={{ display: "flex", gap: 10 }}>
+              <div style={{ fontSize: 38, marginBottom: 10 }}>📋</div>
+              <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 16, color: "#1a1a2e" }}>
+                첫번호부터 시작하겠습니까?
+              </div>
+
+              {/* 하겠습니다 */}
               <button
                 onClick={() => {
                   applyRoster(queueStartName);
                   setQueueModal(null);
                 }}
                 style={{
-                  flex: 1, padding: "12px 0", borderRadius: 10, border: "none",
-                  background: "#1565c0", color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer",
+                  width: "100%", padding: "14px 0", borderRadius: 12, border: "none",
+                  background: "#1565c0", color: "#fff",
+                  fontWeight: 700, fontSize: 15, cursor: "pointer",
+                  marginBottom: 10,
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                 }}
               >
-                예, 이대로
+                <span>✅ 하겠습니다</span>
+                <span style={{
+                  background: "rgba(255,255,255,0.2)", borderRadius: 8,
+                  padding: "2px 10px", fontSize: 14, fontWeight: 800,
+                }}>
+                  {queueStartName}부터
+                </span>
               </button>
+
+              {/* 안하겠습니다 */}
               <button
                 onClick={() => {
-                  setQueuePickSearch("");
-                  setQueueModal("pick");
+                  if (spare2First) {
+                    applyRoster(spare2First);
+                  } else {
+                    // 저장된 스페어 없으면 첫번호 그대로
+                    applyRoster(queueStartName);
+                  }
+                  setQueueModal(null);
                 }}
                 style={{
-                  flex: 1, padding: "12px 0", borderRadius: 10, border: "none",
-                  background: "#f5f5f5", color: "#333", fontWeight: 600, fontSize: 15, cursor: "pointer",
+                  width: "100%", padding: "14px 0", borderRadius: 12,
+                  border: "2px solid #f8b400",
+                  background: spare2First ? "#fffbeb" : "#f5f5f5",
+                  color: spare2First ? "#92400e" : "#999",
+                  fontWeight: 700, fontSize: 15, cursor: "pointer",
+                  marginBottom: 14,
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                 }}
               >
-                새로 지정
+                <span>❌ 안하겠습니다</span>
+                {spare2First ? (
+                  <span style={{
+                    background: "#fef3c7", border: "1px solid #fcd34d",
+                    borderRadius: 8, padding: "2px 10px", fontSize: 14, fontWeight: 800, color: "#b45309",
+                  }}>
+                    🏁 {spare2First}부터
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 12, color: "#bbb" }}>(저장된 스페어 없음)</span>
+                )}
               </button>
+
+              {/* 구분선 */}
+              <div style={{ borderTop: "1px solid #eee", paddingTop: 12, display: "flex", gap: 8 }}>
+                <button
+                  onClick={() => { setQueuePickSearch(""); setQueueModal("pick"); }}
+                  style={{
+                    flex: 1, padding: "8px 0", borderRadius: 8, border: "1px solid #ddd",
+                    background: "transparent", color: "#555", fontSize: 13, cursor: "pointer",
+                  }}
+                >
+                  🔄 새로 지정
+                </button>
+                <button
+                  onClick={() => { applyRoster(null); saveQueueStart(null); setQueueModal(null); }}
+                  style={{
+                    flex: 1, padding: "8px 0", borderRadius: 8, border: "1px solid #ddd",
+                    background: "transparent", color: "#999", fontSize: 13, cursor: "pointer",
+                  }}
+                >
+                  첫번호 없이
+                </button>
+              </div>
             </div>
-            <button
-              onClick={() => {
-                applyRoster(null);
-                saveQueueStart(null);
-                setQueueModal(null);
-              }}
-              style={{
-                marginTop: 10, width: "100%", padding: "8px 0", borderRadius: 8, border: "1px solid #ddd",
-                background: "transparent", color: "#999", fontSize: 13, cursor: "pointer",
-              }}
-            >
-              첫번호 없이 불러오기
-            </button>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── 첫번호 지정 picker ── */}
       {queueModal === "pick" && (
