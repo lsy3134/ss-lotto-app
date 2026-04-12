@@ -884,8 +884,8 @@ export default function SchedulePage() {
         ? assignDouble(currentNames, statuses, s1, s2)
         : assignSingle(currentNames, statuses, ss);
 
-      // ★ 다음날 첫번호: 오늘 2부스페어 첫번째 (없으면 nextDayQueue 첫번째)
-      const nextFirst = result.spare2[0] ?? result.nextDayQueue?.[0] ?? null;
+      // ★ 다음날 첫번호: 오늘 2부스페어 첫번째 (항상 존재)
+      const nextFirst = result.spare2[0] ?? null;
       if (nextFirst) {
         currentNames = rotateNames(currentNames, nextFirst);
       }
