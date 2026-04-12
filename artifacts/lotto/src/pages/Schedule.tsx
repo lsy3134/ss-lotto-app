@@ -211,15 +211,11 @@ function assignDouble(
   //   - 찾근자(twoRound)는 1부 근무 후 2부에도 배정 (2부의 약 1/4 지점에 삽입)
   //   - 일반순번: twoRound 삽입 전/후로 분할
   //   - 후출자: 2부 뒤에서 3번째 위치 삽입
-  //   - 2부스페어: 나머지 → 다음날 첫번호!
+  //   - 2부스페어: 2부 순번 마지막 2명 (2부에 포함되어 있으나 대기 역할)
   // ── 2부 인원 계산 ──────────────────────────────────
-  // 규정: shift2Size = spare1 + twoRound + remaining + extra투라운드(1부 앞순번)
-  // extra투라운드: shift2Size에서 spare1/twoRound/remaining/후출을 빼고 남은 인원 수만큼
-  //               shift1 regular 배정 인원의 앞번호부터 추가로 2부에도 나감
   const shift1Regular = autoQueue.slice(0, avail1); // 1부에 배정된 regular 인원
   const avail2Normal = Math.max(0, shift2Size - spare1.length - twoRound.length - 후출List.length);
   const normalFor2 = remaining.slice(0, avail2Normal);
-  const spare2 = remaining.slice(avail2Normal);              // ★ 2부스페어 → 다음날 첫번호
 
   // 1부 앞순번에서 추가로 2부에 나가는 인원 (찾근자 제외 regular shift1의 앞번호)
   const extra2부Count = Math.max(0, shift2Size - spare1.length - twoRound.length - normalFor2.length - 후출List.length);
@@ -247,33 +243,33 @@ function assignDouble(
     shift2 = [...spare1, ...normalBefore, ...twoRound, ...afterTwoRound, ...후출List];
   }
 
+  // ★ 2부스페어 = 2부 순번 마지막 2명 (항상 2명, 2부에 포함되어 있으나 대기 역할)
+  const SPARE2_COUNT = 2;
+  const spare2 = shift2.length >= SPARE2_COUNT ? shift2.slice(-SPARE2_COUNT) : [...shift2];
+
   // ── 다음날 예상 순번 ──────────────────────────────────
-  // 규정: 2부스페어(앞번호 우선) → 나머지 큐 순서 (찾근 당일만 적용)
-  // spare2=0 이면 오늘 마지막 2부 근무자 다음 번호부터 시작 (generateWeek 와 동일 로직)
+  // 규정: 2부스페어 앞번호부터 → 나머지 큐 순서 (찾근 당일만 적용)
   let nextDayQueue: string[];
   {
     const exclSet2  = new Set(excluded);
-    const spare1Set = new Set(spare1);
     const spare2Set = new Set(spare2);
 
-    if (spare2.length > 0) {
-      // 2부스페어 있음: 스페어 앞에, 나머지 큐 순서 그대로
-      const rest  = names.filter(n => !spare2Set.has(n) && !exclSet2.has(n));
-      const excls = names.filter(n => exclSet2.has(n));
-      nextDayQueue = [...spare2, ...rest, ...excls];
-    } else {
-      // 2부스페어 없음: 오늘 마지막 2부 근무자 다음 번호부터 순번 시작
+    // 2부스페어 앞에, 나머지 큐 순서 그대로
+    const rest  = names.filter(n => !spare2Set.has(n) && !exclSet2.has(n));
+    const excls = names.filter(n => exclSet2.has(n));
+    nextDayQueue = [...spare2, ...rest, ...excls];
+
+    if (false) { // 사용하지 않는 분기 (타입 오류 방지용)
       const todayLast = shift2.at(-1);
-      // spare1은 2부를 나갔으므로 제외, excluded 제외
-      const rest  = names.filter(n => !spare1Set.has(n) && !exclSet2.has(n));
-      const excls = names.filter(n => exclSet2.has(n));
+      const rest2  = names.filter(n => !exclSet2.has(n));
+      const excls2 = names.filter(n => exclSet2.has(n));
       if (todayLast) {
-        const li = rest.indexOf(todayLast);
-        if (li >= 0 && rest.length > 1) {
-          const startAt = (li + 1) % rest.length;
-          nextDayQueue = [...rest.slice(startAt), ...rest.slice(0, startAt), ...excls];
+        const li = rest2.indexOf(todayLast);
+        if (li >= 0 && rest2.length > 1) {
+          const startAt = (li + 1) % rest2.length;
+          nextDayQueue = [...rest2.slice(startAt), ...rest2.slice(0, startAt), ...excls2];
         } else {
-          nextDayQueue = [...rest, ...excls];
+          nextDayQueue = [...rest2, ...excls2];
         }
       } else {
         nextDayQueue = [...rest, ...excls];
