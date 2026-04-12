@@ -65,11 +65,41 @@ interface DayResult {
   nextDayQueue?: string[];
 }
 
+// ── 엑셀 ArrayBuffer → ExcelDayData[] 공통 파서 ──
+function parseExcelBuffer(buf: ArrayBuffer): ExcelDayData[] {
+  const wb = XLSX.read(buf, { type: "array" });
+  const sheetName = wb.SheetNames.find((n) => n.includes("투입계산")) ?? wb.SheetNames[1];
+  const ws = wb.Sheets[sheetName];
+  const range = XLSX.utils.decode_range(ws["!ref"] ?? "A1");
+  const days: ExcelDayData[] = [];
+  for (let r = range.s.r + 2; r <= range.e.r; r++) {
+    const getVal = (c: number) => {
+      const cell = ws[XLSX.utils.encode_cell({ r, c })];
+      return cell ? cell.v : undefined;
+    };
+    const dateLabel = getVal(0);
+    const dayName = getVal(1);
+    if (!dateLabel || !dayName || typeof dayName !== "string" || !DAY_MAP.hasOwnProperty(dayName)) continue;
+    days.push({
+      dateLabel: String(dateLabel),
+      dayName,
+      dayIdx: DAY_MAP[dayName],
+      당번:    Number(getVal(5)) || 0,
+      휴무:    Number(getVal(6)) || 0,
+      병가:    Number(getVal(7)) || 0,
+      가용인원: Number(getVal(9)) || 0,
+      예약팀수: Number(getVal(10)) || 0,
+    });
+  }
+  return days;
+}
+
 // ── 엑셀 파싱 훅 ──────────────────────────────────
 function useExcelData() {
   const [excelDays, setExcelDays] = useState<ExcelDayData[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [uploadedName, setUploadedName] = useState<string | null>(null); // 업로드 파일명
 
   async function load() {
     setLoading(true);
@@ -78,42 +108,8 @@ function useExcelData() {
       const res = await fetch(`${BASE}/schedule.xlsx`);
       if (!res.ok) throw new Error("파일을 찾을 수 없습니다");
       const buf = await res.arrayBuffer();
-      const wb = XLSX.read(buf, { type: "array" });
-
-      // 시트 찾기 (설정 시트 제외, 투입계산 시트 사용)
-      const sheetName = wb.SheetNames.find((n) => n.includes("투입계산")) ?? wb.SheetNames[1];
-      const ws = wb.Sheets[sheetName];
-      const range = XLSX.utils.decode_range(ws["!ref"] ?? "A1");
-
-      const days: ExcelDayData[] = [];
-      for (let r = range.s.r + 2; r <= range.e.r; r++) {
-        const getVal = (c: number) => {
-          const cell = ws[XLSX.utils.encode_cell({ r, c })];
-          return cell ? cell.v : undefined;
-        };
-
-        const dateLabel = getVal(0);
-        const dayName = getVal(1);
-        if (!dateLabel || !dayName || typeof dayName !== "string" || !DAY_MAP.hasOwnProperty(dayName)) continue;
-
-        const 당번 = Number(getVal(5)) || 0;
-        const 휴무 = Number(getVal(6)) || 0;
-        const 병가 = Number(getVal(7)) || 0;
-        const 가용인원 = Number(getVal(9)) || 0;
-        const 예약팀수 = Number(getVal(10)) || 0;
-
-        days.push({
-          dateLabel: String(dateLabel),
-          dayName,
-          dayIdx: DAY_MAP[dayName],
-          당번,
-          휴무,
-          병가,
-          가용인원,
-          예약팀수,
-        });
-      }
-      setExcelDays(days);
+      setExcelDays(parseExcelBuffer(buf));
+      setUploadedName(null);
     } catch (e: any) {
       setError(e.message ?? "오류");
     } finally {
@@ -121,9 +117,26 @@ function useExcelData() {
     }
   }
 
+  // ★ 기능1: 사용자가 업로드한 파일로 대체
+  async function loadFromFile(file: File) {
+    setLoading(true);
+    setError("");
+    try {
+      const buf = await file.arrayBuffer();
+      const days = parseExcelBuffer(buf);
+      if (days.length === 0) throw new Error("날짜 데이터를 찾을 수 없습니다. '투입계산' 시트를 확인하세요.");
+      setExcelDays(days);
+      setUploadedName(file.name);
+    } catch (e: any) {
+      setError(e.message ?? "파일 읽기 오류");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => { load(); }, []);
 
-  return { excelDays, loading, error, reload: load };
+  return { excelDays, loading, error, reload: load, loadFromFile, uploadedName };
 }
 
 // ── 배정 엔진: 2부제 (PDF 규정 기준) ──────────────
@@ -339,7 +352,7 @@ async function runCalendarOCR(file: File): Promise<Record<string, string[]>> {
 // ── 메인 컴포넌트 ─────────────────────────────────
 export default function SchedulePage() {
   const [, setLocation] = useLocation();
-  const { excelDays, loading: xlLoading, error: xlError } = useExcelData();
+  const { excelDays, loading: xlLoading, error: xlError, loadFromFile, uploadedName } = useExcelData();
 
   // 설정 (localStorage 영구 저장)
   const savedTeams = (() => {
@@ -411,20 +424,35 @@ export default function SchedulePage() {
     }
   }, [selectedDate]);
 
+  // ★ Bug4 수정: viewMonth가 엑셀에 없는 달이면 첫 번째 존재하는 달로 자동 이동
+  useEffect(() => {
+    if (availableMonths.length > 0 && !availableMonths.includes(viewMonth)) {
+      setViewMonth(availableMonths[0]);
+    }
+  }, [availableMonths, viewMonth]);
+
   // 인원
   const [names, setNames] = useState<string[]>([]);
   const [rosterLoaded, setRosterLoaded] = useState(false);
 
-  // 날짜별 수동 상태 (localStorage 영구 저장)
+  // 날짜별 수동 상태 (localStorage 영구 저장) — 연도별 키로 분리
+  const DS_KEY = `lotto_dateStatuses_${new Date().getFullYear()}`;
   const [dateStatuses, setDateStatuses] = useState<Record<string, Record<string, StatusType>>>(() => {
     try {
-      const saved = localStorage.getItem("lotto_dateStatuses");
+      // ★ Bug1 수정: 구버전 키("lotto_dateStatuses") → 연도 키로 마이그레이션
+      const oldKey = "lotto_dateStatuses";
+      const oldData = localStorage.getItem(oldKey);
+      if (oldData && !localStorage.getItem(DS_KEY)) {
+        localStorage.setItem(DS_KEY, oldData);
+        localStorage.removeItem(oldKey);
+      }
+      const saved = localStorage.getItem(DS_KEY);
       return saved ? JSON.parse(saved) : {};
     } catch { return {}; }
   });
   useEffect(() => {
-    localStorage.setItem("lotto_dateStatuses", JSON.stringify(dateStatuses));
-  }, [dateStatuses]);
+    localStorage.setItem(DS_KEY, JSON.stringify(dateStatuses));
+  }, [dateStatuses, DS_KEY]);
 
   // VIP 날짜별 저장 (localStorage)
   type VipRound = "1부" | "2부" | null;
@@ -442,6 +470,28 @@ export default function SchedulePage() {
   const [vipPickerOpen, setVipPickerOpen] = useState(false);
   const [vipMemberPickerOpen, setVipMemberPickerOpen] = useState(false);
   const [vipMemberSearch, setVipMemberSearch] = useState("");
+
+  // ★ 기능2: 날짜별 2부스페어 저장 (다음날 첫번호 힌트용)
+  const SPARE2_KEY = `lotto_spare2_${new Date().getFullYear()}`;
+  const [savedSpare2, setSavedSpare2] = useState<Record<string, string[]>>(() => {
+    try {
+      const saved = localStorage.getItem(SPARE2_KEY);
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
+  useEffect(() => {
+    localStorage.setItem(SPARE2_KEY, JSON.stringify(savedSpare2));
+  }, [savedSpare2, SPARE2_KEY]);
+
+  // 이전날 날짜 레이블 찾기
+  const prevDateLabel = useMemo(() => {
+    if (!selectedDate) return null;
+    const idx = excelDays.findIndex(d => d.dateLabel === selectedDate.dateLabel);
+    return idx > 0 ? excelDays[idx - 1].dateLabel : null;
+  }, [selectedDate, excelDays]);
+
+  // 오늘 첫번호 힌트 = 전날 2부스페어[0]
+  const todayFirstHint = prevDateLabel ? (savedSpare2[prevDateLabel]?.[0] ?? null) : null;
 
   // 현재 선택 날짜 키 (e.g. "04.01 (수)")
   const currentDateKey = selectedDate?.dateLabel ?? "";
@@ -842,6 +892,10 @@ export default function SchedulePage() {
       : assignSingle(names, statuses, singleSize);
     setDayResult(result);
     setWeekly([]);
+    // ★ 기능2: 이 날짜의 2부스페어 자동 저장 (다음날 첫번호 힌트)
+    if (currentDateKey && result.spare2.length > 0) {
+      setSavedSpare2(prev => ({ ...prev, [currentDateKey]: result.spare2 }));
+    }
   }
 
   function generateWeek() {
@@ -856,9 +910,10 @@ export default function SchedulePage() {
     let currentNames = [...names];
 
     const results = DAY_LABELS.reduce<{ day: string; result: DayResult }[]>((acc, day, di) => {
-      // 해당 요일의 excelDay (주간 내)
-      const weekDay = mondayIdx >= 0 && mondayIdx + di < excelDays.length
-        ? excelDays[mondayIdx + di]
+      // ★ Bug3 수정: mondayIdx + di >= 0 체크 (mondayIdx 자체가 음수여도 di로 보정)
+      const absIdx = mondayIdx + di;
+      const weekDay = absIdx >= 0 && absIdx < excelDays.length
+        ? excelDays[absIdx]
         : null;
       const dateLabel = weekDay?.dateLabel ?? "";
       const dayIdx    = weekDay?.dayIdx ?? di;
@@ -884,8 +939,19 @@ export default function SchedulePage() {
         ? assignDouble(currentNames, statuses, s1, s2)
         : assignSingle(currentNames, statuses, ss);
 
-      // ★ 다음날 첫번호: 오늘 2부스페어 첫번째 (항상 존재)
-      const nextFirst = result.spare2[0] ?? null;
+      // ★ Bug2 수정: 다음날 첫번호 — spare2 중 다음날 실제 근무 가능한 첫번째 인원
+      const nextAbsIdx = absIdx + 1;
+      const nextWeekDay = nextAbsIdx >= 0 && nextAbsIdx < excelDays.length ? excelDays[nextAbsIdx] : null;
+      const nextDateLabel = nextWeekDay?.dateLabel ?? "";
+      const nextDayIdx = nextWeekDay?.dayIdx ?? ((di + 1) % 7);
+      const nextSaved = dateStatuses[nextDateLabel] ?? {};
+      const nextFirst = result.spare2.find(name => {
+        const s = nextSaved[name] ?? null;
+        if (EXCLUDED_SET.has(s ?? "")) return false;
+        const person = customRosterMap[name];
+        if (person && isAutoOff(person.group, nextDayIdx)) return false;
+        return true;
+      }) ?? result.spare2[0] ?? null; // 실제 근무 가능자 없으면 spare2[0]로 fallback
       if (nextFirst) {
         currentNames = rotateNames(currentNames, nextFirst);
       }
@@ -894,6 +960,14 @@ export default function SchedulePage() {
     }, []);
     setWeekly(results);
     setDayResult(null);
+    // ★ 기능2: 일주일 각 날짜의 2부스페어 자동 저장
+    const newSpare2: Record<string, string[]> = {};
+    results.forEach(({ day, result: r }) => {
+      if (day && r.spare2.length > 0) newSpare2[day] = r.spare2;
+    });
+    if (Object.keys(newSpare2).length > 0) {
+      setSavedSpare2(prev => ({ ...prev, ...newSpare2 }));
+    }
   }
 
   // 활성 인원 대기열(제외·찾근 제외)에서의 순번 인덱스
@@ -996,11 +1070,50 @@ export default function SchedulePage() {
           </div>
 
           {/* ── 엑셀 날짜 선택 ── */}
-          <label style={S.label}>
-            {selectedDate ? selectedDate.dateLabel : "날짜 선택"}
-            {xlLoading && <span style={{ color: "#aaa", fontWeight: 400, marginLeft: "6px" }}>불러오는 중…</span>}
-            {xlError && <span style={{ color: "#e53935", fontWeight: 400, marginLeft: "6px" }}>{xlError}</span>}
-          </label>
+          {/* ★ 기능1: 엑셀 파일 업로드 */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+            <label style={{ ...S.label, margin: 0, flex: 1 }}>
+              {selectedDate ? selectedDate.dateLabel : "날짜 선택"}
+              {xlLoading && <span style={{ color: "#aaa", fontWeight: 400, marginLeft: "6px" }}>불러오는 중…</span>}
+              {xlError && <span style={{ color: "#e53935", fontWeight: 400, marginLeft: "6px" }}>{xlError}</span>}
+            </label>
+            <label style={{
+              padding: "4px 10px", borderRadius: "8px", fontSize: "0.72rem", fontWeight: 700,
+              background: uploadedName ? "#e8f5e9" : "#f0f0f0",
+              color: uploadedName ? "#2e7d32" : "#555",
+              border: uploadedName ? "1px solid #81c784" : "1px solid #ddd",
+              cursor: "pointer", whiteSpace: "nowrap",
+            }}>
+              {uploadedName ? "📄 " + uploadedName.replace(/\.xlsx?$/i, "") : "📂 엑셀 교체"}
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                style={{ display: "none" }}
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (f) loadFromFile(f);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+          </div>
+
+          {/* ★ 기능2: 오늘 첫번호 힌트 (전날 2부스페어) */}
+          {todayFirstHint && (
+            <div style={{
+              background: "#fff8e1", border: "1px solid #ffe082", borderRadius: "8px",
+              padding: "6px 12px", marginBottom: "8px",
+              fontSize: "0.8rem", display: "flex", alignItems: "center", gap: "6px",
+            }}>
+              <span>🔢</span>
+              <span style={{ color: "#795548" }}>
+                오늘 첫번호 (전날 2부스페어):
+              </span>
+              <span style={{ fontWeight: 800, color: "#e65100", fontSize: "0.9rem" }}>
+                {todayFirstHint}
+              </span>
+            </div>
+          )}
 
           {excelDays.length > 0 && (() => {
             const monthIdx = availableMonths.indexOf(viewMonth);
@@ -2769,9 +2882,16 @@ export default function SchedulePage() {
 
           {/* 1일 결과 */}
           {dayResult && weekly.length === 0 && (
-            <div style={S.card}>
-              <div style={S.sectionTitle}>
-                📋 {selectedDate ? selectedDate.dateLabel : DAY_LABELS[dayOfWeek] + "요일"} 배정 결과
+            <div style={S.card} id="print-area">
+              <div style={{ ...S.sectionTitle, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span>📋 {selectedDate ? selectedDate.dateLabel : DAY_LABELS[dayOfWeek] + "요일"} 배정 결과</span>
+                {/* ★ 기능3: 출력 버튼 */}
+                <button
+                  onClick={() => window.print()}
+                  style={{ ...S.smallBtn, fontSize: "0.75rem", padding: "4px 10px" }}
+                >
+                  🖨️ 출력
+                </button>
               </div>
               <DayResultView result={dayResult} mode={mode} />
             </div>
@@ -2779,8 +2899,17 @@ export default function SchedulePage() {
 
           {/* 주간 결과 */}
           {weekly.length > 0 && (
-            <div style={S.card}>
-              <div style={S.sectionTitle}>📅 주간 근무표 (월~일)</div>
+            <div style={S.card} id="print-area">
+              <div style={{ ...S.sectionTitle, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span>📅 주간 근무표 (월~일)</span>
+                {/* ★ 기능3: 출력 버튼 */}
+                <button
+                  onClick={() => window.print()}
+                  style={{ ...S.smallBtn, fontSize: "0.75rem", padding: "4px 10px" }}
+                >
+                  🖨️ 출력
+                </button>
+              </div>
               {weekly.map(({ day, result: r }, di) => (
                 <div key={day} style={S.weekDay}>
                   <div style={{
