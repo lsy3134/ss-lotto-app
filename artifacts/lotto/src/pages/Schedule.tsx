@@ -433,6 +433,7 @@ export default function SchedulePage() {
   // ── 순번표 편집 모달 ──
   const [rosterEditorOpen, setRosterEditorOpen] = useState(false);
   const [rosterEditorSearch, setRosterEditorSearch] = useState("");
+  const rosterImportRef = useRef<HTMLInputElement>(null);
   const [rosterForm, setRosterForm] = useState<{ mode: "add"|"edit"; orig?: PersonData; name: string; 조: 1|2|3|4; group: GroupType } | null>(null);
 
   // 현재 요일의 유효 상태 반환
@@ -533,6 +534,41 @@ export default function SchedulePage() {
       ));
     }
     setRosterForm(null);
+  }
+
+  // ── 순번표 백업 / 복원 ────────────────────────────
+  function exportRoster() {
+    const now = new Date();
+    const ymd = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}`;
+    const blob = new Blob([JSON.stringify(customRoster, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `순번표_백업_${ymd}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleImportRoster(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target?.result as string) as PersonData[];
+        if (!Array.isArray(data) || data.some(d => typeof d.name !== "string")) {
+          alert("올바른 순번표 백업 파일이 아닙니다.");
+          return;
+        }
+        if (!confirm(`백업 파일에서 ${data.length}명을 불러옵니다. 현재 순번표를 덮어쓸까요?`)) return;
+        setCustomRoster(data);
+        alert(`✅ ${data.length}명 복원 완료`);
+      } catch {
+        alert("파일 파싱 오류 — JSON 형식을 확인해 주세요.");
+      }
+    };
+    reader.readAsText(file);
   }
 
   function getEffective(dayIdx: number = dayOfWeek) {
@@ -1037,17 +1073,34 @@ export default function SchedulePage() {
             {/* 헤더 */}
             <div style={{
               display: "flex", alignItems: "center", padding: "14px 16px",
-              borderBottom: "1px solid #f0f0f0", background: "#1a1a2e",
+              borderBottom: "1px solid #f0f0f0", background: "#1a1a2e", gap: "8px",
             }}>
               <span style={{ fontWeight: 800, fontSize: "1rem", color: "#fff" }}>
                 📋 순번표 편집
               </span>
-              <span style={{ marginLeft: "8px", fontSize: "0.78rem", color: "#aaa" }}>
+              <span style={{ fontSize: "0.78rem", color: "#aaa" }}>
                 총 {customRoster.length}명
               </span>
+
+              {/* 백업 / 복원 버튼 */}
+              <input
+                ref={rosterImportRef} type="file" accept=".json"
+                style={{ display: "none" }} onChange={handleImportRoster}
+              />
+              <button onClick={exportRoster} style={{
+                marginLeft: "auto", padding: "5px 10px", borderRadius: "8px",
+                border: "none", background: "#2e7d32", color: "#fff",
+                fontSize: "0.75rem", fontWeight: 700, cursor: "pointer",
+              }}>💾 내보내기</button>
+              <button onClick={() => rosterImportRef.current?.click()} style={{
+                padding: "5px 10px", borderRadius: "8px",
+                border: "none", background: "#1565c0", color: "#fff",
+                fontSize: "0.75rem", fontWeight: 700, cursor: "pointer",
+              }}>📂 복원</button>
+
               <button onClick={() => { setRosterEditorOpen(false); setRosterForm(null); }}
                 style={{
-                  marginLeft: "auto", background: "rgba(255,255,255,0.15)", border: "none",
+                  background: "rgba(255,255,255,0.15)", border: "none",
                   borderRadius: "50%", width: "30px", height: "30px",
                   cursor: "pointer", fontSize: "1rem", color: "#fff", fontWeight: 700,
                 }}>✕</button>
