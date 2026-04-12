@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>로또 끝판왕 추천기</title>
+<style>
+body { font-family: sans-serif; text-align:center; background:#f4f7f9; }
+.container { background:white; padding:20px; border-radius:15px; margin-top:50px; display:inline-block;}
+.row { display:flex; justify-content:center; gap:8px; margin:10px 0;}
+.ball { width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:white; font-weight:bold;}
+input { padding:10px; width:80%; margin-top:10px;}
+button { padding:12px; margin-top:10px; width:100%; background:#222; color:white; border:none; border-radius:8px;}
+</style>
+</head>
+<body>
+
+<div class="container">
+<h2>🚀 끝판왕 로또 추천기</h2>
+
+<input id="latestInput" placeholder="이번주 번호 입력 (예: 3,11,15,29,35,44)">
+<button onclick="addLatest()">이번주 번호 추가</button>
+
+<div id="hot"></div>
+<button onclick="generate()">5게임 생성</button>
+
+<div id="result"></div>
+<div id="log"></div>
+</div>
+
+<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+
+<script>
+let allDraws = [];
+const pastWinners = new Set();
+
+function rand(){ return Math.floor(Math.random()*45)+1; }
+
+function pick(arr,n){
+  let copy=[...arr];
+  let res=[];
+  while(res.length<n){
+    let i=Math.floor(Math.random()*copy.length);
+    res.push(copy.splice(i,1)[0]);
+  }
+  return res;
+}
+
+function isValid(nums){
+
+  if(pastWinners.has(nums.join(','))) return false;
+
+  let last={};
+  nums.forEach(n=>{
+    let d=n%10;
+    last[d]=(last[d]||0)+1;
+  });
+  if(Object.values(last).some(v=>v>=3)) return false;
+
+  let cnt=1;
+  for(let i=1;i<nums.length;i++){
+    if(nums[i]===nums[i-1]+1){
+      cnt++;
+      if(cnt>=3) return false;
+    }else cnt=1;
+  }
+
+  let odd = nums.filter(n=>n%2).length;
+  if(odd<2 || odd>4) return false;
+
+  return true;
+}
+
+function getHotCold(){
+  const freq = {};
+
+  allDraws.slice(0,10).forEach(draw=>{
+    draw.forEach(n=>{
+      freq[n]=(freq[n]||0)+1;
+    });
+  });
+
+  const sorted = Object.entries(freq)
+    .sort((a,b)=>b[1]-a[1])
+    .map(x=>Number(x[0]));
+
+  return {
+    hot: sorted.slice(0,6),
+    cold: sorted.slice(-6)
+  };
+}
+
+function generateBalanced(hot,cold){
+  while(true){
+    let nums=[];
+
+    nums.push(...pick(hot,2));
+    nums.push(...pick(cold,2));
+
+    while(nums.length<6){
+      let n=rand();
+      if(!nums.includes(n)) nums.push(n);
+    }
+
+    nums.sort((a,b)=>a-b);
+
+    if(isValid(nums)) return nums;
+  }
+}
+
+function generateGreedy(cold){
+  while(true){
+    let nums=[];
+
+    nums.push(...pick(cold,4));
+
+    while(nums.length<6){
+      let n=rand();
+      if(n>=31 && !nums.includes(n)) nums.push(n);
+    }
+
+    nums.sort((a,b)=>a-b);
+
+    if(isValid(nums)) return nums;
+  }
+}
+
+function generate(){
+  const {hot,cold} = getHotCold();
+
+  document.getElementById('hot').innerText =
+    "🔥 핫: "+hot.join(', ')+" / ❄ 콜드: "+cold.join(', ');
+
+  const result = document.getElementById('result');
+  result.innerHTML='';
+
+  for(let i=0;i<3;i++){
+    drawRow("균형형", generateBalanced(hot,cold));
+  }
+
+  for(let i=0;i<2;i++){
+    drawRow("독식형", generateGreedy(cold));
+  }
+
+  document.getElementById('log').innerText="생성 완료";
+}
+
+function drawRow(type, nums){
+  const row = document.createElement('div');
+  row.className='row';
+
+  nums.forEach(n=>{
+    const b=document.createElement('div');
+    b.className='ball';
+    b.style.background='#333';
+    b.innerText=n;
+    row.appendChild(b);
+  });
+
+  document.getElementById('result').appendChild(
+    document.createTextNode("["+type+"]")
+  );
+  document.getElementById('result').appendChild(row);
+}
+
+function addLatest(){
+  const input = document.getElementById('latestInput').value;
+
+  const nums = input.split(',')
+    .map(n=>Number(n.trim()))
+    .filter(n=>n>=1 && n<=45)
+    .sort((a,b)=>a-b);
+
+  if(nums.length!==6){
+    alert("입력 오류");
+    return;
+  }
+
+  const key = nums.join(',');
+
+  if(pastWinners.has(key)){
+    alert("이미 존재");
+    return;
+  }
+
+  pastWinners.add(key);
+  allDraws.unshift(nums);
+
+  localStorage.setItem('latestLotto', key);
+
+  alert("추가 완료");
+}
+
+function loadLatest(){
+  const saved = localStorage.getItem('latestLotto');
+  if(saved){
+    const arr = saved.split(',').map(Number);
+    pastWinners.add(saved);
+    allDraws.unshift(arr);
+  }
+}
+
+async function loadExcel(){
+  const res = await fetch('./lotto.xlsx');
+  const buf = await res.arrayBuffer();
+  const wb = XLSX.read(buf,{type:'array'});
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+
+  rows.forEach(row=>{
+    const nums = [
+      row['당첨번호'], row['Unnamed: 3'], row['Unnamed: 4'],
+      row['Unnamed: 5'], row['Unnamed: 6'], row['Unnamed: 7']
+    ].map(Number).sort((a,b)=>a-b);
+
+    if(nums.length===6){
+      pastWinners.add(nums.join(','));
+      allDraws.push(nums);
+    }
+  });
+}
+
+async function init(){
+  await loadExcel();
+  loadLatest();
+}
+
+init();
+</script>
+
+</body>
+</html>

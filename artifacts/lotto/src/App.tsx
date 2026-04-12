@@ -3,71 +3,101 @@ import * as XLSX from "xlsx";
 
 const BASE_URL = import.meta.env.BASE_URL;
 
-function getColor(n: number): string {
-  if (n <= 10) return "#fbc400";
-  if (n <= 20) return "#69c8f2";
-  if (n <= 30) return "#ff7272";
-  if (n <= 40) return "#aaa";
-  return "#b0d840";
-}
-
 interface Game {
   type: string;
   nums: number[];
 }
 
 export default function App() {
+  const allDraws = useRef<number[][]>([]);
   const pastWinners = useRef<Set<string>>(new Set());
-  const recentHotNumbers = useRef<number[]>([]);
   const [hotText, setHotText] = useState("");
   const [games, setGames] = useState<Game[]>([]);
-  const [log, setLog] = useState("엑셀 로딩이 완료되면 번호를 생성할 수 있습니다.");
-  const [loaded, setLoaded] = useState(false);
+  const [log, setLog] = useState("");
+  const [input, setInput] = useState("");
 
   useEffect(() => {
-    async function loadExcel() {
-      try {
-        const res = await fetch(`${BASE_URL}lotto.xlsx`);
-        if (!res.ok) throw new Error("lotto.xlsx 파일을 찾을 수 없습니다.");
-        const buf = await res.arrayBuffer();
-        const wb = XLSX.read(buf, { type: "array" });
-        const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(
-          wb.Sheets[wb.SheetNames[0]]
-        );
+    async function init() {
+      await loadExcel();
+      loadLatest();
+    }
+    init();
+  }, []);
 
-        const recent: number[] = [];
+  async function loadExcel() {
+    const res = await fetch(`${BASE_URL}lotto.xlsx`);
+    const buf = await res.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array" });
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(
+      wb.Sheets[wb.SheetNames[0]]
+    );
 
-        rows.forEach((r, i) => {
-          const nums = [
-            r["당첨번호"], r["Unnamed: 3"], r["Unnamed: 4"],
-            r["Unnamed: 5"], r["Unnamed: 6"], r["Unnamed: 7"],
-          ]
-            .map(Number)
-            .filter((v) => Number.isInteger(v) && v >= 1 && v <= 45)
-            .sort((a, b) => a - b);
+    rows.forEach((row) => {
+      const nums = [
+        row["당첨번호"], row["Unnamed: 3"], row["Unnamed: 4"],
+        row["Unnamed: 5"], row["Unnamed: 6"], row["Unnamed: 7"],
+      ]
+        .map(Number)
+        .filter((v) => Number.isInteger(v) && v >= 1 && v <= 45)
+        .sort((a, b) => a - b);
 
-          if (nums.length === 6) {
-            pastWinners.current.add(nums.join(","));
-            if (i < 10) recent.push(...nums);
-          }
-        });
+      if (nums.length === 6) {
+        pastWinners.current.add(nums.join(","));
+        allDraws.current.push(nums);
+      }
+    });
+  }
 
-        const freq: Record<number, number> = {};
-        recent.forEach((n) => (freq[n] = (freq[n] || 0) + 1));
-        recentHotNumbers.current = Object.entries(freq)
-          .sort((a, b) => Number(b[1]) - Number(a[1]))
-          .slice(0, 6)
-          .map((x) => Number(x[0]));
-
-        setHotText("🔥 최근 핫번호: " + recentHotNumbers.current.join(", "));
-        setLoaded(true);
-        setLog("엑셀 대조 준비 완료\n이제 과거 당첨 조합을 제외하고 번호를 생성합니다.");
-      } catch (e) {
-        setLog("엑셀 로딩 실패: " + (e as Error).message);
+  function loadLatest() {
+    const saved = localStorage.getItem("latestLotto");
+    if (saved) {
+      const arr = saved.split(",").map(Number);
+      if (!pastWinners.current.has(saved)) {
+        pastWinners.current.add(saved);
+        allDraws.current.unshift(arr);
       }
     }
-    loadExcel();
-  }, []);
+  }
+
+  function addLatest() {
+    const nums = input
+      .split(",")
+      .map((n) => Number(n.trim()))
+      .filter((n) => n >= 1 && n <= 45)
+      .sort((a, b) => a - b);
+
+    if (nums.length !== 6) {
+      alert("입력 오류");
+      return;
+    }
+
+    const key = nums.join(",");
+
+    if (pastWinners.current.has(key)) {
+      alert("이미 존재");
+      return;
+    }
+
+    pastWinners.current.add(key);
+    allDraws.current.unshift(nums);
+    localStorage.setItem("latestLotto", key);
+    setInput("");
+    alert("추가 완료");
+  }
+
+  function rand() {
+    return Math.floor(Math.random() * 45) + 1;
+  }
+
+  function pick(arr: number[], n: number): number[] {
+    const copy = [...arr];
+    const res: number[] = [];
+    while (res.length < n) {
+      const i = Math.floor(Math.random() * copy.length);
+      res.push(copy.splice(i, 1)[0]);
+    }
+    return res;
+  }
 
   function isValid(nums: number[]): boolean {
     if (pastWinners.current.has(nums.join(","))) return false;
@@ -95,99 +125,117 @@ export default function App() {
     return true;
   }
 
-  function generateOne(): number[] | null {
-    let tries = 0;
-    while (tries < 5000) {
-      tries++;
-      const arr: number[] = [];
-      while (arr.length < 6) {
-        const n = Math.floor(Math.random() * 45) + 1;
-        if (!arr.includes(n)) arr.push(n);
+  function getHotCold(): { hot: number[]; cold: number[] } {
+    const freq: Record<number, number> = {};
+    allDraws.current.slice(0, 10).forEach((draw) => {
+      draw.forEach((n) => {
+        freq[n] = (freq[n] || 0) + 1;
+      });
+    });
+
+    const sorted = Object.entries(freq)
+      .sort((a, b) => Number(b[1]) - Number(a[1]))
+      .map((x) => Number(x[0]));
+
+    return {
+      hot: sorted.slice(0, 6),
+      cold: sorted.slice(-6),
+    };
+  }
+
+  function generateBalanced(hot: number[], cold: number[]): number[] {
+    while (true) {
+      const nums: number[] = [];
+      nums.push(...pick(hot, 2));
+      nums.push(...pick(cold, 2));
+      while (nums.length < 6) {
+        const n = rand();
+        if (!nums.includes(n)) nums.push(n);
       }
-      arr.sort((a, b) => a - b);
-      if (isValid(arr)) return arr;
+      nums.sort((a, b) => a - b);
+      if (isValid(nums)) return nums;
     }
-    return null;
   }
 
-  function generateBalanced(): number[] {
+  function generateGreedy(cold: number[]): number[] {
     while (true) {
-      const nums = generateOne();
-      if (!nums) continue;
-      const odd = nums.filter((n) => n % 2).length;
-      if (odd < 2 || odd > 4) continue;
-      return nums;
+      const nums: number[] = [];
+      nums.push(...pick(cold, 4));
+      while (nums.length < 6) {
+        const n = rand();
+        if (n >= 31 && !nums.includes(n)) nums.push(n);
+      }
+      nums.sort((a, b) => a - b);
+      if (isValid(nums)) return nums;
     }
   }
 
-  function generateGreedy(): number[] {
-    while (true) {
-      const nums = generateOne();
-      if (!nums) continue;
-      const high = nums.filter((n) => n >= 31).length;
-      if (high < 4) continue;
-      const last = new Set(nums.map((n) => n % 10));
-      if (last.size < 6) continue;
-      return nums;
-    }
-  }
+  function generate() {
+    const { hot, cold } = getHotCold();
+    setHotText("🔥 핫: " + hot.join(", ") + " / ❄ 콜드: " + cold.join(", "));
 
-  function generateFinalSet(): Game[] {
     const result: Game[] = [];
-    for (let i = 0; i < 3; i++) result.push({ type: "균형형", nums: generateBalanced() });
-    for (let i = 0; i < 2; i++) result.push({ type: "독식형", nums: generateGreedy() });
-    return result;
-  }
+    for (let i = 0; i < 3; i++) result.push({ type: "균형형", nums: generateBalanced(hot, cold) });
+    for (let i = 0; i < 2; i++) result.push({ type: "독식형", nums: generateGreedy(cold) });
 
-  function handleGenerate() {
-    if (!loaded) return;
-    const result = generateFinalSet();
     setGames(result);
-    setLog(`완료: ${result.length}게임 생성 (균형형 3 + 독식형 2)`);
+    setLog("생성 완료");
   }
 
   return (
     <div style={{ fontFamily: "sans-serif", textAlign: "center", background: "#f4f7f9", minHeight: "100vh", padding: "20px" }}>
-      <div style={{ background: "white", padding: "20px", borderRadius: "15px", marginTop: "50px", display: "inline-block", minWidth: "340px" }}>
-        <h2>🚀 스마트 2단계 추천기</h2>
-        {hotText && <div style={{ margin: "8px 0", color: "#e65100", fontWeight: 600 }}>{hotText}</div>}
+      <div style={{ background: "white", padding: "20px", borderRadius: "15px", marginTop: "50px", display: "inline-block", minWidth: "360px" }}>
+        <h2>🚀 끝판왕 로또 추천기</h2>
 
-        <div style={{ marginTop: "12px" }}>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="이번주 번호 입력 (예: 3,11,15,29,35,44)"
+          style={{ padding: "10px", width: "80%", marginTop: "10px", border: "1px solid #ccc", borderRadius: "6px" }}
+        />
+        <button
+          onClick={addLatest}
+          style={{ padding: "12px", marginTop: "10px", width: "100%", background: "#222", color: "white", border: "none", borderRadius: "8px", cursor: "pointer" }}
+        >
+          이번주 번호 추가
+        </button>
+
+        {hotText && (
+          <div style={{ margin: "12px 0", color: "#555", fontSize: "0.9rem" }}>{hotText}</div>
+        )}
+
+        <button
+          onClick={generate}
+          style={{ padding: "12px", marginTop: "10px", width: "100%", background: "#222", color: "white", border: "none", borderRadius: "8px", cursor: "pointer" }}
+        >
+          5게임 생성
+        </button>
+
+        <div style={{ marginTop: "10px" }}>
           {games.map((game, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "8px", margin: "10px 0" }}>
-              <span style={{ fontSize: "0.75rem", color: "#888", width: "40px", textAlign: "right" }}>{game.type}</span>
-              {game.nums.map((n) => (
-                <div
-                  key={n}
-                  style={{
-                    width: "40px", height: "40px", borderRadius: "50%",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    color: "white", fontWeight: "bold", background: getColor(n),
-                  }}
-                >
-                  {n}
-                </div>
-              ))}
+            <div key={i}>
+              <span style={{ fontSize: "0.8rem", color: "#888" }}>[{game.type}]</span>
+              <div style={{ display: "flex", justifyContent: "center", gap: "8px", margin: "6px 0 10px" }}>
+                {game.nums.map((n) => (
+                  <div
+                    key={n}
+                    style={{
+                      width: "40px", height: "40px", borderRadius: "50%",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      color: "white", fontWeight: "bold", background: "#333",
+                    }}
+                  >
+                    {n}
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
         </div>
 
-        <button
-          onClick={handleGenerate}
-          disabled={!loaded}
-          style={{
-            padding: "12px", marginTop: "15px", width: "100%",
-            background: loaded ? "#222" : "#999",
-            color: "white", border: "none", borderRadius: "8px",
-            cursor: loaded ? "pointer" : "not-allowed", fontSize: "1rem",
-          }}
-        >
-          {loaded ? "5게임 생성" : "엑셀 로딩 중..."}
-        </button>
-
-        <div style={{ marginTop: "12px", fontSize: "0.85rem", color: "#666", whiteSpace: "pre-line" }}>
-          {log}
-        </div>
+        {log && (
+          <div style={{ marginTop: "8px", fontSize: "0.85rem", color: "#666" }}>{log}</div>
+        )}
       </div>
     </div>
   );
