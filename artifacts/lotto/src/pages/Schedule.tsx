@@ -1383,19 +1383,17 @@ export default function SchedulePage() {
                       style={{
                         display: "flex", flexDirection: "column",
                         alignItems: "center", justifyContent: "center",
-                        gap: "2px", padding: "6px 12px",
-                        borderRadius: "10px",
-                        border: activeDaegeun.length > 0 ? "2px solid #f59e0b" : "2px solid #f59e0b55",
-                        background: activeDaegeun.length > 0 ? "#fef3c7" : "#fffbeb",
+                        padding: "6px 10px",
+                        borderRadius: "8px",
+                        border: activeDaegeun.length > 0 ? "1.5px solid #f59e0b" : "1px solid #f59e0b55",
+                        background: activeDaegeun.length > 0 ? "#fef3c7" : "#fffbeb15",
                         cursor: "pointer",
+                        minWidth: "52px",
                         WebkitTapHighlightColor: "transparent",
                       }}>
-                      <span style={{ fontSize: "0.75rem", fontWeight: 800, color: "#92400e" }}>대근</span>
-                      <span style={{ fontSize: "1rem", fontWeight: 900, color: activeDaegeun.length > 0 ? "#f59e0b" : "#d1d5db", lineHeight: 1 }}>
+                      <span style={{ fontSize: "0.65rem", fontWeight: 700, color: "#92400e" }}>대근</span>
+                      <span style={{ fontSize: "1rem", fontWeight: 700, color: activeDaegeun.length > 0 ? "#f59e0b" : "#d1d5db" }}>
                         {activeDaegeun.length > 0 ? activeDaegeun.length : daegeunCandidates.length}
-                      </span>
-                      <span style={{ fontSize: "0.55rem", color: "#92400e99" }}>
-                        {activeDaegeun.length > 0 ? "명 투입" : "명 대기"}
                       </span>
                     </button>
                   );
