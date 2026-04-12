@@ -816,12 +816,41 @@ export default function SchedulePage() {
   }
 
   function generateWeek() {
+    // 현재 선택된 날짜 기준으로 해당 주(월~일)의 excelDay 찾기
+    const selIdx = selectedDate
+      ? excelDays.findIndex(d => d.dateLabel === selectedDate.dateLabel)
+      : -1;
+    const mondayIdx = selIdx >= 0 ? selIdx - (selectedDate?.dayIdx ?? 0) : -1;
+
     const results = DAY_LABELS.map((day, di) => {
-      const statuses = getEffective(di);
+      // 해당 요일의 excelDay (주간 내)
+      const weekDay = mondayIdx >= 0 && mondayIdx + di < excelDays.length
+        ? excelDays[mondayIdx + di]
+        : null;
+      const dateLabel = weekDay?.dateLabel ?? "";
+      const dayIdx    = weekDay?.dayIdx ?? di;
+
+      // ★ 날짜별 저장된 상태 사용 → 찾근은 지정한 날에만!
+      const savedDay = dateStatuses[dateLabel] ?? {};
+      const statuses: Record<string, StatusType> = {};
+      names.forEach((n) => {
+        if (n in savedDay) { statuses[n] = savedDay[n]; return; }
+        const person = customRosterMap[n];
+        if (person && isAutoOff(person.group, dayIdx)) { statuses[n] = "휴무"; return; }
+        statuses[n] = null;
+      });
+
+      // 날짜별 예약팀수 자동 반영
+      let s1 = shift1Size, s2 = shift2Size, ss = singleSize;
+      if (weekDay && weekDay.예약팀수 > 0) {
+        const tot = weekDay.예약팀수;
+        s1 = Math.round(tot / 2); s2 = tot - s1; ss = tot;
+      }
+
       const result = mode === "2부제"
-        ? assignDouble(names, statuses, shift1Size, shift2Size)
-        : assignSingle(names, statuses, singleSize);
-      return { day, result };
+        ? assignDouble(names, statuses, s1, s2)
+        : assignSingle(names, statuses, ss);
+      return { day: dateLabel || day, result };
     });
     setWeekly(results);
     setDayResult(null);
