@@ -238,10 +238,38 @@ function assignDouble(
   }
 
   // ── 다음날 예상 순번 ──────────────────────────────────
-  // 규정: 2부스페어(앞번호 우선) → 오늘 근무자(찾근 포함, 원래 큐 순서) 순서
-  // 찾근(투라운드)은 당일만 적용 — 다음 날은 일반 순번으로 처리
-  // 1부스페어는 2부를 나갔으므로 다음날 대기에 포함되지 않음
-  const nextDayQueue = buildNextDayQueue(names, [], spare2, twoRound, excluded);
+  // 규정: 2부스페어(앞번호 우선) → 나머지 큐 순서 (찾근 당일만 적용)
+  // spare2=0 이면 오늘 마지막 2부 근무자 다음 번호부터 시작 (generateWeek 와 동일 로직)
+  let nextDayQueue: string[];
+  {
+    const exclSet2  = new Set(excluded);
+    const spare1Set = new Set(spare1);
+    const spare2Set = new Set(spare2);
+
+    if (spare2.length > 0) {
+      // 2부스페어 있음: 스페어 앞에, 나머지 큐 순서 그대로
+      const rest  = names.filter(n => !spare2Set.has(n) && !exclSet2.has(n));
+      const excls = names.filter(n => exclSet2.has(n));
+      nextDayQueue = [...spare2, ...rest, ...excls];
+    } else {
+      // 2부스페어 없음: 오늘 마지막 2부 근무자 다음 번호부터 순번 시작
+      const todayLast = shift2.at(-1);
+      // spare1은 2부를 나갔으므로 제외, excluded 제외
+      const rest  = names.filter(n => !spare1Set.has(n) && !exclSet2.has(n));
+      const excls = names.filter(n => exclSet2.has(n));
+      if (todayLast) {
+        const li = rest.indexOf(todayLast);
+        if (li >= 0 && rest.length > 1) {
+          const startAt = (li + 1) % rest.length;
+          nextDayQueue = [...rest.slice(startAt), ...rest.slice(0, startAt), ...excls];
+        } else {
+          nextDayQueue = [...rest, ...excls];
+        }
+      } else {
+        nextDayQueue = [...rest, ...excls];
+      }
+    }
+  }
 
   return { twoRound, shift1, spare1, shift2, spare2, excluded, 조출List, 후출List, nextDayQueue };
 }
@@ -270,7 +298,33 @@ function assignSingle(
     if (i < avail) shift1.push(n); else spare2.push(n);
   });
 
-  const nextDayQueue = buildNextDayQueue(names, [], spare2, twoRound, excluded);
+  // 다음날 순번: spare2=0 이면 마지막 근무자 다음부터 회전
+  let nextDayQueue: string[];
+  {
+    const exclSet2  = new Set(excluded);
+    const spare2Set = new Set(spare2);
+
+    if (spare2.length > 0) {
+      const rest  = names.filter(n => !spare2Set.has(n) && !exclSet2.has(n));
+      const excls = names.filter(n => exclSet2.has(n));
+      nextDayQueue = [...spare2, ...rest, ...excls];
+    } else {
+      const todayLast = shift1.at(-1);
+      const rest  = names.filter(n => !exclSet2.has(n));
+      const excls = names.filter(n => exclSet2.has(n));
+      if (todayLast) {
+        const li = rest.indexOf(todayLast);
+        if (li >= 0 && rest.length > 1) {
+          const startAt = (li + 1) % rest.length;
+          nextDayQueue = [...rest.slice(startAt), ...rest.slice(0, startAt), ...excls];
+        } else {
+          nextDayQueue = [...rest, ...excls];
+        }
+      } else {
+        nextDayQueue = [...rest, ...excls];
+      }
+    }
+  }
 
   return { twoRound, shift1, spare1: [], shift2: [], spare2, excluded, nextDayQueue };
 }
