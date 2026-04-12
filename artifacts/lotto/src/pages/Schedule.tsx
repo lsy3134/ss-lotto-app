@@ -268,6 +268,19 @@ export default function SchedulePage() {
   // 선택된 날짜 (엑셀 날짜)
   const [selectedDate, setSelectedDate] = useState<ExcelDayData | null>(null);
 
+  // 엑셀 로드 완료 시 오늘 날짜 자동 선택
+  useEffect(() => {
+    if (excelDays.length > 0 && !selectedDate) {
+      const now = new Date();
+      const mm = String(now.getMonth() + 1).padStart(2, "0");
+      const dd = String(now.getDate()).padStart(2, "0");
+      const todayPrefix = `${mm}.${dd}`;
+      const today = excelDays.find((d) => d.dateLabel.startsWith(todayPrefix));
+      if (today) selectExcelDate(today);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [excelDays]);
+
   // 인원
   const [names, setNames] = useState<string[]>([]);
   const [rosterLoaded, setRosterLoaded] = useState(false);
@@ -453,6 +466,26 @@ export default function SchedulePage() {
     return base;
   }
 
+  // 상태 버튼 목록
+  const STATUS_BTNS: { st: StatusType; label: string; color: string; bg: string }[] = [
+    { st: "휴무",  label: "휴무",  color: "#757575", bg: "#f5f5f5" },
+    { st: "병가",  label: "병가",  color: "#c62828", bg: "#ffebee" },
+    { st: "당번",  label: "당번",  color: "#e65100", bg: "#fff3e0" },
+    { st: "조출",  label: "조출",  color: "#1565c0", bg: "#e3f2fd" },
+    { st: "후출",  label: "후출",  color: "#6a1b9a", bg: "#f3e5f5" },
+    { st: "찾근",  label: "찾근",  color: "#2e7d32", bg: "#e8f5e9" },
+  ];
+
+  function openStatusPicker(st: StatusType) {
+    if (names.length === 0) {
+      const loaded = sortedCustomRoster.map((p) => p.name);
+      setNames(loaded);
+      setRosterLoaded(true);
+    }
+    setModalStatus(st);
+    setModalSearch("");
+  }
+
   function assign() {
     const statuses = getEffective(dayOfWeek);
     const result = mode === "2부제"
@@ -627,72 +660,51 @@ export default function SchedulePage() {
                   </span>
                 )}
               </div>
+              {/* 가용인원 · 예약팀수 요약 */}
               <div style={S.excelStatRow}>
                 <StatBadge label="가용인원" value={selectedDate.가용인원} color="#1565c0" />
                 <StatBadge label="예약팀수" value={selectedDate.예약팀수 || "미입력"} color={selectedDate.예약팀수 > 0 ? "#2e7d32" : "#9e9e9e"} />
-                {/* 클릭 가능한 상태 뱃지 */}
-                {(["당번", "휴무", "병가"] as const).map((st) => {
-                  const sc = STATUS_COLOR[st];
-                  const assigned = names.filter(n => effectiveStatus(n) === st).length;
-                  const canClick = names.length > 0;
+              </div>
+
+              {/* ── 6개 상태 선택 버튼 ── */}
+              <div style={{
+                display: "grid", gridTemplateColumns: "repeat(3, 1fr)",
+                gap: "7px", marginTop: "12px",
+              }}>
+                {STATUS_BTNS.map(({ st, label, color, bg }) => {
+                  const cnt = names.filter(n => effectiveStatus(n) === st).length;
+                  const active = cnt > 0;
                   return (
-                    <div key={st}
-                      onClick={() => { if (canClick) setViewStatusModal(st); }}
-                      title={canClick ? `${st} 명단 보기` : "순번표를 먼저 불러오세요"}
+                    <button key={st}
+                      onClick={() => openStatusPicker(st)}
                       style={{
-                        display: "flex", flexDirection: "column", alignItems: "center",
-                        background: assigned > 0 ? sc.bg + "22" : sc.bg + "12",
-                        borderRadius: "8px", padding: "6px 10px",
-                        border: `1.5px solid ${assigned > 0 ? sc.bg : sc.bg + "55"}`,
-                        minWidth: "52px", cursor: canClick ? "pointer" : "default",
-                        position: "relative",
+                        display: "flex", flexDirection: "column",
+                        alignItems: "center", justifyContent: "center",
+                        gap: "2px", padding: "10px 4px",
+                        borderRadius: "12px", border: `2px solid ${active ? color : color + "44"}`,
+                        background: active ? bg : "#fafafa",
+                        cursor: "pointer", position: "relative",
+                        WebkitTapHighlightColor: "transparent",
                       }}>
-                      <span style={{ fontSize: "0.65rem", color: sc.bg, fontWeight: 700 }}>{st}</span>
-                      <span style={{ fontSize: "1rem", fontWeight: 700, color: sc.bg }}>
-                        {assigned > 0 ? assigned : selectedDate[st as "당번"|"휴무"|"병가"]}
+                      <span style={{ fontSize: "0.85rem", fontWeight: 800, color }}>
+                        {label}
                       </span>
-                      {canClick && (
+                      <span style={{
+                        fontSize: "1.1rem", fontWeight: 900,
+                        color: active ? color : "#ccc", lineHeight: 1,
+                      }}>
+                        {active ? cnt : "–"}
+                      </span>
+                      {active && (
                         <span style={{
-                          position: "absolute", top: "2px", right: "3px",
-                          fontSize: "0.5rem", color: sc.bg + "99",
-                        }}>▼</span>
+                          position: "absolute", top: "3px", right: "5px",
+                          fontSize: "0.48rem", color: color + "99",
+                        }}>●</span>
                       )}
-                    </div>
+                    </button>
                   );
                 })}
               </div>
-
-              {/* 조출·후출·찾근 빠른 배정 버튼 (순번표 로드 후 표시) */}
-              {names.length > 0 && mode === "2부제" && (
-                <div style={{ display: "flex", gap: "6px", marginTop: "8px", flexWrap: "wrap" }}>
-                  {([
-                    { st: "조출" as const, icon: "⬆", sub: "1부 앞", disabled: !cho가능, hint: !cho가능 ? "1부 6팀+" : `${cho현재수}/4명` },
-                    { st: "후출" as const, icon: "⬇", sub: "2부 뒤", disabled: false, hint: `${hu현재수}/4명` },
-                    { st: "찾근" as const, icon: "🔄", sub: "투라운드", disabled: !cho가능, hint: !cho가능 ? "1부 6팀+" : `${checkedCounts.찾근 ?? 0}명` },
-                  ]).map(({ st, icon, sub, disabled, hint }) => {
-                    const sc = STATUS_COLOR[st];
-                    const assigned = names.filter(n => effectiveStatus(n) === st).length;
-                    return (
-                      <button key={st}
-                        onClick={() => { if (!disabled) { setModalStatus(st); setModalSearch(""); } }}
-                        disabled={disabled}
-                        style={{
-                          display: "flex", alignItems: "center", gap: "5px",
-                          padding: "5px 10px", borderRadius: "20px", border: "none",
-                          background: disabled ? "#f0f0f0" : (assigned > 0 ? sc.bg : sc.bg + "22"),
-                          color: disabled ? "#bbb" : (assigned > 0 ? "#fff" : sc.bg),
-                          fontWeight: 700, fontSize: "0.78rem",
-                          cursor: disabled ? "not-allowed" : "pointer",
-                          opacity: disabled ? 0.6 : 1,
-                        }}>
-                        <span>{icon}</span>
-                        <span>{st}</span>
-                        <span style={{ fontSize: "0.68rem", opacity: 0.8 }}>{hint}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
               {selectedDate.예약팀수 === 0 && (
                 <div style={{ fontSize: "0.72rem", color: "#ff8f00", marginTop: "4px" }}>
                   ⚠ 예약팀수 미입력 — 아래에서 직접 팀수를 입력해 주세요
