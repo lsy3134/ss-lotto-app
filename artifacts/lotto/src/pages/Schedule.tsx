@@ -2940,6 +2940,41 @@ export default function SchedulePage() {
                   </div>
                 )}
 
+                {/* 투라운드(찾근) — 2부 몇팀째 */}
+                {livePreview.twoRound?.length > 0 && livePreview.shift2?.length > 0 && (() => {
+                  const positions = livePreview.twoRound
+                    .map((n: string) => livePreview.shift2.indexOf(n))
+                    .filter((i: number) => i >= 0)
+                    .map((i: number) => i + 1);
+                  const minPos = positions.length > 0 ? Math.min(...positions) : null;
+                  const maxPos = positions.length > 0 ? Math.max(...positions) : null;
+                  return (
+                    <div style={{
+                      display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
+                      background: "#ecfeff", border: "1.5px solid #a5f3fc", borderRadius: 8, padding: "5px 10px",
+                    }}>
+                      <span style={{
+                        fontSize: "0.7rem", fontWeight: 800, color: "#164e63",
+                        background: "#cffafe", borderRadius: 6, padding: "2px 7px", minWidth: 70, textAlign: "center", flexShrink: 0,
+                      }}>🔄 투라운드</span>
+                      <span style={{ fontSize: 14, fontWeight: 800, color: "#0e7490" }}>
+                        {livePreview.twoRound.join("  ·  ")}
+                      </span>
+                      <span style={{ fontSize: "0.7rem", color: "#90a4ae" }}>
+                        ({livePreview.twoRound.length}명)
+                      </span>
+                      {minPos !== null && (
+                        <span style={{
+                          marginLeft: "auto", fontSize: "0.72rem", fontWeight: 700,
+                          color: "#0e7490", background: "#a5f3fc", borderRadius: 5, padding: "1px 7px", flexShrink: 0,
+                        }}>
+                          2부 {minPos === maxPos ? `${minPos}팀` : `${minPos}~${maxPos}팀`}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {/* 2부 마지막 */}
                 {livePreview.shift2.length > 0 && (
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -2956,19 +2991,26 @@ export default function SchedulePage() {
                   </div>
                 )}
 
-                {/* 2부 스페어 */}
+                {/* 2부 스페어 — 1부스페어와 동급 강조 */}
                 {livePreview.spare2.length > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
+                    background: "#fffbeb", border: "1.5px solid #fcd34d", borderRadius: 8, padding: "5px 10px",
+                  }}>
                     <span style={{
-                      fontSize: "0.7rem", fontWeight: 800, color: "#6a1b9a",
-                      background: "#f3e5f5", borderRadius: 6, padding: "2px 7px", minWidth: 70, textAlign: "center", flexShrink: 0,
-                    }}>2부 스페어</span>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: "#6a1b9a" }}>
+                      fontSize: "0.7rem", fontWeight: 800, color: "#92400e",
+                      background: "#fef3c7", borderRadius: 6, padding: "2px 7px", minWidth: 70, textAlign: "center", flexShrink: 0,
+                    }}>🏁 2부스페어</span>
+                    <span style={{ fontSize: 15, fontWeight: 800, color: "#b45309" }}>
                       {livePreview.spare2.join("  ·  ")}
                     </span>
                     <span style={{ fontSize: "0.7rem", color: "#90a4ae" }}>
                       ({livePreview.spare2.length}명)
                     </span>
+                    <span style={{
+                      marginLeft: "auto", fontSize: "0.72rem", fontWeight: 700,
+                      color: "#92400e", background: "#fcd34d", borderRadius: 5, padding: "1px 7px", flexShrink: 0,
+                    }}>→ 내일 첫번호</span>
                   </div>
                 )}
               </>) : (<>
