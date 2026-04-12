@@ -60,6 +60,8 @@ interface DayResult {
   // 위치 표시용 메타 (후출: 2부 뒤에서3번째, 조출: 1부 앞)
   조출List?: string[];
   후출List?: string[];
+  // 다음날 예상 순번: [스페어(앞번호순)] → [찾근자] → [오늘 근무자]
+  nextDayQueue?: string[];
 }
 
 // ── 엑셀 파싱 훅 ──────────────────────────────────
@@ -181,7 +183,12 @@ function assignDouble(
 
   const spare2 = restQueue;
 
-  return { twoRound, shift1, spare1, shift2, spare2, excluded, 조출List, 후출List };
+  // ── 다음날 예상 순번 계산 ──────────────────────────
+  // 규정: [오늘 스페어 앞번호순] → [오늘 찾근자] → [오늘 근무자 순서]
+  // 스페어를 선 앞번호(= 낮은 큐번호)가 다음날 첫 대기가 됨
+  const nextDayQueue = buildNextDayQueue(names, spare1, spare2, twoRound, excluded);
+
+  return { twoRound, shift1, spare1, shift2, spare2, excluded, 조출List, 후출List, nextDayQueue };
 }
 
 // ── 배정 엔진: 단부제 ─────────────────────────────
@@ -208,7 +215,37 @@ function assignSingle(
     if (i < avail) shift1.push(n); else spare2.push(n);
   });
 
-  return { twoRound, shift1, spare1: [], shift2: [], spare2, excluded };
+  const nextDayQueue = buildNextDayQueue(names, [], spare2, twoRound, excluded);
+
+  return { twoRound, shift1, spare1: [], shift2: [], spare2, excluded, nextDayQueue };
+}
+
+// ── 다음날 예상 순번 계산기 ───────────────────────────
+// 규정: 오늘 스페어(앞번호 우선) → 찾근자 → 오늘 근무자 순서
+// "뒷번호가 스페어를 스면 앞번호는 죽어" = 앞번호(낮은 큐)가 다음날 먼저
+function buildNextDayQueue(
+  allNames: string[],     // 전체 이름 (원래 큐 순서)
+  spare1: string[],
+  spare2: string[],
+  twoRound: string[],
+  excluded: string[]
+): string[] {
+  const spareSet   = new Set([...spare1, ...spare2]);
+  const twoRndSet  = new Set(twoRound);
+  const exclSet    = new Set(excluded);
+
+  // ① 스페어를 선 사람: 1부스페어 → 2부스페어 (앞번호 = 낮은 큐 인덱스가 먼저)
+  const spares = [...spare1, ...spare2];
+
+  // ② 찾근자 (원래 큐 순서 유지)
+  const twoRndOrdered = allNames.filter(n => twoRndSet.has(n));
+
+  // ③ 오늘 실제 근무자 (스페어·찾근·제외 아닌 나머지, 원래 큐 순서)
+  const workers = allNames.filter(
+    n => !spareSet.has(n) && !twoRndSet.has(n) && !exclSet.has(n)
+  );
+
+  return [...spares, ...twoRndOrdered, ...workers];
 }
 
 // ── 자동 휴무 적용 ──────────────────────────────────
@@ -903,6 +940,8 @@ function DayResultView({ result, mode, compact = false }: {
     );
   }
 
+  const nextDay = result.nextDayQueue ?? [];
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: compact ? "4px" : "10px" }}>
       {cats.map(({ key, label, badge }) => {
@@ -934,6 +973,103 @@ function DayResultView({ result, mode, compact = false }: {
           </div>
         );
       })}
+
+      {/* ── 다음날 예상 순번 ── */}
+      {!compact && nextDay.length > 0 && (
+        <NextDayQueueView
+          queue={nextDay}
+          spare1={result.spare1}
+          spare2={result.spare2}
+          twoRound={result.twoRound}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── 다음날 예상 순번 뷰 ─────────────────────────────
+function NextDayQueueView({
+  queue, spare1, spare2, twoRound,
+}: {
+  queue: string[];
+  spare1: string[];
+  spare2: string[];
+  twoRound: string[];
+}) {
+  const spare1Set  = new Set(spare1);
+  const spare2Set  = new Set(spare2);
+  const twoRndSet  = new Set(twoRound);
+
+  // 종류별 색상
+  function tagOf(name: string) {
+    if (spare1Set.has(name))  return { label: "1부스페어", color: "#e65100", bg: "#fff3e0" };
+    if (spare2Set.has(name))  return { label: "2부스페어", color: "#6a1b9a", bg: "#f3e5f5" };
+    if (twoRndSet.has(name))  return { label: "찾근",     color: "#00838f", bg: "#e0f7fa" };
+    return null;
+  }
+
+  // 스페어가 없으면 표시 생략
+  if (spare1.length === 0 && spare2.length === 0) return null;
+
+  return (
+    <div style={{
+      marginTop: "6px",
+      background: "linear-gradient(135deg, #e8eaf6 0%, #f3e5f5 100%)",
+      border: "1px solid #c5cae9",
+      borderRadius: "10px",
+      padding: "10px 12px",
+    }}>
+      <div style={{ fontWeight: 700, fontSize: "0.78rem", color: "#3f51b5", marginBottom: "8px" }}>
+        📅 다음날 예상 첫 순번
+        <span style={{ fontWeight: 400, color: "#888", marginLeft: "6px", fontSize: "0.72rem" }}>
+          (스페어 앞번호 → 찾근 → 근무자 순)
+        </span>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+        {queue.slice(0, 20).map((name, i) => {
+          const tag = tagOf(name);
+          return (
+            <div key={name} style={{
+              display: "flex", alignItems: "center", gap: "3px",
+              background: tag ? tag.bg : "#f5f5f5",
+              border: `1px solid ${tag ? tag.color + "44" : "#ddd"}`,
+              borderRadius: "20px",
+              padding: "3px 9px",
+              fontSize: "0.78rem",
+            }}>
+              <span style={{ color: "#888", fontSize: "0.68rem", fontWeight: 600 }}>{i + 1}.</span>
+              <span style={{ fontWeight: tag ? 700 : 400, color: tag ? tag.color : "#333" }}>{name}</span>
+              {tag && (
+                <span style={{
+                  fontSize: "0.62rem", color: tag.color, fontWeight: 700,
+                  background: tag.bg, borderRadius: "8px", padding: "0 4px",
+                }}>
+                  {tag.label}
+                </span>
+              )}
+            </div>
+          );
+        })}
+        {queue.length > 20 && (
+          <span style={{ fontSize: "0.75rem", color: "#888", alignSelf: "center" }}>
+            +{queue.length - 20}명 더...
+          </span>
+        )}
+      </div>
+      {/* 규칙 설명 */}
+      <div style={{ marginTop: "6px", fontSize: "0.7rem", color: "#666" }}>
+        ▶ 뒷번호가 스페어를 서면 앞번호가 다음날 첫 대기
+        {spare1.length > 0 && (
+          <span style={{ marginLeft: "8px", color: "#e65100", fontWeight: 600 }}>
+            오늘 1부스페어: {spare1.join(", ")}
+          </span>
+        )}
+        {spare2.length > 0 && (
+          <span style={{ marginLeft: "8px", color: "#6a1b9a", fontWeight: 600 }}>
+            오늘 2부스페어: {spare2.join(", ")}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
