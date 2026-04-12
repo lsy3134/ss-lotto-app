@@ -540,6 +540,18 @@ export default function SchedulePage() {
     localStorage.setItem(DS_KEY, JSON.stringify(dateStatuses));
   }, [dateStatuses, DS_KEY]);
 
+  // 병가 지속 상태 (해제 전까지 모든 날짜에 자동 적용)
+  const SL_KEY = `lotto_sickLeave_${new Date().getFullYear()}`;
+  const [sickLeave, setSickLeave] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem(SL_KEY);
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
+  useEffect(() => {
+    localStorage.setItem(SL_KEY, JSON.stringify(sickLeave));
+  }, [sickLeave, SL_KEY]);
+
   // 대근 날짜별 저장 (localStorage)
   const DG_KEY = `lotto_daegeun_${new Date().getFullYear()}`;
   const [dateDaegeun, setDateDaegeun] = useState<Record<string, Record<string, DaegeunType>>>(() => {
@@ -720,7 +732,10 @@ export default function SchedulePage() {
 
   // 현재 요일의 유효 상태 반환
   function effectiveStatus(name: string, dayIdx: number = dayOfWeek): StatusType {
+    // 명시적 오버라이드(해당 날짜에 직접 설정된 값)가 있으면 우선
     if (name in manualStatuses) return manualStatuses[name];
+    // 병가 지속: sickLeave에 등록된 사람은 해제 전까지 자동 병가
+    if (sickLeave[name]) return "병가";
     const person = customRosterMap[name];
     if (person && isAutoOff(person.group, dayIdx)) {
       const dg = currentDaegeun[name];
@@ -733,6 +748,34 @@ export default function SchedulePage() {
 
   // 상태 토글
   function toggleStatus(name: string, btn: StatusType) {
+    if (btn === "병가") {
+      const cur = effectiveStatus(name);
+      if (cur === "병가") {
+        // 병가 해제: sickLeave에서 제거 + 해당 날짜 manualStatuses도 정리
+        setSickLeave((prev) => {
+          const next = { ...prev };
+          delete next[name];
+          return next;
+        });
+        setManualStatuses((prev) => {
+          if (!(name in prev)) return prev;
+          const next = { ...prev };
+          delete next[name];
+          return next;
+        });
+      } else {
+        // 병가 지정: sickLeave에 추가, 다른 상태 있으면 제거
+        setSickLeave((prev) => ({ ...prev, [name]: true }));
+        setManualStatuses((prev) => {
+          if (!(name in prev)) return prev;
+          const next = { ...prev };
+          delete next[name];
+          return next;
+        });
+      }
+      return;
+    }
+    // 병가 외 상태 토글 (기존 로직)
     setManualStatuses((prev) => {
       const cur = effectiveStatus(name);
       if (cur === btn && name in prev) {
