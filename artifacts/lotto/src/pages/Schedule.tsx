@@ -822,7 +822,11 @@ export default function SchedulePage() {
       : -1;
     const mondayIdx = selIdx >= 0 ? selIdx - (selectedDate?.dayIdx ?? 0) : -1;
 
-    const results = DAY_LABELS.map((day, di) => {
+    // 첫날은 현재 names 배열 사용 (queueStartName 회전 이미 적용됨)
+    // 다음날부터는 전날 2부스페어 첫번째 인원을 첫번호로 회전
+    let currentNames = [...names];
+
+    const results = DAY_LABELS.reduce<{ day: string; result: DayResult }[]>((acc, day, di) => {
       // 해당 요일의 excelDay (주간 내)
       const weekDay = mondayIdx >= 0 && mondayIdx + di < excelDays.length
         ? excelDays[mondayIdx + di]
@@ -830,10 +834,10 @@ export default function SchedulePage() {
       const dateLabel = weekDay?.dateLabel ?? "";
       const dayIdx    = weekDay?.dayIdx ?? di;
 
-      // ★ 날짜별 저장된 상태 사용 → 찾근은 지정한 날에만!
+      // ★ 날짜별 저장된 상태 사용 → 모든 상태는 지정한 날에만!
       const savedDay = dateStatuses[dateLabel] ?? {};
       const statuses: Record<string, StatusType> = {};
-      names.forEach((n) => {
+      currentNames.forEach((n) => {
         if (n in savedDay) { statuses[n] = savedDay[n]; return; }
         const person = customRosterMap[n];
         if (person && isAutoOff(person.group, dayIdx)) { statuses[n] = "휴무"; return; }
@@ -848,10 +852,17 @@ export default function SchedulePage() {
       }
 
       const result = mode === "2부제"
-        ? assignDouble(names, statuses, s1, s2)
-        : assignSingle(names, statuses, ss);
-      return { day: dateLabel || day, result };
-    });
+        ? assignDouble(currentNames, statuses, s1, s2)
+        : assignSingle(currentNames, statuses, ss);
+
+      // ★ 다음날 첫번호: 오늘 2부스페어 첫번째 (없으면 nextDayQueue 첫번째)
+      const nextFirst = result.spare2[0] ?? result.nextDayQueue?.[0] ?? null;
+      if (nextFirst) {
+        currentNames = rotateNames(currentNames, nextFirst);
+      }
+
+      return [...acc, { day: dateLabel || day, result }];
+    }, []);
     setWeekly(results);
     setDayResult(null);
   }
