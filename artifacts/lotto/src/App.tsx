@@ -24,7 +24,7 @@ function IntroView({ onEnter }: { onEnter: () => void }) {
   return (
     <div style={{
       backgroundColor: C.bgDark,
-      height: "100vh",
+      minHeight: "100dvh",
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
