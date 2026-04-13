@@ -275,6 +275,20 @@ function LottoPage() {
     return res;
   }
 
+  // 기존 nums와 중복 없이 source에서 count개 선택
+  function safePick(base: number[], source: number[], count: number): number[] {
+    const pool = source.length >= count
+      ? source
+      : Array.from({ length: 45 }, (_, i) => i + 1);
+    const result: number[] = [];
+    let guard = 0;
+    while (result.length < count && guard++ < 10000) {
+      const n = pool[Math.floor(Math.random() * pool.length)];
+      if (!base.includes(n) && !result.includes(n)) result.push(n);
+    }
+    return result;
+  }
+
   function isValid(nums: number[]): boolean {
     if (nums.some((n) => !Number.isInteger(n) || n < 1 || n > 45)) return false;
     if (new Set(nums).size !== nums.length) return false;
@@ -302,8 +316,8 @@ function LottoPage() {
   function generateBalanced(hot: number[], cold: number[]): number[] {
     for (let attempt = 0; attempt < 5000; attempt++) {
       const nums: number[] = [];
-      nums.push(...pick(hot, 2));
-      nums.push(...pick(cold, 2));
+      nums.push(...safePick(nums, hot, 2));   // hot에서 2개 (중복 없이)
+      nums.push(...safePick(nums, cold, 2));  // cold에서 2개 (hot 선택분 제외)
       let inner = 0;
       while (nums.length < 6 && inner++ < 200) { const n = rand(); if (!nums.includes(n)) nums.push(n); }
       nums.sort((a, b) => a - b);
@@ -320,7 +334,7 @@ function LottoPage() {
   function generateGreedy(cold: number[]): number[] {
     for (let attempt = 0; attempt < 5000; attempt++) {
       const nums: number[] = [];
-      nums.push(...pick(cold, 4));
+      nums.push(...safePick(nums, cold, 4));  // cold에서 4개 (중복 없이)
       let inner = 0;
       while (nums.length < 6 && inner++ < 200) { const n = rand(); if (n >= 31 && !nums.includes(n)) nums.push(n); }
       // inner 실패 시 범위 제한 없이 채움
