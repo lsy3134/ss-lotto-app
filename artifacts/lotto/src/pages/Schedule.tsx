@@ -923,10 +923,14 @@ export default function SchedulePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 순번표 불러오기 → 항상 ask 모달 (하겠다/안하겠다 선택)
+  // 순번표 불러오기 → 첫번호 지정돼 있으면 바로 배정, 없으면 ask 모달
   function loadRoster() {
-    setQueueModalPos({ x: 0, y: 0 });
-    setQueueModal("ask");
+    if (queueStartName) {
+      applyRoster(queueStartName);
+    } else {
+      setQueueModalPos({ x: 0, y: 0 });
+      setQueueModal("ask");
+    }
   }
 
   // 직접 입력으로 다음 단계
@@ -1901,25 +1905,17 @@ export default function SchedulePage() {
               border: "1px solid #90caf9",
             }}>
               <span style={{ fontSize: 14, flex: 1, color: "#1565c0" }}>
-                <span style={{ fontWeight: 700 }}>오늘 첫번호 </span>
+                <span style={{ fontWeight: 700 }}>📌 첫번호 고정 </span>
                 <span style={{ fontWeight: 800 }}>"{queueStartName}"</span>
-                <span style={{ fontSize: 11, color: "#90caf9" }}> (오늘만)</span>
               </span>
               <button
-                onClick={() => { setQueuePickSearch(""); setQueueModal("pick"); }}
+                onClick={() => { setQueueModalPos({ x: 0, y: 0 }); setQueueModal("ask"); }}
                 style={{
-                  padding: "6px 12px", borderRadius: 8, border: "none",
+                  padding: "6px 14px", borderRadius: 8, border: "none",
                   background: "#1565c0",
                   color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap",
                 }}
               >변경</button>
-              <button
-                onClick={() => saveQueueStart(null)}
-                style={{
-                  padding: "6px 10px", borderRadius: 8, border: "none",
-                  background: "#ef9a9a", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer",
-                }}
-              >✕</button>
             </div>
           )}
 
