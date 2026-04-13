@@ -710,6 +710,15 @@ export default function SchedulePage() {
   // 결과
   const [dayResult, setDayResult] = useState<DayResult | null>(null);
   const [weekly, setWeekly] = useState<{ day: string; result: DayResult }[]>([]);
+  // 주간 근무표 날짜별 개별 토글 (기본: 요약 보기)
+  const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
+  function toggleDayExpand(day: string) {
+    setExpandedDays(prev => {
+      const next = new Set(prev);
+      if (next.has(day)) next.delete(day); else next.add(day);
+      return next;
+    });
+  }
   const [view, setView] = useState<"input" | "assign">("input");
 
   // 상태 선택 모달 (전체 순번표 표시)
@@ -3359,29 +3368,94 @@ export default function SchedulePage() {
             <div style={S.card} id="print-area">
               <div style={{ ...S.sectionTitle, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <span>📅 주간 근무표 (월~일)</span>
-                <button
-                  onClick={() => window.print()}
-                  style={{ ...S.smallBtn, fontSize: "0.75rem", padding: "4px 10px" }}
-                >
+                <button onClick={() => window.print()} style={{ ...S.smallBtn, fontSize: "0.75rem", padding: "4px 10px" }}>
                   🖨️ 출력
                 </button>
               </div>
-              {weekly.map(({ day, result: r }, di) => (
-                <div key={day} style={S.weekDay}>
-                  <div style={{
-                    ...S.dayChip,
-                    background: di === 5 || di === 6
-                      ? "linear-gradient(135deg, #c62828, #ef5350)"
-                      : "linear-gradient(135deg, #1a1a2e, #4e89ae)",
-                  }}>
-                    <span style={{ fontSize: "0.85rem", fontWeight: 800 }}>{day}</span>
-                    <span style={{ fontSize: "0.55rem", opacity: 0.8 }}>요일</span>
+
+              {weekly.map(({ day, result: r }, di) => {
+                const isExpanded = expandedDays.has(day);
+                const isWeekend  = di === 5 || di === 6;
+                const chipBg = isWeekend
+                  ? "linear-gradient(135deg, #c62828, #ef5350)"
+                  : "linear-gradient(135deg, #1a1a2e, #4e89ae)";
+
+                // ── 요약 행: 컷 기준 + 스페어만 표시 ──
+                const SummaryRow = () => {
+                  const cut1  = r.shift1?.at(-1) ?? "-";
+                  const spare1nm = r.spare1?.[0] ?? "-";
+                  const sp2_1 = r.spare2?.[0];
+                  const sp2_2 = r.spare2?.[1];
+
+                  const InfoChip = ({ label, value, labelColor, labelBg }: { label: string; value: string; labelColor: string; labelBg: string }) => (
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <span style={{
+                        fontSize: "0.65rem", fontWeight: 700, color: labelColor,
+                        background: labelBg, borderRadius: 6, padding: "1px 6px", flexShrink: 0,
+                      }}>{label}</span>
+                      <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#1a1a2e" }}>{value}</span>
+                    </div>
+                  );
+
+                  if (mode === "2부제") {
+                    const shift2NoSpare1 = (r.shift2 ?? []).filter(n => !r.spare1?.includes(n));
+                    const cut2 = shift2NoSpare1.at(-1) ?? "-";
+                    return (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1 }}>
+                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                          <InfoChip label="1부컷" value={cut1}   labelColor="#1565c0" labelBg="#e3f2fd" />
+                          <InfoChip label="2부컷" value={cut2}   labelColor="#2e7d32" labelBg="#e8f5e9" />
+                        </div>
+                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                          <InfoChip label="1부스페어" value={spare1nm} labelColor="#9a3412" labelBg="#fed7aa" />
+                          {sp2_1 && <InfoChip label="2부스페어①" value={sp2_1} labelColor="#6a1b9a" labelBg="#f3e5f5" />}
+                          {sp2_2 && <InfoChip label="2부스페어②" value={sp2_2} labelColor="#6a1b9a" labelBg="#f3e5f5" />}
+                        </div>
+                      </div>
+                    );
+                  } else {
+                    const sp = r.spare2?.[0] ?? r.spare1?.[0] ?? "-";
+                    return (
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", flex: 1 }}>
+                        <InfoChip label="컷" value={cut1} labelColor="#1565c0" labelBg="#e3f2fd" />
+                        <InfoChip label="스페어" value={sp} labelColor="#6a1b9a" labelBg="#f3e5f5" />
+                      </div>
+                    );
+                  }
+                };
+
+                return (
+                  <div key={day} style={{ ...S.weekDay, flexDirection: "column", gap: 6 }}>
+                    {/* 날짜 헤더 행: 칩 + 요약/자세히 버튼 */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{ ...S.dayChip, background: chipBg }}>
+                        <span style={{ fontSize: "0.85rem", fontWeight: 800 }}>{day}</span>
+                        <span style={{ fontSize: "0.55rem", opacity: 0.8 }}>요일</span>
+                      </div>
+                      <SummaryRow />
+                      <button
+                        onClick={() => toggleDayExpand(day)}
+                        style={{
+                          flexShrink: 0, padding: "3px 10px",
+                          border: "1px solid #d1d5db", borderRadius: 8,
+                          background: isExpanded ? "#1a1a2e" : "#f9fafb",
+                          color: isExpanded ? "#fff" : "#374151",
+                          fontSize: "0.72rem", fontWeight: 700, cursor: "pointer",
+                        }}
+                      >
+                        {isExpanded ? "요약" : "자세히"}
+                      </button>
+                    </div>
+
+                    {/* 상세 내용 (토글) */}
+                    {isExpanded && (
+                      <div style={{ paddingLeft: 4 }}>
+                        <DayResultView result={r} mode={mode} compact />
+                      </div>
+                    )}
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <DayResultView result={r} mode={mode} compact />
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
