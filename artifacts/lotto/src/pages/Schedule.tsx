@@ -1081,6 +1081,7 @@ export default function SchedulePage() {
   const [rosterEditorOpen, setRosterEditorOpen] = useState(false);
   const [rosterEditorSearch, setRosterEditorSearch] = useState("");
   const rosterImportRef = useRef<HTMLInputElement>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
   const [rosterForm, setRosterForm] = useState<{ mode: "add"|"edit"; orig?: PersonData; name: string; 조: 1|2|3|4; group: GroupType } | null>(null);
 
   // 현재 요일의 유효 상태 반환
@@ -1491,6 +1492,9 @@ export default function SchedulePage() {
       : assignSingle(names, statuses, singleSize);
     setDayResult(result);
     setWeekly([]);
+    setTimeout(() => {
+      resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
     // ★ 기능2: 이 날짜의 2부스페어 자동 저장 (다음날 첫번호 힌트)
     if (currentDateKey && result.spare2.length > 0) {
       setSavedSpare2(prev => ({ ...prev, [currentDateKey]: result.spare2 }));
@@ -3793,7 +3797,7 @@ export default function SchedulePage() {
 
           {/* 1일 결과 */}
           {dayResult && weekly.length === 0 && (
-            <div style={S.card} id="print-area">
+            <div ref={resultRef} style={S.card} id="print-area">
               <div style={{ ...S.sectionTitle, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <span>📋 {selectedDate ? selectedDate.dateLabel : DAY_LABELS[dayOfWeek] + "요일"} 배정 결과</span>
                 <button
