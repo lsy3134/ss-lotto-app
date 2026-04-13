@@ -118,6 +118,79 @@ function parseExcelBuffer(buf: ArrayBuffer): ExcelDayData[] {
   return days;
 }
 
+// ── 휴무 엑셀 파서 (날짜 → 이름 리스트 구조) ─────────
+// 포맷A: 첫 열이 날짜, 해당 행에 이름들 (행 기반)
+// 포맷B: 첫 행이 날짜, 해당 열에 이름들 (열 기반)
+// 유연하게 두 포맷 모두 시도 후 더 많은 날짜를 인식한 것 채택
+function parseHolidayExcelBuffer(buf: ArrayBuffer): Record<string, string[]> {
+  const wb = XLSX.read(buf, { type: "array", cellDates: true });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  if (!ws) return {};
+  const range = XLSX.utils.decode_range(ws["!ref"] ?? "A1");
+
+  const getCellVal = (r: number, c: number): unknown => {
+    const cell = ws[XLSX.utils.encode_cell({ r, c })];
+    return cell ? cell.v : undefined;
+  };
+
+  // 날짜 값 → "MM.DD" 키
+  function toDateKey(v: unknown): string | null {
+    if (v === undefined || v === null || v === "") return null;
+    if (v instanceof Date) {
+      return `${String(v.getMonth() + 1).padStart(2, "0")}.${String(v.getDate()).padStart(2, "0")}`;
+    }
+    if (typeof v === "number" && v > 35000 && v < 60000) {
+      // Excel 날짜 시리얼 → JS Date
+      const d = new Date(Math.round((v - 25569) * 86400 * 1000));
+      return `${String(d.getUTCMonth() + 1).padStart(2, "0")}.${String(d.getUTCDate()).padStart(2, "0")}`;
+    }
+    const s = String(v).trim();
+    // "MM.DD (요일)" / "MM.DD" / "MM/DD" 등
+    let m = s.match(/^(\d{1,2})[.\-\/](\d{1,2})/);
+    if (m) return `${m[1].padStart(2, "0")}.${m[2].padStart(2, "0")}`;
+    // "YYYY-MM-DD" / "YYYY.MM.DD"
+    m = s.match(/^\d{4}[-.](\d{1,2})[-.](\d{1,2})/);
+    if (m) return `${m[1].padStart(2, "0")}.${m[2].padStart(2, "0")}`;
+    return null;
+  }
+
+  // 이름 여부: 2~4자 한글
+  function isName(v: unknown): boolean {
+    if (!v) return false;
+    return /^[\uAC00-\uD7A3]{2,4}$/.test(String(v).trim());
+  }
+
+  // 포맷A: 첫 열 기준 날짜
+  const fmtA: Record<string, string[]> = {};
+  let aCount = 0;
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    const dk = toDateKey(getCellVal(r, range.s.c));
+    if (!dk) continue;
+    const names: string[] = [];
+    for (let c = range.s.c + 1; c <= range.e.c; c++) {
+      const v = getCellVal(r, c);
+      if (isName(v)) names.push(String(v).trim());
+    }
+    if (names.length > 0) { fmtA[dk] = names; aCount++; }
+  }
+
+  // 포맷B: 첫 행 기준 날짜
+  const fmtB: Record<string, string[]> = {};
+  let bCount = 0;
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    const dk = toDateKey(getCellVal(range.s.r, c));
+    if (!dk) continue;
+    const names: string[] = [];
+    for (let r = range.s.r + 1; r <= range.e.r; r++) {
+      const v = getCellVal(r, c);
+      if (isName(v)) names.push(String(v).trim());
+    }
+    if (names.length > 0) { fmtB[dk] = names; bCount++; }
+  }
+
+  return aCount >= bCount ? fmtA : fmtB;
+}
+
 // ── 엑셀 파싱 훅 ──────────────────────────────────
 function useExcelData() {
   const [excelDays, setExcelDays] = useState<ExcelDayData[]>([]);
@@ -579,6 +652,35 @@ export default function SchedulePage() {
     localStorage.setItem(SL_KEY, JSON.stringify(sickLeave));
   }, [sickLeave, SL_KEY]);
 
+  // 휴무 엑셀 데이터 (날짜 "MM.DD" → 이름 리스트)
+  const HM_KEY = "lotto_holidayMap";
+  const [holidayMap, setHolidayMap] = useState<Record<string, string[]>>(() => {
+    try { return JSON.parse(localStorage.getItem(HM_KEY) ?? "{}"); } catch { return {}; }
+  });
+  const [holidayFileName, setHolidayFileName] = useState<string | null>(() =>
+    localStorage.getItem("lotto_holidayFileName")
+  );
+  useEffect(() => {
+    localStorage.setItem(HM_KEY, JSON.stringify(holidayMap));
+  }, [holidayMap]);
+
+  function loadHolidayFile(file: File) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const buf = e.target?.result as ArrayBuffer;
+        const map = parseHolidayExcelBuffer(buf);
+        const dateCount = Object.keys(map).length;
+        if (dateCount === 0) { alert("휴무 데이터를 인식하지 못했습니다.\n엑셀 형식을 확인해주세요."); return; }
+        setHolidayMap(map);
+        setHolidayFileName(file.name);
+        localStorage.setItem("lotto_holidayFileName", file.name);
+        alert(`✅ 휴무 엑셀 업로드 완료!\n${dateCount}개 날짜의 휴무 정보를 불러왔습니다.`);
+      } catch { alert("엑셀 파일 읽기 실패"); }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
   // 대근 날짜별 저장 (localStorage)
   const DG_KEY = `lotto_daegeun_${new Date().getFullYear()}`;
   const [dateDaegeun, setDateDaegeun] = useState<Record<string, Record<string, DaegeunType>>>(() => {
@@ -856,6 +958,25 @@ export default function SchedulePage() {
       setShift1Size(35);
       setSingleSize(60);
       setTeamsLocked(false);
+    }
+
+    // 휴무 엑셀 자동 입력 — holidayMap에 해당 날짜 데이터 있으면 자동 적용
+    // dateLabel 앞 5자("04.13")가 holidayMap 키
+    const dk = day.dateLabel.slice(0, 5);
+    const hdNames = holidayMap[dk];
+    if (hdNames && hdNames.length > 0) {
+      setDateStatuses(prev => {
+        const cur = prev[day.dateLabel] ?? {};
+        const next = { ...cur };
+        for (const hName of hdNames) {
+          // 순번표 이름과 매칭 (완전일치 우선, 앞 2자 부분일치 허용)
+          const matched = sortedCustomRoster.find(p =>
+            p.name === hName || (hName.length >= 2 && p.name.startsWith(hName.slice(0, 2)))
+          )?.name ?? hName;
+          next[matched] = "휴무";
+        }
+        return { ...prev, [day.dateLabel]: next };
+      });
     }
   }
 
@@ -1393,6 +1514,45 @@ export default function SchedulePage() {
                 onChange={e => {
                   const f = e.target.files?.[0];
                   if (f) loadFromFile(f);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+          </div>
+
+          {/* 휴무 엑셀 자동입력 업로드 */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+            <div style={{ flex: 1, fontSize: "0.72rem", color: "#555" }}>
+              {holidayFileName ? (
+                <span>
+                  🌿 <strong style={{ color: "#2e7d32" }}>{holidayFileName.replace(/\.xlsx?$/i, "")}</strong>
+                  {selectedDate && holidayMap[selectedDate.dateLabel.slice(0, 5)] ? (
+                    <span style={{ color: "#1565c0", marginLeft: 6 }}>
+                      ({holidayMap[selectedDate.dateLabel.slice(0, 5)].length}명 자동입력)
+                    </span>
+                  ) : selectedDate ? (
+                    <span style={{ color: "#bbb", marginLeft: 6 }}>(해당 날짜 데이터 없음)</span>
+                  ) : null}
+                </span>
+              ) : (
+                <span style={{ color: "#aaa" }}>휴무 엑셀 미업로드</span>
+              )}
+            </div>
+            <label style={{
+              padding: "4px 10px", borderRadius: "8px", fontSize: "0.72rem", fontWeight: 700,
+              background: holidayFileName ? "#e8f5e9" : "#fff3e0",
+              color: holidayFileName ? "#2e7d32" : "#e65100",
+              border: holidayFileName ? "1px solid #81c784" : "1px solid #ffb74d",
+              cursor: "pointer", whiteSpace: "nowrap",
+            }}>
+              🌿 {holidayFileName ? "휴무 교체" : "휴무 업로드"}
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                style={{ display: "none" }}
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  if (f) loadHolidayFile(f);
                   e.target.value = "";
                 }}
               />
