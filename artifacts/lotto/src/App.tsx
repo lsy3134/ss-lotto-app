@@ -117,7 +117,7 @@ function HomePage() {
   return (
     <div style={{
       backgroundColor: C.bgDark,
-      minHeight: "100vh",
+      minHeight: "100dvh",
       padding: "48px 24px 32px",
       color: C.white,
     }}>
@@ -317,7 +317,7 @@ function LottoPage() {
     <div style={{
       fontFamily: "'Pretendard', 'Apple SD Gothic Neo', sans-serif",
       background: "linear-gradient(160deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%)",
-      minHeight: "100vh",
+      minHeight: "100dvh",
       display: "flex",
       flexDirection: "column",
       padding: "0",

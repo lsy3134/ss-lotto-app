@@ -3902,7 +3902,7 @@ function NextDayQueueView({
 // ── 스타일 ────────────────────────────────────────
 const S: Record<string, React.CSSProperties> = {
   /* ─── Layout ─── */
-  page: { fontFamily: "'Inter', sans-serif", background: "#eef2f7", minHeight: "100vh", paddingBottom: "80px" },
+  page: { fontFamily: "'Inter', sans-serif", background: "#eef2f7", minHeight: "100dvh", paddingBottom: "80px" },
   header: {
     display: "flex", alignItems: "center", gap: "10px",
     padding: "14px 16px",
