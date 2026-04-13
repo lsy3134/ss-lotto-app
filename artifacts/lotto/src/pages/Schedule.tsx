@@ -1314,6 +1314,20 @@ export default function SchedulePage() {
     if (!confirm(`"${p.name}"을(를) 순번표에서 삭제할까요?`)) return;
     setCustomRoster(prev => prev.filter(x => x.name !== p.name));
   }
+  function movePersonInJo(p: PersonData, direction: "up" | "down") {
+    const sameJo = [...customRoster]
+      .filter(x => x.조 === p.조)
+      .sort((a, b) => a.no - b.no);
+    const idx = sameJo.findIndex(x => x.name === p.name);
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= sameJo.length) return;
+    const swapWith = sameJo[swapIdx];
+    setCustomRoster(prev => prev.map(x => {
+      if (x.name === p.name) return { ...x, no: swapWith.no };
+      if (x.name === swapWith.name) return { ...x, no: p.no };
+      return x;
+    }));
+  }
   function savePerson() {
     if (!rosterForm) return;
     const trimName = rosterForm.name.trim();
@@ -2906,7 +2920,12 @@ export default function SchedulePage() {
                     let lastJo: number | null = null;
                     const items: React.ReactNode[] = [];
 
-                    filtered.forEach(p => {
+                    filtered.forEach((p) => {
+                      const sameJoSorted = filtered.filter(x => x.조 === p.조).sort((a, b) => a.no - b.no);
+                      const posInJo = sameJoSorted.findIndex(x => x.name === p.name);
+                      const isFirst = posInJo === 0;
+                      const isLast = posInJo === sameJoSorted.length - 1;
+
                       if (!q && p.조 !== lastJo) {
                         lastJo = p.조;
                         const jc = JO_COLORS[p.조] ?? { bg: "#f5f5f5", color: "#555" };
@@ -2928,9 +2947,41 @@ export default function SchedulePage() {
                       const gc = GROUP_STYLE[p.group];
                       items.push(
                         <div key={p.name} style={{
-                          display: "flex", alignItems: "center", gap: "8px",
-                          padding: "9px 14px", borderBottom: "1px solid #f9f9f9",
+                          display: "flex", alignItems: "center", gap: "6px",
+                          padding: "7px 14px", borderBottom: "1px solid #f9f9f9",
                         }}>
+                          {/* 순서 번호 */}
+                          <span style={{
+                            fontSize: "0.65rem", color: "#aaa", fontWeight: 600,
+                            minWidth: "16px", textAlign: "right", flexShrink: 0,
+                          }}>{posInJo + 1}</span>
+
+                          {/* ▲ ▼ 이동 버튼 */}
+                          <div style={{ display: "flex", flexDirection: "column", gap: "1px", flexShrink: 0 }}>
+                            <button
+                              onClick={() => movePersonInJo(p, "up")}
+                              disabled={isFirst || !!q}
+                              style={{
+                                width: "24px", height: "22px", border: "none",
+                                borderRadius: "5px 5px 2px 2px",
+                                background: isFirst || q ? "#f0f0f0" : "#e3f2fd",
+                                color: isFirst || q ? "#ccc" : "#1565c0",
+                                fontSize: "0.65rem", cursor: isFirst || q ? "default" : "pointer",
+                                fontWeight: 800, lineHeight: 1, padding: 0,
+                              }}>▲</button>
+                            <button
+                              onClick={() => movePersonInJo(p, "down")}
+                              disabled={isLast || !!q}
+                              style={{
+                                width: "24px", height: "22px", border: "none",
+                                borderRadius: "2px 2px 5px 5px",
+                                background: isLast || q ? "#f0f0f0" : "#e3f2fd",
+                                color: isLast || q ? "#ccc" : "#1565c0",
+                                fontSize: "0.65rem", cursor: isLast || q ? "default" : "pointer",
+                                fontWeight: 800, lineHeight: 1, padding: 0,
+                              }}>▼</button>
+                          </div>
+
                           <div style={{ flex: 1 }}>
                             <span style={{ fontWeight: 600, fontSize: "0.92rem" }}>{p.name}</span>
                             <span style={{
