@@ -3354,6 +3354,37 @@ export default function SchedulePage() {
             </div>
           )}
 
+          {/* 주간 결과 */}
+          {weekly.length > 0 && (
+            <div style={S.card} id="print-area">
+              <div style={{ ...S.sectionTitle, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span>📅 주간 근무표 (월~일)</span>
+                <button
+                  onClick={() => window.print()}
+                  style={{ ...S.smallBtn, fontSize: "0.75rem", padding: "4px 10px" }}
+                >
+                  🖨️ 출력
+                </button>
+              </div>
+              {weekly.map(({ day, result: r }, di) => (
+                <div key={day} style={S.weekDay}>
+                  <div style={{
+                    ...S.dayChip,
+                    background: di === 5 || di === 6
+                      ? "linear-gradient(135deg, #c62828, #ef5350)"
+                      : "linear-gradient(135deg, #1a1a2e, #4e89ae)",
+                  }}>
+                    <span style={{ fontSize: "0.85rem", fontWeight: 800 }}>{day}</span>
+                    <span style={{ fontSize: "0.55rem", opacity: 0.8 }}>요일</span>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <DayResultView result={r} mode={mode} compact />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* 인원 리스트 (조별 구분) — 배정 결과 아래로 이동 */}
           <div style={S.card}>
             {(() => {
@@ -3656,36 +3687,6 @@ export default function SchedulePage() {
             </div>
           )}
 
-          {/* 주간 결과 */}
-          {weekly.length > 0 && (
-            <div style={S.card} id="print-area">
-              <div style={{ ...S.sectionTitle, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span>📅 주간 근무표 (월~일)</span>
-                <button
-                  onClick={() => window.print()}
-                  style={{ ...S.smallBtn, fontSize: "0.75rem", padding: "4px 10px" }}
-                >
-                  🖨️ 출력
-                </button>
-              </div>
-              {weekly.map(({ day, result: r }, di) => (
-                <div key={day} style={S.weekDay}>
-                  <div style={{
-                    ...S.dayChip,
-                    background: di === 5 || di === 6
-                      ? "linear-gradient(135deg, #c62828, #ef5350)"
-                      : "linear-gradient(135deg, #1a1a2e, #4e89ae)",
-                  }}>
-                    <span style={{ fontSize: "0.85rem", fontWeight: 800 }}>{day}</span>
-                    <span style={{ fontSize: "0.55rem", opacity: 0.8 }}>요일</span>
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <DayResultView result={r} mode={mode} compact />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
 
         </>
       )}
