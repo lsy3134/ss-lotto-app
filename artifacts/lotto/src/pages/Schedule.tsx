@@ -1713,7 +1713,7 @@ export default function SchedulePage() {
             <div style={{ flex: 1, fontSize: "0.72rem", color: "#555" }}>
               {holidayFileName ? (
                 <span>
-                  🌿 <strong style={{ color: "#2e7d32" }}>{holidayFileName.replace(/\.xlsx?$/i, "")}</strong>
+                  📂 <strong style={{ color: "#2e7d32" }}>{holidayFileName.replace(/\.xlsx?$/i, "")}</strong>
                   {selectedDate && holidayMap[selectedDate.dateLabel.slice(0, 5)] ? (
                     <span style={{ color: "#1565c0", marginLeft: 6 }}>
                       ({holidayMap[selectedDate.dateLabel.slice(0, 5)].length}명 자동입력)
@@ -1733,7 +1733,7 @@ export default function SchedulePage() {
               border: holidayFileName ? "1px solid #81c784" : "1px solid #ffb74d",
               cursor: "pointer", whiteSpace: "nowrap",
             }}>
-              🌿 {holidayFileName ? "휴무 교체" : "휴무 업로드"}
+              📂 {holidayFileName ? "휴무 교체" : "휴무 업로드"}
               <input
                 type="file"
                 accept=".xlsx,.xls"
