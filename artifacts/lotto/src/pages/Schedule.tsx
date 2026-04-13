@@ -3749,23 +3749,42 @@ export default function SchedulePage() {
                   );
                 }
 
-                if (sp2.length > 0) {
-                  cutRows.push(
-                    <div key="dan-sp" style={{
-                      display: "flex", alignItems: "center", gap: 8,
-                      borderTop: "1px dashed #e0e7ff", paddingTop: 5, marginTop: 2,
-                    }}>
-                      <span style={{
-                        fontSize: "0.7rem", fontWeight: 800, color: "#6a1b9a",
-                        background: "#f3e5f5", borderRadius: 6, padding: "2px 8px",
-                        minWidth: 76, textAlign: "center", flexShrink: 0,
-                      }}>스페어</span>
-                      <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#6a1b9a" }}>
-                        {sp2.slice(0, 2).join("  ·  ")}
-                      </span>
-                    </div>
-                  );
-                }
+                cutRows.push(
+                  <div key="dan-sp" style={{
+                    display: "flex", alignItems: "flex-start", gap: 8,
+                    borderTop: "1px dashed #e0e7ff", paddingTop: 5, marginTop: 2,
+                  }}>
+                    <span style={{
+                      fontSize: "0.7rem", fontWeight: 800, color: "#92400e",
+                      background: "#fef3c7", borderRadius: 6, padding: "2px 8px",
+                      minWidth: 76, textAlign: "center", flexShrink: 0,
+                      marginTop: sp2.length > 0 ? 2 : 0,
+                    }}>스페어</span>
+                    {sp2.length === 0 ? (
+                      <span style={{ fontWeight: 700, fontSize: "0.9rem", color: "#d1d5db" }}>없음</span>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
+                        {sp2.slice(0, 2).map((n, i) => (
+                          <div key={n} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                            <span style={{
+                              fontSize: "0.62rem", fontWeight: 700, color: "#92400e",
+                              background: "#fcd34d", borderRadius: 4, padding: "1px 5px",
+                              flexShrink: 0,
+                            }}>{i + 1}번</span>
+                            <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#b45309" }}>{n}</span>
+                            {i === 0 && (
+                              <span style={{
+                                marginLeft: "auto", fontSize: "0.68rem", fontWeight: 700,
+                                color: "#92400e", background: "#fcd34d", borderRadius: 5,
+                                padding: "1px 6px", flexShrink: 0,
+                              }}>→ 내일 첫번호</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
 
                 return cutRows;
               })()}
