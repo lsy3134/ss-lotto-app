@@ -367,30 +367,30 @@ function LottoPage() {
     return pick([], 6).sort((a, b) => a - b);
   }
 
-  // ── 독식형 조합 ───────────────────────────────────────────────
-  // Cold 4개 + 31 이상 랜덤 2개 / 끝자리 중복 최소화 (2개까지 허용)
-  function generateGreedy(cold: number[]): number[] {
-    const useCold = cold.length >= 4;
+  // ── 변형 전략 조합 ───────────────────────────────────────────────
+  // Hot 3개 + Cold 1개 + 랜덤 2개 / 중복·연속3·홀짝2~4 조건 통과
+  function generateVariant(hot: number[], cold: number[]): number[] {
+    const useHotCold = hot.length >= 3 && cold.length >= 1;
     for (let attempt = 0; attempt < 5000; attempt++) {
       const nums: number[] = [];
-      if (useCold) {
-        nums.push(...safePick(nums, cold, 4));                  // Cold에서 4개
+      if (useHotCold) {
+        nums.push(...safePick(nums, hot, 3));   // Hot에서 3개
+        nums.push(...safePick(nums, cold, 1));  // Cold에서 1개 (Hot과 중복 불가)
       }
-      // 31 이상 숫자로 나머지 채움
+      // 나머지 랜덤 채움
       let inner = 0;
       while (nums.length < 6 && inner++ < 500) {
-        const n = rand();
-        if (n >= 31 && !nums.includes(n)) nums.push(n);
-      }
-      // 31 이상으로 채우지 못하면 범위 제한 없이 채움
-      let fill = 0;
-      while (nums.length < 6 && fill++ < 500) {
         const n = rand();
         if (!nums.includes(n)) nums.push(n);
       }
       nums.sort((a, b) => a - b);
-      // 독식형: 홀짝·연속 조건 완화, 끝자리는 최소화(2개까지)
-      if (isValid(nums, { checkOddEven: false, checkConsec: false, checkLastDigit: true })) return nums;
+      if (isValid(nums, { checkOddEven: true, checkConsec: true, checkLastDigit: true })) return nums;
+    }
+    // 최종 fallback: 홀짝 조건만 유지
+    for (let i = 0; i < 10000; i++) {
+      const nums = pick([], 6).sort((a, b) => a - b);
+      const odd = nums.filter((n) => n % 2).length;
+      if (odd >= 2 && odd <= 4 && new Set(nums).size === 6) return nums;
     }
     return pick([], 6).sort((a, b) => a - b);
   }
@@ -404,7 +404,7 @@ function LottoPage() {
     );
     const result: Game[] = [];
     for (let i = 0; i < 3; i++) result.push({ type: "균형형", nums: generateBalanced(hot, cold) });
-    for (let i = 0; i < 2; i++) result.push({ type: "독식형", nums: generateGreedy(cold) });
+    for (let i = 0; i < 2; i++) result.push({ type: "변형", nums: generateVariant(hot, cold) });
     setGames(result); setLog("생성 완료");
   }
 
