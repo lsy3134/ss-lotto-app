@@ -830,15 +830,23 @@ export default function SchedulePage() {
 
   // 휴무 엑셀 데이터 (날짜 "MM.DD" → 이름 리스트)
   const HM_KEY = "lotto_holidayMap";
+  const HA_KEY = "lotto_holidayApplied";
   const [holidayMap, setHolidayMap] = useState<Record<string, string[]>>(() => {
     try { return JSON.parse(localStorage.getItem(HM_KEY) ?? "{}"); } catch { return {}; }
   });
   const [holidayFileName, setHolidayFileName] = useState<string | null>(() =>
     localStorage.getItem("lotto_holidayFileName")
   );
+  // 날짜별 "이미 엑셀 휴무 자동 적용 완료" 여부 추적 → 재선택 시 덮어쓰기 방지
+  const [holidayAppliedDates, setHolidayAppliedDates] = useState<Record<string, true>>(() => {
+    try { return JSON.parse(localStorage.getItem(HA_KEY) ?? "{}"); } catch { return {}; }
+  });
   useEffect(() => {
     localStorage.setItem(HM_KEY, JSON.stringify(holidayMap));
   }, [holidayMap]);
+  useEffect(() => {
+    localStorage.setItem(HA_KEY, JSON.stringify(holidayAppliedDates));
+  }, [holidayAppliedDates]);
 
   function loadHolidayFile(file: File) {
     const reader = new FileReader();
@@ -860,8 +868,11 @@ export default function SchedulePage() {
         setHolidayMap(map);
         setHolidayFileName(file.name);
         localStorage.setItem("lotto_holidayFileName", file.name);
-        // lotto_holidayMap 키도 새 데이터로 즉시 덮어씀 (useEffect 대기 없이)
         localStorage.setItem("lotto_holidayMap", JSON.stringify(map));
+
+        // ── "자동 적용 완료" 기록 초기화 → 모든 날짜에 새 엑셀로 다시 적용 가능 ──
+        setHolidayAppliedDates({});
+        localStorage.setItem("lotto_holidayApplied", "{}");
 
         // ── 기존 날짜별 휴무 상태 자동 초기화 (휴무 항목만 제거, 다른 상태 유지) ──
         setDateStatuses(prev => {
@@ -1162,23 +1173,24 @@ export default function SchedulePage() {
       setTeamsLocked(false);
     }
 
-    // 휴무 엑셀 자동 입력 — holidayMap에 해당 날짜 데이터 있으면 자동 적용
-    // dateLabel 앞 5자("04.13")가 holidayMap 키
+    // 휴무 엑셀 자동 입력 — 최초 1회만 (이미 적용된 날짜는 사용자 수정값 유지)
     const dk = day.dateLabel.slice(0, 5);
     const hdNames = holidayMap[dk];
-    if (hdNames && hdNames.length > 0) {
+    if (hdNames && hdNames.length > 0 && !holidayAppliedDates[day.dateLabel]) {
       setDateStatuses(prev => {
         const cur = prev[day.dateLabel] ?? {};
         const next = { ...cur };
         for (const hName of hdNames) {
-          // 순번표 이름과 매칭 (완전일치 우선, 앞 2자 부분일치 허용)
           const matched = sortedCustomRoster.find(p =>
             p.name === hName || (hName.length >= 2 && p.name.startsWith(hName.slice(0, 2)))
           )?.name ?? hName;
-          next[matched] = "휴무";
+          // 이미 사용자가 다른 상태로 지정한 경우 덮어쓰지 않음
+          if (!next[matched]) next[matched] = "휴무";
         }
         return { ...prev, [day.dateLabel]: next };
       });
+      // 이 날짜를 "자동 적용 완료"로 표시 → 다음에 다시 와도 덮어쓰기 안 함
+      setHolidayAppliedDates(prev => ({ ...prev, [day.dateLabel]: true }));
     }
   }
 
