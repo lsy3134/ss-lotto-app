@@ -1660,9 +1660,10 @@ export default function SchedulePage() {
         <img src={`${BASE}/char_dino.png`} alt="" style={{ width: 30, height: 30, objectFit: "contain" }} />
         <span style={S.headerTitle}>캐디 근무표</span>
         {view === "assign" && (
-          <button onClick={() => { setView("input"); setDayResult(null); setWeekly([]); }} style={S.smallBtn}>
-            ↩ 다시
-          </button>
+          <button
+            onClick={() => { setView("input"); setDayResult(null); setWeekly([]); }}
+            style={S.smallBtn}
+            className="text-[14px]">↩ 휴무</button>
         )}
         {view === "input" && customRoster.length > 0 && (
           <button
@@ -1682,7 +1683,6 @@ export default function SchedulePage() {
           </button>
         )}
       </div>
-
       {/* ─── 입력 단계 ─── */}
       {view === "input" && (
         <div style={S.card}>
@@ -2177,7 +2177,7 @@ export default function SchedulePage() {
           {/* 팀수 입력 / 저장 */}
           {teamsLocked ? (
             /* ── 저장된 팀수 요약 카드 ── */
-            <div style={{
+            (<div style={{
               marginTop: "14px", marginBottom: "14px",
               background: "#f0f7ff", borderRadius: "12px",
               padding: "12px 14px", border: "1.5px solid #90caf9",
@@ -2211,10 +2211,10 @@ export default function SchedulePage() {
                   팀수 {singleSize}팀
                 </div>
               )}
-            </div>
+            </div>)
           ) : (
             /* ── 팀수 입력 폼 ── */
-            <div style={{ marginBottom: "4px", marginTop: "14px" }}>
+            (<div style={{ marginBottom: "4px", marginTop: "14px" }}>
               {mode === "2부제" ? (
                 <>
                   <div style={{ display: "flex", gap: "10px", marginBottom: "8px" }}>
@@ -2257,7 +2257,7 @@ export default function SchedulePage() {
                 }}>
                 💾 저장하기
               </button>
-            </div>
+            </div>)
           )}
 
           {/* 순번표 불러오기 + 편집 */}
@@ -2308,7 +2308,6 @@ export default function SchedulePage() {
 
         </div>
       )}
-
       {/* ── 첫번호: 이 순번대로 가시겠습니까? ── */}
       {queueModal === "ask" && (() => {
         // 가장 최근 저장된 2부스페어 첫번째 찾기
@@ -2439,7 +2438,6 @@ export default function SchedulePage() {
           </div>
         );
       })()}
-
       {/* ── 첫번호 지정 picker ── */}
       {queueModal === "pick" && (
         <div style={{
@@ -2568,7 +2566,6 @@ export default function SchedulePage() {
           </div>
         </div>
       )}
-
       {/* ── VIP 인원 선택 모달 ── */}
       {vipMemberPickerOpen && (
         <div style={{
@@ -2711,7 +2708,6 @@ export default function SchedulePage() {
           </div>
         </div>
       )}
-
       {/* ── 순번표 편집 모달 ── */}
       {rosterEditorOpen && (
         <div style={{
@@ -2763,11 +2759,10 @@ export default function SchedulePage() {
 
             {rosterForm ? (
               /* ── 추가/수정 폼 ── */
-              <div style={{ padding: "20px 18px", overflowY: "auto" }}>
+              (<div style={{ padding: "20px 18px", overflowY: "auto" }}>
                 <div style={{ fontWeight: 700, fontSize: "1rem", marginBottom: "16px", color: "#1a1a2e" }}>
                   {rosterForm.mode === "add" ? "새 직원 추가" : `"${rosterForm.orig?.name}" 수정`}
                 </div>
-
                 {/* 이름 */}
                 <div style={{ marginBottom: "14px" }}>
                   <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 700, color: "#555", marginBottom: "5px" }}>이름</label>
@@ -2782,7 +2777,6 @@ export default function SchedulePage() {
                     }}
                   />
                 </div>
-
                 {/* 조 선택 */}
                 <div style={{ marginBottom: "14px" }}>
                   <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 700, color: "#555", marginBottom: "8px" }}>조</label>
@@ -2811,7 +2805,6 @@ export default function SchedulePage() {
                     })}
                   </div>
                 </div>
-
                 {/* 반 선택 */}
                 <div style={{ marginBottom: "20px" }}>
                   <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 700, color: "#555", marginBottom: "8px" }}>반</label>
@@ -2838,7 +2831,6 @@ export default function SchedulePage() {
                     주중반: 토·일 자동 휴무 / 주말반: 월~목 자동 휴무 / 하우스: 항상 근무
                   </div>
                 </div>
-
                 <div style={{ display: "flex", gap: "8px" }}>
                   <button onClick={() => setRosterForm(null)}
                     style={{
@@ -2855,7 +2847,7 @@ export default function SchedulePage() {
                     {rosterForm.mode === "add" ? "추가" : "수정 완료"}
                   </button>
                 </div>
-              </div>
+              </div>)
             ) : (
               <>
                 {/* 검색 */}
@@ -2961,7 +2953,6 @@ export default function SchedulePage() {
           </div>
         </div>
       )}
-
       {/* ── 상태 선택 모달 (전역, 어느 화면에서나 열림) ── */}
       {modalStatus && (
         <div style={{
@@ -3143,7 +3134,6 @@ export default function SchedulePage() {
           </div>
         </div>
       )}
-
       {/* ── 명단 보기 모달 (당번/휴무/병가 해당자만 표시) ── */}
       {viewStatusModal && (() => {
         const st = viewStatusModal;
@@ -3255,7 +3245,6 @@ export default function SchedulePage() {
           </div>
         );
       })()}
-
       {/* ─── 대근 일괄 모달 ─── */}
       {batchDaegeunOpen && (() => {
         const batchBaseNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
@@ -3416,7 +3405,6 @@ export default function SchedulePage() {
           </div>
         );
       })()}
-
       {/* ─── 대근 선택 모달 ─── */}
       {daegeunModal && (
         <div style={{
@@ -3476,7 +3464,6 @@ export default function SchedulePage() {
           </div>
         </div>
       )}
-
       {/* ─── 배정 단계 ─── */}
       {view === "assign" && (
         <>
@@ -4202,7 +4189,6 @@ export default function SchedulePage() {
 
         </>
       )}
-
       {/* ── 플로팅 바: 다음날 첫번호 ── */}
       {dayResult && dayResult.spare2?.[0] && weekly.length === 0 && (
         <div style={S.floatingBar}>
