@@ -521,16 +521,19 @@ function LottoPage() {
                 }}>
                   게임 {i + 1} · {game.type}
                 </div>
-                <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
-                  {game.nums.map((n) => (
-                    <div key={n} style={{
-                      width: 46, height: 46, borderRadius: "50%",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      color: "#fff", fontWeight: 800, fontSize: "1rem",
-                      background: ballColor(n),
-                      boxShadow: `0 2px 6px ${ballColor(n)}66`,
-                    }}>{n}</div>
-                  ))}
+                <div style={{ overflowX: "auto" }}>
+                  <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "nowrap" }}>
+                    {game.nums.map((n) => (
+                      <div key={n} style={{
+                        width: 40, height: 40, minWidth: 40, borderRadius: "50%",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        color: "#fff", fontWeight: 800, fontSize: "1rem",
+                        background: ballColor(n),
+                        boxShadow: `0 2px 6px ${ballColor(n)}66`,
+                        flexShrink: 0,
+                      }}>{n}</div>
+                    ))}
+                  </div>
                 </div>
               </div>
             ))}
