@@ -265,9 +265,14 @@ function assignDouble(
     const spare2Set = new Set(spare2);
 
     if (spare2.length > 0) {
-      const rest  = names.filter(n => !spare2Set.has(n) && !exclSet2.has(n));
-      const excls = names.filter(n => exclSet2.has(n));
-      nextDayQueue = [...spare2, ...rest, ...excls];
+      const twoRoundSet = new Set(twoRound);
+      const firstSpares = spare2.slice(0, 2);       // 찾근 앞 첫번호
+      const restSpares  = spare2.slice(2);           // 나머지 spare2 → 찾근 뒤
+      const rest     = names.filter(n => !spare2Set.has(n) && !exclSet2.has(n));
+      const twoInRest = rest.filter(n => twoRoundSet.has(n));  // 찾근 (spare2 제외)
+      const normalRest = rest.filter(n => !twoRoundSet.has(n));
+      const excls    = names.filter(n => exclSet2.has(n));
+      nextDayQueue = [...firstSpares, ...twoInRest, ...restSpares, ...normalRest, ...excls];
     } else {
       const todayLast = shift2.at(-1);
       const rest  = names.filter(n => !spare1Set.has(n) && !exclSet2.has(n));
@@ -1239,6 +1244,23 @@ export default function SchedulePage() {
         {view === "assign" && (
           <button onClick={() => { setView("input"); setDayResult(null); setWeekly([]); }} style={S.smallBtn}>
             ↩ 다시
+          </button>
+        )}
+        {view === "input" && customRoster.length > 0 && (
+          <button
+            onClick={() => applyRoster(queueStartName)}
+            style={{
+              ...S.smallBtn,
+              background: "#1a1a2e",
+              color: "#fff",
+              fontWeight: 800,
+              fontSize: "1rem",
+              padding: "6px 14px",
+              letterSpacing: 1,
+            }}
+            title="배정 화면 바로 가기"
+          >
+            »
           </button>
         )}
       </div>
