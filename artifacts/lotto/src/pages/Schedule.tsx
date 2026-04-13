@@ -2308,7 +2308,7 @@ export default function SchedulePage() {
               }}>
                 <span style={{ fontSize: 14, flex: 1, color: isAuto ? "#6a1b9a" : "#1565c0" }}>
                   <span style={{ fontWeight: 700 }}>
-                    {isAuto ? "🔢 다음날 첫 순번 " : "📌 첫번호 고정 "}
+                    {isAuto ? "     첫 순번 " : "📌 첫번호 고정 "}
                   </span>
                   <span style={{ fontWeight: 800 }}>"{displayName}"</span>
                 </span>
