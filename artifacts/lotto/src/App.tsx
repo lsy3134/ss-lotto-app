@@ -228,15 +228,20 @@ function LottoPage() {
   }, []);
 
   async function loadExcel() {
-    const res = await fetch(`${BASE_URL}lotto.xlsx`);
-    const buf = await res.arrayBuffer();
-    const wb = XLSX.read(buf, { type: "array" });
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]]);
-    rows.forEach((row) => {
-      const nums = [row["당첨번호"], row["Unnamed: 3"], row["Unnamed: 4"], row["Unnamed: 5"], row["Unnamed: 6"], row["Unnamed: 7"]]
-        .map(Number).filter((v) => Number.isInteger(v) && v >= 1 && v <= 45).sort((a, b) => a - b);
-      if (nums.length === 6) { pastWinners.current.add(nums.join(",")); allDraws.current.push(nums); }
-    });
+    try {
+      const res = await fetch(`${BASE_URL}lotto.xlsx`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const buf = await res.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]]);
+      rows.forEach((row) => {
+        const nums = [row["당첨번호"], row["Unnamed: 3"], row["Unnamed: 4"], row["Unnamed: 5"], row["Unnamed: 6"], row["Unnamed: 7"]]
+          .map(Number).filter((v) => Number.isInteger(v) && v >= 1 && v <= 45).sort((a, b) => a - b);
+        if (nums.length === 6) { pastWinners.current.add(nums.join(",")); allDraws.current.push(nums); }
+      });
+    } catch (e) {
+      console.warn("lotto.xlsx 로드 실패 — 기본 모드로 실행:", e);
+    }
   }
 
   function loadLatest() {
@@ -258,12 +263,21 @@ function LottoPage() {
   }
 
   function rand() { return Math.floor(Math.random() * 45) + 1; }
+
+  // 빈 배열 안전 처리: arr가 비어있으면 랜덤 유니크 숫자로 대체
   function pick(arr: number[], n: number): number[] {
-    const copy = [...arr]; const res: number[] = [];
-    while (res.length < n) { const i = Math.floor(Math.random() * copy.length); res.push(copy.splice(i, 1)[0]); }
+    const src = arr.length >= n ? arr : Array.from({ length: 45 }, (_, i) => i + 1);
+    const copy = [...src]; const res: number[] = [];
+    while (res.length < n) {
+      const i = Math.floor(Math.random() * copy.length);
+      res.push(copy.splice(i, 1)[0]);
+    }
     return res;
   }
+
   function isValid(nums: number[]): boolean {
+    if (nums.some((n) => !Number.isInteger(n) || n < 1 || n > 45)) return false;
+    if (new Set(nums).size !== nums.length) return false;
     if (pastWinners.current.has(nums.join(","))) return false;
     const last: Record<number, number> = {};
     nums.forEach((n) => { const d = n % 10; last[d] = (last[d] || 0) + 1; });
@@ -276,29 +290,55 @@ function LottoPage() {
     if (odd < 2 || odd > 4) return false;
     return true;
   }
+
   function getHotCold() {
     const freq: Record<number, number> = {};
     allDraws.current.slice(0, 10).forEach((draw) => { draw.forEach((n) => { freq[n] = (freq[n] || 0) + 1; }); });
     const sorted = Object.entries(freq).sort((a, b) => Number(b[1]) - Number(a[1])).map((x) => Number(x[0]));
     return { hot: sorted.slice(0, 6), cold: sorted.slice(-6) };
   }
+
+  // 최대 시도 횟수 제한 — 모바일 브라우저 멈춤 방지
   function generateBalanced(hot: number[], cold: number[]): number[] {
-    while (true) {
-      const nums: number[] = []; nums.push(...pick(hot, 2)); nums.push(...pick(cold, 2));
-      while (nums.length < 6) { const n = rand(); if (!nums.includes(n)) nums.push(n); }
-      nums.sort((a, b) => a - b); if (isValid(nums)) return nums;
+    for (let attempt = 0; attempt < 5000; attempt++) {
+      const nums: number[] = [];
+      nums.push(...pick(hot, 2));
+      nums.push(...pick(cold, 2));
+      let inner = 0;
+      while (nums.length < 6 && inner++ < 200) { const n = rand(); if (!nums.includes(n)) nums.push(n); }
+      nums.sort((a, b) => a - b);
+      if (nums.length === 6 && isValid(nums)) return nums;
+    }
+    // 최종 fallback: 조건 완화
+    for (;;) {
+      const nums = pick([], 6).sort((a, b) => a - b);
+      const odd = nums.filter((n) => n % 2).length;
+      if (odd >= 2 && odd <= 4) return nums;
     }
   }
+
   function generateGreedy(cold: number[]): number[] {
-    while (true) {
-      const nums: number[] = []; nums.push(...pick(cold, 4));
-      while (nums.length < 6) { const n = rand(); if (n >= 31 && !nums.includes(n)) nums.push(n); }
-      nums.sort((a, b) => a - b); if (isValid(nums)) return nums;
+    for (let attempt = 0; attempt < 5000; attempt++) {
+      const nums: number[] = [];
+      nums.push(...pick(cold, 4));
+      let inner = 0;
+      while (nums.length < 6 && inner++ < 200) { const n = rand(); if (n >= 31 && !nums.includes(n)) nums.push(n); }
+      // inner 실패 시 범위 제한 없이 채움
+      let fill = 0;
+      while (nums.length < 6 && fill++ < 200) { const n = rand(); if (!nums.includes(n)) nums.push(n); }
+      nums.sort((a, b) => a - b);
+      if (nums.length === 6 && isValid(nums)) return nums;
     }
+    return pick([], 6).sort((a, b) => a - b);
   }
+
   function generate() {
     const { hot, cold } = getHotCold();
-    setHotText("🔥 핫: " + hot.join(", ") + " / ❄ 콜드: " + cold.join(", "));
+    const hasData = allDraws.current.length > 0;
+    setHotText(hasData
+      ? "🔥 핫: " + hot.join(", ") + " / ❄ 콜드: " + cold.join(", ")
+      : "📊 데이터 없음 — 랜덤 모드로 생성"
+    );
     const result: Game[] = [];
     for (let i = 0; i < 3; i++) result.push({ type: "균형형", nums: generateBalanced(hot, cold) });
     for (let i = 0; i < 2; i++) result.push({ type: "독식형", nums: generateGreedy(cold) });
