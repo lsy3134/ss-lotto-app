@@ -962,9 +962,14 @@ export default function SchedulePage() {
   // 이전날 날짜 레이블 찾기
   const prevDateLabel = useMemo(() => {
     if (!selectedDate) return null;
+    // excelDays 우선 탐색
     const idx = excelDays.findIndex(d => d.dateLabel === selectedDate.dateLabel);
-    return idx > 0 ? excelDays[idx - 1].dateLabel : null;
-  }, [selectedDate, excelDays]);
+    if (idx > 0) return excelDays[idx - 1].dateLabel;
+    // 엑셀 없을 때 → viewDays(달력 생성 배열) 폴백
+    const vi = viewDays.findIndex(d => d.dateLabel === selectedDate.dateLabel);
+    if (vi > 0) return viewDays[vi - 1].dateLabel;
+    return null;
+  }, [selectedDate, excelDays, viewDays]);
 
   // 오늘 첫번호 힌트 = 전날 2부스페어[0]
   const todayFirstHint = prevDateLabel ? (savedSpare2[prevDateLabel]?.[0] ?? null) : null;
