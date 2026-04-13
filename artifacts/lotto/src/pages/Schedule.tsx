@@ -171,12 +171,15 @@ function assignDouble(
   names: string[],
   statuses: Record<string, StatusType>,
   shift1Size: number,
-  shift2Size: number
+  shift2Size: number,
+  daegeunMap: Record<string, string> = {}  // 대근 유형 맵 (1부|2부|투라운드)
 ): DayResult {
   const twoRound: string[] = [];   // 찾근 (1부+2부 투라운드)
   const 조출List: string[] = [];   // 조출 (1부 앞 고정, 최대 4명)
   const 후출List: string[] = [];   // 후출 (2부 뒤에서 3번째, 최대 4명)
   const 대기List: string[] = [];   // 대기 (1부 출근대기 → spare1로 2부 첫번째 고정)
+  const 대근1부List: string[] = []; // 대근-1부: 1부만 근무 후 귀가
+  const 대근2부List: string[] = []; // 대근-2부: 2부만 근무
   const excluded: string[] = [];
   const autoQueue: string[] = [];  // 일반 순번 대기열
 
@@ -184,18 +187,23 @@ function assignDouble(
     const s = statuses[name] ?? null;
     if (s === "찾근")  { twoRound.push(name); }
     else if (s === "대기") {
-      // 1부 출근대기: spare1 고정 (1부 미포함, 2부 첫번째로 나감)
       대기List.push(name);
     } else if (s === "조출") {
       if (조출List.length < 4) 조출List.push(name); else autoQueue.push(name);
     } else if (s === "후출") {
       if (후출List.length < 4) 후출List.push(name); else autoQueue.push(name);
     } else if (EXCLUDED_SET.has(s ?? "")) { excluded.push(name); }
-    else { autoQueue.push(name); }
+    else {
+      // status null(정상근무) — 대근 유형 확인
+      const dg = daegeunMap[name];
+      if (dg === "1부")       대근1부List.push(name); // 1부만 출근
+      else if (dg === "2부")  대근2부List.push(name); // 2부만 출근
+      else                    autoQueue.push(name);
+    }
   }
 
-  // ── 1부 배치: 찾근 → 조출 → 일반순번 ── (대기자는 1부 미포함)
-  const fixed1 = [...twoRound, ...조출List];
+  // ── 1부 배치: 찾근 → 조출 → 대근1부 → 일반순번 ── (대기자는 1부 미포함)
+  const fixed1 = [...twoRound, ...조출List, ...대근1부List];
   const avail1 = Math.max(0, shift1Size - fixed1.length);
   const shift1 = [...fixed1, ...autoQueue.slice(0, avail1)];
   // spare1: 명시적 대기자 우선, 없으면 autoQueue에서 순번상 다음번호
@@ -203,38 +211,36 @@ function assignDouble(
     ? 대기List.slice(0, 1)
     : autoQueue.slice(avail1, avail1 + 1);
   const remaining = 대기List.length > 0
-    ? autoQueue.slice(avail1)      // 대기자가 있으면 avail1 이후부터 remaining
-    : autoQueue.slice(avail1 + 1); // 대기자 없으면 기존 로직
+    ? autoQueue.slice(avail1)
+    : autoQueue.slice(avail1 + 1);
 
   // ── 2부 배치 ────────────────────────────────────────
   // 규정:
-  //   - 1부스페어(spare1)가 2부 제일 앞(첫번째)으로 나감
-  //   - 찾근자(twoRound)는 1부 근무 후 2부에도 배정 (2부의 약 1/4 지점에 삽입)
-  //   - 일반순번: twoRound 삽입 전/후로 분할
-  //   - 후출자: 2부 뒤에서 3번째 위치 삽입
+  //   - 1부스페어(spare1)가 2부 제일 앞(첫번째)
+  //   - 대근-2부: spare1 바로 뒤에 고정 (1부 미참여, 2부만 출근)
+  //   - 찾근자(twoRound): 2부의 약 1/4 지점에 삽입
+  //   - 후출자: 2부 뒤에서 3번째 위치
   //   - 2부스페어: 2부에 들어가지 못한 나머지 → 다음날 첫번호
-  // ── 2부 인원 계산 ──────────────────────────────────
-  const shift1Regular = autoQueue.slice(0, avail1); // 1부에 배정된 regular 인원
-  const avail2Normal = Math.max(0, shift2Size - spare1.length - twoRound.length - 후출List.length);
+  const shift1Regular = autoQueue.slice(0, avail1);
+  const avail2Normal = Math.max(0, shift2Size - spare1.length - 대근2부List.length - twoRound.length - 후출List.length);
   const normalFor2 = remaining.slice(0, avail2Normal);
-  const spare2 = remaining.slice(avail2Normal); // ★ 2부에 못 들어간 나머지 → 2부스페어 → 다음날 첫번호
+  const spare2 = remaining.slice(avail2Normal);
 
-  // 1부 앞순번에서 추가로 2부에 나가는 인원 (찾근자 제외 regular shift1의 앞번호)
-  const extra2부Count = Math.max(0, shift2Size - spare1.length - twoRound.length - normalFor2.length - 후출List.length);
+  const extra2부Count = Math.max(0, shift2Size - spare1.length - 대근2부List.length - twoRound.length - normalFor2.length - 후출List.length);
   const extra2부 = shift1Regular.slice(0, extra2부Count);
 
-  // twoRound 삽입 위치: 2부의 약 1/4 지점 (spare1 뒤)
-  const twoRoundInsertAt = Math.max(0, Math.floor(shift2Size / 4) - spare1.length);
+  // twoRound 삽입 위치: 2부의 약 1/4 지점 (spare1 + 대근2부List 뒤 기준)
+  const twoRoundInsertAt = Math.max(0, Math.floor(shift2Size / 4) - spare1.length - 대근2부List.length);
   const normalBefore = normalFor2.slice(0, twoRoundInsertAt);
   const normalAfter  = normalFor2.slice(twoRoundInsertAt);
 
-  // 후출자: normalAfter + extra2부 뒤에서 3번째 위치
   const afterTwoRound = [...normalAfter, ...extra2부];
   let shift2: string[];
   if (후출List.length > 0 && afterTwoRound.length >= 2) {
     const insertAt = Math.max(0, afterTwoRound.length - 2);
     shift2 = [
       ...spare1,
+      ...대근2부List,
       ...normalBefore,
       ...twoRound,
       ...afterTwoRound.slice(0, insertAt),
@@ -242,12 +248,10 @@ function assignDouble(
       ...afterTwoRound.slice(insertAt),
     ];
   } else {
-    shift2 = [...spare1, ...normalBefore, ...twoRound, ...afterTwoRound, ...후출List];
+    shift2 = [...spare1, ...대근2부List, ...normalBefore, ...twoRound, ...afterTwoRound, ...후출List];
   }
 
   // ── 다음날 예상 순번 ──────────────────────────────────
-  // 규정: 2부스페어 있으면 → 스페어 앞에, 나머지 큐 순서
-  //       2부스페어 없으면 → 오늘 2부 마지막 다음번호부터
   let nextDayQueue: string[];
   {
     const exclSet2  = new Set(excluded);
@@ -259,7 +263,6 @@ function assignDouble(
       const excls = names.filter(n => exclSet2.has(n));
       nextDayQueue = [...spare2, ...rest, ...excls];
     } else {
-      // 2부스페어 없음: 오늘 마지막 2부 근무자 다음 번호부터 시작
       const todayLast = shift2.at(-1);
       const rest  = names.filter(n => !spare1Set.has(n) && !exclSet2.has(n));
       const excls = names.filter(n => exclSet2.has(n));
@@ -937,7 +940,7 @@ export default function SchedulePage() {
     if (names.length === 0) return null;
     const statuses = getEffective(dayOfWeek);
     return mode === "2부제"
-      ? assignDouble(names, statuses, shift1Size, shift2Size)
+      ? assignDouble(names, statuses, shift1Size, shift2Size, currentDaegeun)
       : assignSingle(names, statuses, singleSize);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [names, manualStatuses, currentDaegeun, mode, shift1Size, shift2Size, singleSize, dayOfWeek, customRosterMap]);
@@ -1055,7 +1058,7 @@ export default function SchedulePage() {
   function assign() {
     const statuses = getEffective(dayOfWeek);
     const result = mode === "2부제"
-      ? assignDouble(names, statuses, shift1Size, shift2Size)
+      ? assignDouble(names, statuses, shift1Size, shift2Size, currentDaegeun)
       : assignSingle(names, statuses, singleSize);
     setDayResult(result);
     setWeekly([]);
@@ -1103,7 +1106,7 @@ export default function SchedulePage() {
       }
 
       const result = mode === "2부제"
-        ? assignDouble(currentNames, statuses, s1, s2)
+        ? assignDouble(currentNames, statuses, s1, s2, dateDaegeun[dateLabel] ?? {})
         : assignSingle(currentNames, statuses, ss);
 
       // ── 다음날 currentNames 재정렬 (규정: 2부스페어 앞번호 → 나머지 순번 대기) ──
