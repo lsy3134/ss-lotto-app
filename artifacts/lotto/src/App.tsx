@@ -316,7 +316,7 @@ function LottoPage() {
   return (
     <div style={{
       fontFamily: "'Pretendard', 'Apple SD Gothic Neo', sans-serif",
-      background: "linear-gradient(160deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%)",
+      background: "#f0f2f5",
       minHeight: "100dvh",
       display: "flex",
       flexDirection: "column",
@@ -326,30 +326,33 @@ function LottoPage() {
       <div style={{
         display: "flex", alignItems: "center", gap: 10,
         padding: "16px 18px 12px",
-        borderBottom: "1px solid rgba(255,255,255,0.08)",
+        borderBottom: "1px solid #e5e7eb",
+        background: "#fff",
       }}>
         <button
           onClick={() => setLocation(`${base}/`)}
           style={{
-            padding: "8px 14px", background: "rgba(255,255,255,0.1)",
+            padding: "8px 14px", background: "#f0f0f0",
             border: "none", borderRadius: 10, cursor: "pointer",
-            fontSize: "0.9rem", color: "#fff", fontWeight: 600,
+            fontSize: "0.9rem", color: "#555", fontWeight: 600,
           }}
         >← 홈</button>
         <div style={{ flex: 1, textAlign: "center" }}>
-          <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#fff" }}> 써니의 부자 로또 추천기🚀</div>
+          <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#1a1a2e" }}>🚀 끝판왕 로또 추천기</div>
         </div>
         <div style={{ width: 60 }} />
       </div>
+
       {/* 본문 */}
       <div style={{ flex: 1, padding: "20px 16px", display: "flex", flexDirection: "column", gap: 14 }}>
 
         {/* 번호 입력 카드 */}
         <div style={{
-          background: "rgba(255,255,255,0.06)", borderRadius: 18,
-          padding: "16px", border: "1px solid rgba(255,255,255,0.1)",
+          background: "#fff", borderRadius: 18,
+          padding: "16px", border: "1px solid #e5e7eb",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
         }}>
-          <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.5)", marginBottom: 8, fontWeight: 600 }}>
+          <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginBottom: 8, fontWeight: 600 }}>
             이번주 당첨번호 등록
           </div>
           <input
@@ -359,9 +362,9 @@ function LottoPage() {
             style={{
               width: "100%", boxSizing: "border-box",
               padding: "13px 14px", borderRadius: 12,
-              border: "1.5px solid rgba(255,255,255,0.15)",
-              background: "rgba(255,255,255,0.08)",
-              color: "#fff", fontSize: "1rem",
+              border: "1px solid #d1d5db",
+              background: "#f9fafb",
+              color: "#1a1a2e", fontSize: "1rem",
               outline: "none",
             }}
           />
@@ -370,7 +373,7 @@ function LottoPage() {
             style={{
               width: "100%", marginTop: 10,
               padding: "14px 0", borderRadius: 12, border: "none",
-              background: "rgba(255,255,255,0.15)",
+              background: "#222",
               color: "#fff", fontWeight: 700, fontSize: "1rem",
               cursor: "pointer",
             }}
@@ -380,9 +383,9 @@ function LottoPage() {
         {/* 핫/콜드 정보 */}
         {hotText && (
           <div style={{
-            background: "rgba(248,180,0,0.12)", borderRadius: 12,
-            padding: "10px 14px", border: "1px solid rgba(248,180,0,0.25)",
-            fontSize: "0.8rem", color: "#f8b400", lineHeight: 1.6,
+            background: "#fffbeb", borderRadius: 12,
+            padding: "10px 14px", border: "1px solid #fde68a",
+            fontSize: "0.8rem", color: "#92400e", lineHeight: 1.6,
           }}>
             {hotText}
           </div>
@@ -393,9 +396,9 @@ function LottoPage() {
           onClick={generate}
           style={{
             width: "100%", padding: "18px 0", borderRadius: 16, border: "none",
-            background: "linear-gradient(135deg, #f8b400 0%, #e65100 100%)",
+            background: "#222",
             color: "#fff", fontWeight: 800, fontSize: "1.15rem",
-            cursor: "pointer", boxShadow: "0 6px 24px rgba(248,180,0,0.35)",
+            cursor: "pointer",
             letterSpacing: 1,
           }}
         >✨ 5게임 생성</button>
@@ -405,11 +408,12 @@ function LottoPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {games.map((game, i) => (
               <div key={i} style={{
-                background: "rgba(255,255,255,0.07)", borderRadius: 16,
-                padding: "14px 16px", border: "1px solid rgba(255,255,255,0.1)",
+                background: "#fff", borderRadius: 16,
+                padding: "14px 16px", border: "1px solid #e5e7eb",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
               }}>
                 <div style={{
-                  fontSize: "0.72rem", color: "rgba(255,255,255,0.4)",
+                  fontSize: "0.72rem", color: "#9ca3af",
                   fontWeight: 700, marginBottom: 10, letterSpacing: 0.5,
                 }}>
                   게임 {i + 1} · {game.type}
@@ -421,7 +425,7 @@ function LottoPage() {
                       display: "flex", alignItems: "center", justifyContent: "center",
                       color: "#fff", fontWeight: 800, fontSize: "1rem",
                       background: ballColor(n),
-                      boxShadow: `0 3px 10px ${ballColor(n)}88`,
+                      boxShadow: `0 2px 6px ${ballColor(n)}66`,
                     }}>{n}</div>
                   ))}
                 </div>
@@ -431,7 +435,7 @@ function LottoPage() {
         )}
 
         {log && (
-          <div style={{ textAlign: "center", fontSize: "0.8rem", color: "rgba(255,255,255,0.35)", marginTop: 4 }}>
+          <div style={{ textAlign: "center", fontSize: "0.8rem", color: "#9ca3af", marginTop: 4 }}>
             {log}
           </div>
         )}
