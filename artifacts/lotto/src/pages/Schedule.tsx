@@ -1814,29 +1814,27 @@ export default function SchedulePage() {
             </button>
           </div>
 
-          {/* 첫번호 지정 */}
-          <div style={{
-            display: "flex", alignItems: "center", gap: 8, marginBottom: "12px",
-            padding: "9px 12px", borderRadius: 10,
-            background: queueStartName ? "#e3f2fd" : "#f9f9f9",
-            border: `1px solid ${queueStartName ? "#90caf9" : "#e0e0e0"}`,
-          }}>
-            <span style={{ fontSize: 14, flex: 1, color: queueStartName ? "#1565c0" : "#999" }}>
-              {queueStartName
-                ? <><span style={{ fontWeight: 700 }}>오늘 첫번호 </span><span style={{ fontWeight: 800 }}>"{queueStartName}"</span> <span style={{ fontSize: 11, color: "#90caf9" }}>(오늘만)</span></>
-                : "순번표 불러오기 → 첫번호 또는 스페어 선택"}
-            </span>
-            <button
-              onClick={() => { setQueuePickSearch(""); setQueueModal("pick"); }}
-              style={{
-                padding: "6px 12px", borderRadius: 8, border: "none",
-                background: queueStartName ? "#1565c0" : "#9e9e9e",
-                color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap",
-              }}
-            >
-              {queueStartName ? "변경" : "지정"}
-            </button>
-            {queueStartName && (
+          {/* 첫번호 지정 — 지정된 경우에만 표시 */}
+          {queueStartName && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 8, marginBottom: "12px",
+              padding: "9px 12px", borderRadius: 10,
+              background: "#e3f2fd",
+              border: "1px solid #90caf9",
+            }}>
+              <span style={{ fontSize: 14, flex: 1, color: "#1565c0" }}>
+                <span style={{ fontWeight: 700 }}>오늘 첫번호 </span>
+                <span style={{ fontWeight: 800 }}>"{queueStartName}"</span>
+                <span style={{ fontSize: 11, color: "#90caf9" }}> (오늘만)</span>
+              </span>
+              <button
+                onClick={() => { setQueuePickSearch(""); setQueueModal("pick"); }}
+                style={{
+                  padding: "6px 12px", borderRadius: 8, border: "none",
+                  background: "#1565c0",
+                  color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap",
+                }}
+              >변경</button>
               <button
                 onClick={() => saveQueueStart(null)}
                 style={{
@@ -1844,8 +1842,8 @@ export default function SchedulePage() {
                   background: "#ef9a9a", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer",
                 }}
               >✕</button>
-            )}
-          </div>
+            </div>
+          )}
 
         </div>
       )}
