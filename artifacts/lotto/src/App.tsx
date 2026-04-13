@@ -504,7 +504,7 @@ function LottoPage() {
             cursor: "pointer",
             letterSpacing: 1,
           }}
-        >✨ 5게임 생성</button>
+        > 5게임 생성</button>
 
         {/* 결과 */}
         {games.length > 0 && (
