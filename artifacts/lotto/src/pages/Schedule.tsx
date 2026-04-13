@@ -1706,31 +1706,12 @@ export default function SchedulePage() {
           </div>
 
           {/* ── 엑셀 날짜 선택 ── */}
-          {/* ★ 기능1: 엑셀 파일 업로드 */}
+          {/* ★ 기능1: 엑셀 파일 업로드 (숨김) */}
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
             <label style={{ ...S.label, margin: 0, flex: 1 }}>
               {selectedDate ? selectedDate.dateLabel : "날짜 선택"}
               {xlLoading && <span style={{ color: "#aaa", fontWeight: 400, marginLeft: "6px" }}>불러오는 중…</span>}
               {xlError && <span style={{ color: "#e53935", fontWeight: 400, marginLeft: "6px" }}>{xlError}</span>}
-            </label>
-            <label style={{
-              padding: "4px 10px", borderRadius: "8px", fontSize: "0.72rem", fontWeight: 700,
-              background: uploadedName ? "#e8f5e9" : "#f0f0f0",
-              color: uploadedName ? "#2e7d32" : "#555",
-              border: uploadedName ? "1px solid #81c784" : "1px solid #ddd",
-              cursor: "pointer", whiteSpace: "nowrap",
-            }}>
-              {uploadedName ? "📄 " + uploadedName.replace(/\.xlsx?$/i, "") : "📂 엑셀 교체"}
-              <input
-                type="file"
-                accept=".xlsx,.xls"
-                style={{ display: "none" }}
-                onChange={e => {
-                  const f = e.target.files?.[0];
-                  if (f) loadFromFile(f);
-                  e.target.value = "";
-                }}
-              />
             </label>
           </div>
 
