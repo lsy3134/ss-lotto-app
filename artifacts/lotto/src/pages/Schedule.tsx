@@ -1253,23 +1253,23 @@ export default function SchedulePage() {
     return active.indexOf(name);
   }
 
-  // 찾근 가능 여부 (PDF 규정 기준)
-  // 2부제: 1부팀수 ≥ 6 + 본인 순번이 1부스페어 이후(2부 배정 순번~) 또는 근무 안 될 때
-  // 단부제: 스페어 이후(근무 안 될 때)만 가능
+  // 찾근 가능 여부
+  // 2부제: 1부팀수 ≥ 6 + 본인 순번이 totalSize 이후(완전 근무 안 될 때)만 가능
+  //        → 2부 배정 구간(1부컷~totalSize)은 본인 자리에서 일해야 하므로 불가
+  // 단부제: singleSize 초과(근무 안 될 때)만 가능
   function canChakgeun(name: string): boolean {
     const s = effectiveStatus(name);
     if (s === "찾근") return true; // 이미 찾근 상태 → 해제 허용
     if (mode === "단부제") {
-      // 단부제: 근무 안 될 때(스페어 이후)만 가능
+      // 단부제: 근무 안 될 때(singleSize 초과)만 가능
       const qi = activeQueueIndex(name);
-      return qi > singleSize; // singleSize 이후 = 근무 안 됨
+      return qi > singleSize;
     }
     // 2부제: 1부 6팀 이상 필수
     if (shift1Size < 6) return false;
-    // 본인 순번이 1부스페어(shift1Size번째) 이후여야 함
-    // = 2부 배정 순번 or 근무 안 될 때
+    // 2부 배정 구간도 본인 자리 근무 → 오직 totalSize 이후(스페어/근무 안 됨)만 가능
     const qi = activeQueueIndex(name);
-    return qi >= shift1Size; // shift1Size 인덱스 = 1부스페어 위치 이후
+    return qi >= totalSize;
   }
 
   // 조출 가능 여부 (1부 6팀 이상 필수)
