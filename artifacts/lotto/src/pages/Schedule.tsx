@@ -460,6 +460,9 @@ export default function SchedulePage() {
     localStorage.setItem("lotto_teamSettingsV2", JSON.stringify(map));
   }
 
+  // React state 업데이트 비동기 문제 방지: 현재 선택 날짜를 ref로 동기 추적
+  const activeDateLabelRef = useRef<string>("");
+
   const [mode, setMode] = useState<Mode>("단부제");
   // 2부제: totalSize = 총팀수, shift1Size = 1부팀수, shift2Size = 총팀수 - 1부팀수
   const [totalSize, setTotalSize] = useState<number>(70);
@@ -469,15 +472,15 @@ export default function SchedulePage() {
   // 팀수 설정 잠금 (저장 완료 상태)
   const [teamsLocked, setTeamsLocked] = useState<boolean>(false);
 
-  // 팀수 설정 저장 — 선택된 날짜 기준으로 저장
+  // 팀수 설정 저장 — ref로 동기 추적한 날짜 기준 저장 (React 상태 비동기 문제 방지)
   function saveTeamSettings() {
-    const dateLabel = selectedDate?.dateLabel;
+    const dateLabel = activeDateLabelRef.current || selectedDate?.dateLabel;
     if (!dateLabel) return;
     _writeTeamForDate(dateLabel, { mode, totalSize, shift1Size, singleSize, locked: true });
     setTeamsLocked(true);
   }
   function unlockTeamSettings() {
-    const dateLabel = selectedDate?.dateLabel;
+    const dateLabel = activeDateLabelRef.current || selectedDate?.dateLabel;
     if (!dateLabel) return;
     _writeTeamForDate(dateLabel, { mode, totalSize, shift1Size, singleSize, locked: false });
     setTeamsLocked(false);
@@ -825,6 +828,8 @@ export default function SchedulePage() {
 
   // 날짜 선택 → 팀수/요일 설정 (저장된 값 우선, 없으면 예약팀수 자동 반영)
   function selectExcelDate(day: ExcelDayData) {
+    // ref를 먼저 동기 업데이트 → saveTeamSettings가 올바른 날짜에 저장
+    activeDateLabelRef.current = day.dateLabel;
     setSelectedDate(day);
     setDayOfWeek(day.dayIdx);
     const saved = _readTeamMap()[day.dateLabel];
@@ -836,15 +841,17 @@ export default function SchedulePage() {
       setSingleSize(saved.singleSize ?? 60);
       setTeamsLocked(saved.locked ?? false);
     } else if (day.예약팀수 > 0) {
-      // 저장 없음 → 예약팀수로 자동 설정
+      // 저장 없음 → 예약팀수로 자동 설정, 모드는 기본값으로 리셋
       const total = day.예약팀수;
       const half = Math.round(total / 2);
+      setMode("단부제");
       setTotalSize(total);
       setShift1Size(half);
       setSingleSize(total);
       setTeamsLocked(false);
     } else {
-      // 기본값으로 리셋
+      // 기본값으로 전체 리셋
+      setMode("단부제");
       setTotalSize(70);
       setShift1Size(35);
       setSingleSize(60);
