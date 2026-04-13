@@ -818,13 +818,18 @@ export default function SchedulePage() {
   }
 
   // ── 첫번호 지정 (세션 전용 — localStorage 저장 X, 다음날 이어지지 않음) ───
-  const [queueStartName, setQueueStartName] = useState<string | null>(null);
+  const TODAY_KEY = `lotto_queueStart_${new Date().toISOString().slice(0, 10)}`;
+  const [queueStartName, setQueueStartName] = useState<string | null>(() =>
+    localStorage.getItem(TODAY_KEY)
+  );
   const [queueModal, setQueueModal] = useState<"ask" | "pick" | null>(null);
   const [queuePickSearch, setQueuePickSearch] = useState("");
 
   function saveQueueStart(name: string | null) {
     setQueueStartName(name);
-    // 의도적으로 localStorage에 저장하지 않음 — 그날만 유효
+    // 오늘 날짜 key로 저장 — 자정 지나면 다른 key가 되어 자동 만료
+    if (name) localStorage.setItem(TODAY_KEY, name);
+    else localStorage.removeItem(TODAY_KEY);
   }
 
   // 이름 배열을 startName 위치부터 회전
@@ -845,6 +850,17 @@ export default function SchedulePage() {
     setWeekly([]);
     setView("assign");
   }
+
+  // 홈 이동 후 복귀 시 자동 재적용
+  // — customRoster가 있고 queueStartName이 저장돼 있으면 바로 배정 화면으로
+  useEffect(() => {
+    if (sortedCustomRoster.length > 0 && queueStartName && names.length === 0) {
+      const base = sortedCustomRoster.map((p) => p.name);
+      setNames(rotateNames(base, queueStartName));
+      setRosterLoaded(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 순번표 불러오기 → 항상 ask 모달 (하겠다/안하겠다 선택)
   function loadRoster() {
