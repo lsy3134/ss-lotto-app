@@ -848,6 +848,21 @@ export default function SchedulePage() {
     localStorage.setItem(HA_KEY, JSON.stringify(holidayAppliedDates));
   }, [holidayAppliedDates]);
 
+  // ── 서버에서 휴무 데이터 자동 로드 (마운트 시 1회) ──
+  useEffect(() => {
+    fetch("/api/holiday-map")
+      .then(r => r.json())
+      .then((data: { fileName: string; holidayMap: Record<string, string[]> }) => {
+        if (data.fileName) {
+          setHolidayFileName(data.fileName);
+          setHolidayMap(data.holidayMap);
+          localStorage.setItem("lotto_holidayFileName", data.fileName);
+          localStorage.setItem(HM_KEY, JSON.stringify(data.holidayMap));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   function loadHolidayFile(file: File) {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -869,6 +884,13 @@ export default function SchedulePage() {
         setHolidayFileName(file.name);
         localStorage.setItem("lotto_holidayFileName", file.name);
         localStorage.setItem("lotto_holidayMap", JSON.stringify(map));
+
+        // ── 서버에 저장 (모든 기기에서 공유) ──
+        fetch("/api/holiday-map", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileName: file.name, holidayMap: map }),
+        }).catch(() => {});
 
         // ── "자동 적용 완료" 기록 초기화 → 모든 날짜에 새 엑셀로 다시 적용 가능 ──
         setHolidayAppliedDates({});
