@@ -338,7 +338,7 @@ function LottoPage() {
           }}
         >← 홈</button>
         <div style={{ flex: 1, textAlign: "center" }}>
-          <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#1a1a2e" }}>🚀 끝판왕 로또 추천기</div>
+          <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#1a1a2e" }}>🚀 써니의 부자 추천기</div>
         </div>
         <div style={{ width: 60 }} />
       </div>
