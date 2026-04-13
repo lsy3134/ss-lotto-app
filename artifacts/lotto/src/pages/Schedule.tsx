@@ -3661,7 +3661,6 @@ export default function SchedulePage() {
             <div style={S.card} id="print-area">
               <div style={{ ...S.sectionTitle, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <span>📅 주간 근무표 (월~일)</span>
-                {/* ★ 기능3: 출력 버튼 */}
                 <button
                   onClick={() => window.print()}
                   style={{ ...S.smallBtn, fontSize: "0.75rem", padding: "4px 10px" }}
@@ -3687,6 +3686,7 @@ export default function SchedulePage() {
               ))}
             </div>
           )}
+
         </>
       )}
 
