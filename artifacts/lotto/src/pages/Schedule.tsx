@@ -866,6 +866,25 @@ export default function SchedulePage() {
   );
   const [queueModal, setQueueModal] = useState<"ask" | "pick" | null>(null);
   const [queuePickSearch, setQueuePickSearch] = useState("");
+  // 모달 드래그 위치
+  const [queueModalPos, setQueueModalPos] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+  function onModalDragStart(e: React.MouseEvent | React.TouchEvent) {
+    const clientX = "touches" in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY = "touches" in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+    dragRef.current = { startX: clientX, startY: clientY, origX: queueModalPos.x, origY: queueModalPos.y };
+    const onMove = (ev: MouseEvent | TouchEvent) => {
+      if (!dragRef.current) return;
+      const cx = "touches" in ev ? (ev as TouchEvent).touches[0].clientX : (ev as MouseEvent).clientX;
+      const cy = "touches" in ev ? (ev as TouchEvent).touches[0].clientY : (ev as MouseEvent).clientY;
+      setQueueModalPos({ x: dragRef.current.origX + cx - dragRef.current.startX, y: dragRef.current.origY + cy - dragRef.current.startY });
+    };
+    const onUp = () => { dragRef.current = null; document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); document.removeEventListener("touchmove", onMove); document.removeEventListener("touchend", onUp); };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    document.addEventListener("touchmove", onMove);
+    document.addEventListener("touchend", onUp);
+  }
 
   function saveQueueStart(name: string | null) {
     setQueueStartName(name);
@@ -906,6 +925,7 @@ export default function SchedulePage() {
 
   // 순번표 불러오기 → 항상 ask 모달 (하겠다/안하겠다 선택)
   function loadRoster() {
+    setQueueModalPos({ x: 0, y: 0 });
     setQueueModal("ask");
   }
 
@@ -1924,12 +1944,39 @@ export default function SchedulePage() {
             position: "fixed", inset: 0, zIndex: 400,
             background: "rgba(0,0,0,0.65)",
             display: "flex", alignItems: "center", justifyContent: "center",
+            userSelect: "none",
           }}>
             <div style={{
-              background: "#fff", borderRadius: 20, padding: "28px 24px 22px",
+              background: "#fff", borderRadius: 20, padding: "0 0 22px",
               maxWidth: 330, width: "90%", textAlign: "center",
               boxShadow: "0 8px 40px rgba(0,0,0,0.28)",
+              transform: `translate(${queueModalPos.x}px, ${queueModalPos.y}px)`,
+              position: "relative",
+              cursor: "default",
             }}>
+              {/* 드래그 핸들 + X 버튼 영역 */}
+              <div
+                onMouseDown={onModalDragStart}
+                onTouchStart={onModalDragStart}
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "12px 16px 0",
+                  cursor: "grab",
+                  borderRadius: "20px 20px 0 0",
+                }}
+              >
+                <div style={{ fontSize: "0.7rem", color: "#bbb", letterSpacing: 1 }}>☰ 드래그</div>
+                <button
+                  onMouseDown={e => e.stopPropagation()}
+                  onClick={() => { setQueueModal(null); setQueueModalPos({ x: 0, y: 0 }); }}
+                  style={{
+                    background: "#f3f4f6", border: "none", borderRadius: "50%",
+                    width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
+                    cursor: "pointer", fontSize: 14, color: "#6b7280", fontWeight: 700,
+                  }}
+                >✕</button>
+              </div>
+              <div style={{ padding: "8px 24px 0" }}>
               <div style={{ fontSize: 38, marginBottom: 10 }}>📋</div>
               <div style={{ fontWeight: 800, fontSize: 18, marginBottom: 16, color: "#1a1a2e" }}>
                 첫번호부터 시작하겠습니까?
@@ -2004,6 +2051,7 @@ export default function SchedulePage() {
                   첫번호 없이
                 </button>
               </div>
+              </div>{/* /padding wrapper */}
             </div>
           </div>
         );
