@@ -450,26 +450,36 @@ export default function SchedulePage() {
   const [, setLocation] = useLocation();
   const { excelDays, loading: xlLoading, error: xlError, loadFromFile, uploadedName } = useExcelData();
 
-  // 설정 (localStorage 영구 저장)
-  const savedTeams = (() => {
-    try { return JSON.parse(localStorage.getItem("lotto_teamSettings") ?? "{}"); } catch { return {}; }
-  })();
-  const [mode, setMode] = useState<Mode>(savedTeams.mode ?? "단부제");
-  // 2부제: totalSize = 총팀수, shift1Size = 1부팀수, shift2Size = 총팀수 - 1부팀수
-  const [totalSize, setTotalSize] = useState<number>(savedTeams.totalSize ?? 70);
-  const [shift1Size, setShift1Size] = useState<number>(savedTeams.shift1Size ?? 35);
-  const shift2Size = Math.max(0, totalSize - shift1Size);
-  const [singleSize, setSingleSize] = useState<number>(savedTeams.singleSize ?? 60);
-  // 팀수 설정 잠금 (저장 완료 상태)
-  const [teamsLocked, setTeamsLocked] = useState<boolean>(savedTeams.locked ?? false);
+  // ── 날짜별 팀수 설정 (lotto_teamSettingsV2: { [dateLabel]: { mode, totalSize, shift1Size, singleSize, locked } }) ──
+  function _readTeamMap(): Record<string, { mode: Mode; totalSize: number; shift1Size: number; singleSize: number; locked: boolean }> {
+    try { return JSON.parse(localStorage.getItem("lotto_teamSettingsV2") ?? "{}"); } catch { return {}; }
+  }
+  function _writeTeamForDate(dateLabel: string, settings: { mode: Mode; totalSize: number; shift1Size: number; singleSize: number; locked: boolean }) {
+    const map = _readTeamMap();
+    map[dateLabel] = settings;
+    localStorage.setItem("lotto_teamSettingsV2", JSON.stringify(map));
+  }
 
-  // 팀수 설정 변경 시 localStorage 저장
+  const [mode, setMode] = useState<Mode>("단부제");
+  // 2부제: totalSize = 총팀수, shift1Size = 1부팀수, shift2Size = 총팀수 - 1부팀수
+  const [totalSize, setTotalSize] = useState<number>(70);
+  const [shift1Size, setShift1Size] = useState<number>(35);
+  const shift2Size = Math.max(0, totalSize - shift1Size);
+  const [singleSize, setSingleSize] = useState<number>(60);
+  // 팀수 설정 잠금 (저장 완료 상태)
+  const [teamsLocked, setTeamsLocked] = useState<boolean>(false);
+
+  // 팀수 설정 저장 — 선택된 날짜 기준으로 저장
   function saveTeamSettings() {
-    localStorage.setItem("lotto_teamSettings", JSON.stringify({ mode, totalSize, shift1Size, singleSize, locked: true }));
+    const dateLabel = selectedDate?.dateLabel;
+    if (!dateLabel) return;
+    _writeTeamForDate(dateLabel, { mode, totalSize, shift1Size, singleSize, locked: true });
     setTeamsLocked(true);
   }
   function unlockTeamSettings() {
-    localStorage.setItem("lotto_teamSettings", JSON.stringify({ mode, totalSize, shift1Size, singleSize, locked: false }));
+    const dateLabel = selectedDate?.dateLabel;
+    if (!dateLabel) return;
+    _writeTeamForDate(dateLabel, { mode, totalSize, shift1Size, singleSize, locked: false });
     setTeamsLocked(false);
   }
   const [nameText, setNameText] = useState("");
@@ -804,16 +814,32 @@ export default function SchedulePage() {
     });
   }
 
-  // 날짜 선택 → 팀수/요일 자동 설정
+  // 날짜 선택 → 팀수/요일 설정 (저장된 값 우선, 없으면 예약팀수 자동 반영)
   function selectExcelDate(day: ExcelDayData) {
     setSelectedDate(day);
     setDayOfWeek(day.dayIdx);
-    if (day.예약팀수 > 0) {
+    const saved = _readTeamMap()[day.dateLabel];
+    if (saved) {
+      // 해당 날짜에 저장된 팀수 설정 복원
+      setMode(saved.mode ?? "단부제");
+      setTotalSize(saved.totalSize ?? 70);
+      setShift1Size(saved.shift1Size ?? 35);
+      setSingleSize(saved.singleSize ?? 60);
+      setTeamsLocked(saved.locked ?? false);
+    } else if (day.예약팀수 > 0) {
+      // 저장 없음 → 예약팀수로 자동 설정
       const total = day.예약팀수;
       const half = Math.round(total / 2);
       setTotalSize(total);
       setShift1Size(half);
       setSingleSize(total);
+      setTeamsLocked(false);
+    } else {
+      // 기본값으로 리셋
+      setTotalSize(70);
+      setShift1Size(35);
+      setSingleSize(60);
+      setTeamsLocked(false);
     }
   }
 
