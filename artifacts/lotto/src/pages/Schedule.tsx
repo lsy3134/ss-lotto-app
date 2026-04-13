@@ -1746,34 +1746,13 @@ export default function SchedulePage() {
             ))}
           </div>
 
-          {/* ── 엑셀 날짜 선택 ── */}
-          {/* ★ 기능1: 엑셀 파일 업로드 (숨김) */}
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+          {/* ── 날짜 선택 + 휴무 교체 버튼 (같은 행) ── */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
             <label style={{ ...S.label, margin: 0, flex: 1 }}>
               {selectedDate ? selectedDate.dateLabel : "날짜 선택"}
               {xlLoading && <span style={{ color: "#aaa", fontWeight: 400, marginLeft: "6px" }}>불러오는 중…</span>}
               {xlError && <span style={{ color: "#e53935", fontWeight: 400, marginLeft: "6px" }}>{xlError}</span>}
             </label>
-          </div>
-
-          {/* 휴무 엑셀 자동입력 업로드 */}
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-            <div style={{ flex: 1, fontSize: "0.72rem", color: "#555" }}>
-              {holidayFileName ? (
-                <span>
-                  📂 <strong style={{ color: "#2e7d32" }}>{holidayFileName.replace(/\.xlsx?$/i, "")}</strong>
-                  {selectedDate && holidayMap[selectedDate.dateLabel.slice(0, 5)] ? (
-                    <span style={{ color: "#1565c0", marginLeft: 6 }}>
-                      ({holidayMap[selectedDate.dateLabel.slice(0, 5)].length}명 자동입력)
-                    </span>
-                  ) : selectedDate ? (
-                    <span style={{ color: "#bbb", marginLeft: 6 }}>(해당 날짜 데이터 없음)</span>
-                  ) : null}
-                </span>
-              ) : (
-                <span style={{ color: "#aaa" }}>휴무 엑셀 미업로드</span>
-              )}
-            </div>
             <label style={{
               padding: "4px 10px", borderRadius: "8px", fontSize: "0.72rem", fontWeight: 700,
               background: holidayFileName ? "#e8f5e9" : "#fff3e0",
@@ -1793,6 +1772,24 @@ export default function SchedulePage() {
                 }}
               />
             </label>
+          </div>
+
+          {/* 휴무 파일 정보 */}
+          <div style={{ fontSize: "0.72rem", color: "#555", marginBottom: "8px" }}>
+            {holidayFileName ? (
+              <span>
+                📂 <strong style={{ color: "#2e7d32" }}>{holidayFileName.replace(/\.xlsx?$/i, "")}</strong>
+                {selectedDate && holidayMap[selectedDate.dateLabel.slice(0, 5)] ? (
+                  <span style={{ color: "#1565c0", marginLeft: 6 }}>
+                    ({holidayMap[selectedDate.dateLabel.slice(0, 5)].length}명 자동입력)
+                  </span>
+                ) : selectedDate ? (
+                  <span style={{ color: "#bbb", marginLeft: 6 }}>(해당 날짜 데이터 없음)</span>
+                ) : null}
+              </span>
+            ) : (
+              <span style={{ color: "#aaa" }}>휴무 엑셀 미업로드</span>
+            )}
           </div>
 
           {/* ── 캐릭터 + 월 네비게이션 (엑셀 유무와 무관하게 항상 표시) ── */}
