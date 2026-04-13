@@ -943,17 +943,15 @@ export default function SchedulePage() {
       setSingleSize(saved.singleSize ?? 60);
       setTeamsLocked(saved.locked ?? false);
     } else if (day.예약팀수 > 0) {
-      // 저장 없음 → 예약팀수로 자동 설정, 모드는 기본값으로 리셋
+      // 저장 없음 → 예약팀수로 자동 설정, 모드는 현재 그대로 유지
       const total = day.예약팀수;
       const half = Math.round(total / 2);
-      setMode("단부제");
       setTotalSize(total);
       setShift1Size(half);
       setSingleSize(total);
       setTeamsLocked(false);
     } else {
-      // 기본값으로 전체 리셋
-      setMode("단부제");
+      // 기본값으로 팀수만 리셋, 모드는 현재 그대로 유지
       setTotalSize(70);
       setShift1Size(35);
       setSingleSize(60);
