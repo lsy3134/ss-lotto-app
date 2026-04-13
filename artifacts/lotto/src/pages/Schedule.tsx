@@ -123,21 +123,28 @@ function parseExcelBuffer(buf: ArrayBuffer): ExcelDayData[] {
 // 포맷B: 첫 행이 날짜, 해당 열에 이름들 (열 기반)
 // 유연하게 두 포맷 모두 시도 후 더 많은 날짜를 인식한 것 채택
 // 날짜 값 → "MM.DD" 키 (공통 유틸)
-function toHolidayDateKey(v: unknown): string | null {
+function toHolidayDateKey(v: unknown, month?: number): string | null {
   if (v === undefined || v === null || v === "") return null;
   if (v instanceof Date) {
     return `${String(v.getMonth() + 1).padStart(2, "0")}.${String(v.getDate()).padStart(2, "0")}`;
   }
   if (typeof v === "number") {
-    // 날짜처럼 보이는 숫자 (일 수: 1~31 또는 Excel 시리얼)
-    if (v >= 1 && v <= 31) return null; // 단순 숫자 제외
+    if (v >= 1 && v <= 31 && month) {
+      // 일 번호 단독 (월 context 있을 때만)
+      return `${String(month).padStart(2, "0")}.${String(v).padStart(2, "0")}`;
+    }
     if (v > 35000 && v < 60000) {
       const d = new Date(Math.round((v - 25569) * 86400 * 1000));
       return `${String(d.getUTCMonth() + 1).padStart(2, "0")}.${String(d.getUTCDate()).padStart(2, "0")}`;
     }
   }
   const s = String(v).trim();
-  // MM.DD / MM/DD / MM-DD / MM.DD (요일) 등
+  // "N (요일)" 또는 "N(요일)" — 달력 일 번호 형식
+  const dayNumMatch = s.match(/^(\d{1,2})\s*[\(（][일월화수목금토][\)）]?$/);
+  if (dayNumMatch && month) {
+    return `${String(month).padStart(2, "0")}.${dayNumMatch[1].padStart(2, "0")}`;
+  }
+  // MM.DD / MM/DD / MM-DD 등
   let m = s.match(/^(\d{1,2})[.\-\/](\d{1,2})/);
   if (m) return `${m[1].padStart(2, "0")}.${m[2].padStart(2, "0")}`;
   // YYYY-MM-DD / YYYY.MM.DD
@@ -146,20 +153,33 @@ function toHolidayDateKey(v: unknown): string | null {
   // "4월 13일", "4월13일"
   m = s.match(/(\d{1,2})월\s*(\d{1,2})일/);
   if (m) return `${m[1].padStart(2, "0")}.${m[2].padStart(2, "0")}`;
-  // "13일" 단독 → 현재달 기준 처리 불가, null
+  // "13일" 단독 — 월 context 있을 때
+  m = s.match(/^(\d{1,2})일$/);
+  if (m && month) return `${String(month).padStart(2, "0")}.${m[1].padStart(2, "0")}`;
   return null;
 }
 
-// 이름 여부: 한글 1~6자 (공백 허용)
+// 이름 여부: 한글 2~6자 (공백 허용)
 function isKoreanName(v: unknown): boolean {
   if (!v) return false;
   const s = String(v).trim();
   if (s.length < 2 || s.length > 7) return false;
-  // 순수 한글 2~6자
   if (/^[\uAC00-\uD7A3]{2,6}$/.test(s)) return true;
-  // 한글+공백 (복성 이름: "남궁 민준")
   if (/^[\uAC00-\uD7A3 ]{2,7}$/.test(s) && /[\uAC00-\uD7A3]{2,}/.test(s)) return true;
   return false;
+}
+
+// 셀에서 이름 목록 추출 — 쉼표/공백 구분 포함
+function extractNames(v: unknown): string[] {
+  if (!v) return [];
+  const s = String(v).trim();
+  if (!s) return [];
+  // 쉼표/줄바꿈/슬래시로 분리
+  const parts = s.split(/[,，、\/\n\r]+/).map(p => p.trim()).filter(p => isKoreanName(p));
+  if (parts.length > 0) return parts;
+  // 단일 이름
+  if (isKoreanName(s)) return [s];
+  return [];
 }
 
 // 체크 마크 여부: "O", "o", "○", "●", "V", "v", "✓", "✔", "휴", "휴무", "1", true
@@ -169,9 +189,10 @@ function isCheckMark(v: unknown): boolean {
   return /^[oOvV○●✓✔1]$|^휴무?$/.test(String(v).trim());
 }
 
-function parseHolidayExcelBuffer(buf: ArrayBuffer): { map: Record<string, string[]>; debug: string } {
+function parseHolidayExcelBuffer(buf: ArrayBuffer, contextMonth?: number): { map: Record<string, string[]>; debug: string } {
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
   const debugLines: string[] = [`시트 수: ${wb.SheetNames.length} (${wb.SheetNames.join(", ")})`];
+  const nowMonth = contextMonth ?? (new Date().getMonth() + 1);
 
   const allResults: { map: Record<string, string[]>; score: number; desc: string }[] = [];
 
@@ -190,13 +211,15 @@ function parseHolidayExcelBuffer(buf: ArrayBuffer): { map: Record<string, string
       return cell ? cell.v : undefined;
     };
 
+    const dk = (v: unknown) => toHolidayDateKey(v, nowMonth);
+
     // ── 전체 셀 스캔: 날짜/이름 수집 ──
     let totalDates = 0, totalNames = 0;
     for (let r = range.s.r; r <= range.e.r; r++) {
       for (let c = range.s.c; c <= range.e.c; c++) {
         const v = getCell(r, c);
-        if (toHolidayDateKey(v)) totalDates++;
-        if (isKoreanName(v)) totalNames++;
+        if (dk(v)) totalDates++;
+        if (isKoreanName(v) || extractNames(v).length > 0) totalNames++;
       }
     }
     debugLines.push(`  날짜셀: ${totalDates}, 이름셀: ${totalNames}`);
@@ -206,98 +229,127 @@ function parseHolidayExcelBuffer(buf: ArrayBuffer): { map: Record<string, string
     for (let r = range.s.r; r <= Math.min(range.s.r + 2, range.e.r); r++) {
       for (let c = range.s.c; c <= Math.min(range.s.c + 4, range.e.c); c++) {
         const v = getCell(r, c);
-        if (v !== undefined && v !== null && v !== "") samples.push(String(v).slice(0, 8));
+        if (v !== undefined && v !== null && v !== "") samples.push(String(v).slice(0, 12));
       }
     }
     debugLines.push(`  샘플: ${samples.join(" | ")}`);
 
-    // ── 포맷A: 첫 열=날짜, 나머지=이름 ──
+    // ── 포맷A: 첫 열=날짜, 나머지=이름(들) ──
     const fmtA: Record<string, string[]> = {}; let aS = 0;
     for (let r = range.s.r; r <= range.e.r; r++) {
-      const dk = toHolidayDateKey(getCell(r, range.s.c));
-      if (!dk) continue;
+      const key = dk(getCell(r, range.s.c));
+      if (!key) continue;
       const names: string[] = [];
       for (let c = range.s.c + 1; c <= range.e.c; c++) {
-        const v = getCell(r, c);
-        if (isKoreanName(v)) names.push(String(v).trim());
+        names.push(...extractNames(getCell(r, c)));
       }
-      if (names.length) { fmtA[dk] = [...(fmtA[dk] ?? []), ...names]; aS += names.length; }
+      if (names.length) { fmtA[key] = [...(fmtA[key] ?? []), ...names]; aS += names.length; }
     }
 
-    // ── 포맷B: 첫 행=날짜, 나머지=이름 ──
+    // ── 포맷B: 첫 행=날짜, 나머지=이름(들) ──
     const fmtB: Record<string, string[]> = {}; let bS = 0;
     for (let c = range.s.c; c <= range.e.c; c++) {
-      const dk = toHolidayDateKey(getCell(range.s.r, c));
-      if (!dk) continue;
+      const key = dk(getCell(range.s.r, c));
+      if (!key) continue;
       const names: string[] = [];
       for (let r = range.s.r + 1; r <= range.e.r; r++) {
-        const v = getCell(r, c);
-        if (isKoreanName(v)) names.push(String(v).trim());
+        names.push(...extractNames(getCell(r, c)));
       }
-      if (names.length) { fmtB[dk] = [...(fmtB[dk] ?? []), ...names]; bS += names.length; }
+      if (names.length) { fmtB[key] = [...(fmtB[key] ?? []), ...names]; bS += names.length; }
     }
 
     // ── 포맷C: 첫 열=이름, 나머지=날짜 ──
     const fmtC: Record<string, string[]> = {}; let cS = 0;
     for (let r = range.s.r; r <= range.e.r; r++) {
-      const nameVal = getCell(r, range.s.c);
-      if (!isKoreanName(nameVal)) continue;
-      const name = String(nameVal).trim();
+      const nms = extractNames(getCell(r, range.s.c));
+      if (!nms.length) continue;
       for (let c = range.s.c + 1; c <= range.e.c; c++) {
-        const dk = toHolidayDateKey(getCell(r, c));
-        if (!dk) continue;
-        if (!fmtC[dk]) fmtC[dk] = [];
-        if (!fmtC[dk].includes(name)) { fmtC[dk].push(name); cS++; }
+        const key = dk(getCell(r, c));
+        if (!key) continue;
+        if (!fmtC[key]) fmtC[key] = [];
+        for (const name of nms) if (!fmtC[key].includes(name)) { fmtC[key].push(name); cS++; }
       }
     }
 
     // ── 포맷D: 첫 행=이름, 나머지=날짜 ──
     const fmtD: Record<string, string[]> = {}; let dS = 0;
     for (let c = range.s.c; c <= range.e.c; c++) {
-      const nameVal = getCell(range.s.r, c);
-      if (!isKoreanName(nameVal)) continue;
-      const name = String(nameVal).trim();
+      const nms = extractNames(getCell(range.s.r, c));
+      if (!nms.length) continue;
       for (let r = range.s.r + 1; r <= range.e.r; r++) {
-        const dk = toHolidayDateKey(getCell(r, c));
-        if (!dk) continue;
-        if (!fmtD[dk]) fmtD[dk] = [];
-        if (!fmtD[dk].includes(name)) { fmtD[dk].push(name); dS++; }
+        const key = dk(getCell(r, c));
+        if (!key) continue;
+        if (!fmtD[key]) fmtD[key] = [];
+        for (const name of nms) if (!fmtD[key].includes(name)) { fmtD[key].push(name); dS++; }
       }
     }
 
     // ── 포맷E: 첫 열=이름, 첫 행=날짜, 본문=체크마크 ──
     const fmtE: Record<string, string[]> = {}; let eS = 0;
     for (let r = range.s.r + 1; r <= range.e.r; r++) {
-      const nameVal = getCell(r, range.s.c);
-      if (!isKoreanName(nameVal)) continue;
-      const name = String(nameVal).trim();
+      const nms = extractNames(getCell(r, range.s.c));
+      if (!nms.length) continue;
       for (let c = range.s.c + 1; c <= range.e.c; c++) {
-        const dk = toHolidayDateKey(getCell(range.s.r, c));
-        if (!dk) continue;
-        const mark = getCell(r, c);
-        if (!isCheckMark(mark)) continue;
-        if (!fmtE[dk]) fmtE[dk] = [];
-        if (!fmtE[dk].includes(name)) { fmtE[dk].push(name); eS++; }
+        const key = dk(getCell(range.s.r, c));
+        if (!key || !isCheckMark(getCell(r, c))) continue;
+        if (!fmtE[key]) fmtE[key] = [];
+        for (const name of nms) if (!fmtE[key].includes(name)) { fmtE[key].push(name); eS++; }
       }
     }
 
     // ── 포맷F: 첫 행=이름, 첫 열=날짜, 본문=체크마크 ──
     const fmtF: Record<string, string[]> = {}; let fS = 0;
     for (let c = range.s.c + 1; c <= range.e.c; c++) {
-      const nameVal = getCell(range.s.r, c);
-      if (!isKoreanName(nameVal)) continue;
-      const name = String(nameVal).trim();
+      const nms = extractNames(getCell(range.s.r, c));
+      if (!nms.length) continue;
       for (let r = range.s.r + 1; r <= range.e.r; r++) {
-        const dk = toHolidayDateKey(getCell(r, range.s.c));
-        if (!dk) continue;
-        const mark = getCell(r, c);
-        if (!isCheckMark(mark)) continue;
-        if (!fmtF[dk]) fmtF[dk] = [];
-        if (!fmtF[dk].includes(name)) { fmtF[dk].push(name); fS++; }
+        const key = dk(getCell(r, range.s.c));
+        if (!key || !isCheckMark(getCell(r, c))) continue;
+        if (!fmtF[key]) fmtF[key] = [];
+        for (const name of nms) if (!fmtF[key].includes(name)) { fmtF[key].push(name); fS++; }
       }
     }
 
-    debugLines.push(`  A:${aS} B:${bS} C:${cS} D:${dS} E:${eS} F:${fS}`);
+    // ── 포맷G: 주간 달력 — 요일 헤더행 + (날짜행, 이름행) 교대 ──
+    // 구조: Row0=요일(일월화수목금토), Row1=날짜번호, Row2=이름들, Row3=날짜번호, Row4=이름들 ...
+    const fmtG: Record<string, string[]> = {}; let gS = 0;
+    // 첫 행이 요일 헤더인지 확인 (일/월/화/수/목/금/토 포함)
+    const weekdayHeader = /^[일월화수목금토]$/;
+    let headerRow = -1;
+    for (let r = range.s.r; r <= Math.min(range.s.r + 2, range.e.r); r++) {
+      let wdCount = 0;
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const v = String(getCell(r, c) ?? "").trim();
+        if (weekdayHeader.test(v)) wdCount++;
+      }
+      if (wdCount >= 3) { headerRow = r; break; }
+    }
+    if (headerRow >= 0) {
+      // 요일→열 매핑
+      const colsWithDates: number[] = [];
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const v = String(getCell(headerRow, c) ?? "").trim();
+        if (weekdayHeader.test(v)) colsWithDates.push(c);
+      }
+      // headerRow 이후 행들을 2행씩 처리 (날짜행, 이름행)
+      for (let r = headerRow + 1; r < range.e.r; r += 2) {
+        const dateRow = r;
+        const nameRow = r + 1;
+        for (const c of colsWithDates) {
+          const key = dk(getCell(dateRow, c));
+          if (!key) continue;
+          // 이름행의 해당 열 + 인접 열에서 이름 수집
+          for (let nc = c - 1; nc <= c + 1; nc++) {
+            if (nc < range.s.c || nc > range.e.c) continue;
+            const names = extractNames(getCell(nameRow, nc));
+            if (!fmtG[key]) fmtG[key] = [];
+            for (const name of names) if (!fmtG[key].includes(name)) { fmtG[key].push(name); gS++; }
+          }
+        }
+      }
+    }
+
+    debugLines.push(`  A:${aS} B:${bS} C:${cS} D:${dS} E:${eS} F:${fS} G:${gS}`);
 
     const candidates = [
       { map: fmtA, score: aS, desc: "A(행날짜→이름)" },
@@ -306,6 +358,7 @@ function parseHolidayExcelBuffer(buf: ArrayBuffer): { map: Record<string, string
       { map: fmtD, score: dS, desc: "D(열이름→날짜)" },
       { map: fmtE, score: eS, desc: "E(격자체크-열이름)" },
       { map: fmtF, score: fS, desc: "F(격자체크-행이름)" },
+      { map: fmtG, score: gS, desc: "G(주간달력)" },
     ];
     const best = candidates.reduce((a, b) => b.score > a.score ? b : a);
     if (best.score > 0) allResults.push(best);
@@ -795,7 +848,7 @@ export default function SchedulePage() {
     reader.onload = (e) => {
       try {
         const buf = e.target?.result as ArrayBuffer;
-        const { map, debug } = parseHolidayExcelBuffer(buf);
+        const { map, debug } = parseHolidayExcelBuffer(buf, parseInt(viewMonth, 10));
         const dateCount = Object.keys(map).length;
         if (dateCount === 0) {
           alert(
