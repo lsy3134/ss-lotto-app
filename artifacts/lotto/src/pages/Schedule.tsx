@@ -856,28 +856,28 @@ export default function SchedulePage() {
           );
           return;
         }
+        // ── 기존 holidayMap 완전 교체 (이전 월 데이터 제거) ──
         setHolidayMap(map);
         setHolidayFileName(file.name);
         localStorage.setItem("lotto_holidayFileName", file.name);
-        const totalPeople = Object.values(map).reduce((s, a) => s + a.length, 0);
-        // 기존 잘못된 휴무 상태 초기화 여부 확인
-        const shouldReset = confirm(
-          `✅ 휴무 엑셀 업로드 완료!\n${dateCount}개 날짜 · 총 ${totalPeople}건\n\n` +
-          `기존에 잘못 적용된 휴무 데이터를 초기화할까요?\n(확인: 모든 날짜의 휴무 상태 초기화\n취소: 기존 상태 유지)`
-        );
-        if (shouldReset) {
-          setDateStatuses(prev => {
-            const next: typeof prev = {};
-            for (const [dl, statuses] of Object.entries(prev)) {
-              const cleaned: Record<string, StatusType> = {};
-              for (const [name, st] of Object.entries(statuses)) {
-                if (st !== "휴무") cleaned[name] = st;
-              }
-              if (Object.keys(cleaned).length > 0) next[dl] = cleaned;
+        // lotto_holidayMap 키도 새 데이터로 즉시 덮어씀 (useEffect 대기 없이)
+        localStorage.setItem("lotto_holidayMap", JSON.stringify(map));
+
+        // ── 기존 날짜별 휴무 상태 자동 초기화 (휴무 항목만 제거, 다른 상태 유지) ──
+        setDateStatuses(prev => {
+          const next: typeof prev = {};
+          for (const [dl, statuses] of Object.entries(prev)) {
+            const cleaned: Record<string, StatusType> = {};
+            for (const [name, st] of Object.entries(statuses)) {
+              if (st !== "휴무") cleaned[name] = st;
             }
-            return next;
-          });
-        }
+            if (Object.keys(cleaned).length > 0) next[dl] = cleaned;
+          }
+          return next;
+        });
+
+        const totalPeople = Object.values(map).reduce((s, a) => s + a.length, 0);
+        alert(`✅ 휴무 엑셀 업로드 완료!\n${dateCount}개 날짜 · 총 ${totalPeople}건\n기존 휴무 데이터는 자동 초기화됐습니다.`);
       } catch (err) {
         alert("엑셀 파일 읽기 실패: " + String(err));
       }
