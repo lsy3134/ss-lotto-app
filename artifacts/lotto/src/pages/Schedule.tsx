@@ -2135,28 +2135,34 @@ export default function SchedulePage() {
             </button>
           </div>
 
-          {/* 첫번호 지정 — 지정된 경우에만 표시 */}
-          {queueStartName && (
-            <div style={{
-              display: "flex", alignItems: "center", gap: 8, marginBottom: "12px",
-              padding: "9px 12px", borderRadius: 10,
-              background: "#e3f2fd",
-              border: "1px solid #90caf9",
-            }}>
-              <span style={{ fontSize: 14, flex: 1, color: "#1565c0" }}>
-                <span style={{ fontWeight: 700 }}>📌 첫번호 고정 </span>
-                <span style={{ fontWeight: 800 }}>"{queueStartName}"</span>
-              </span>
-              <button
-                onClick={() => { setQueueModalPos({ x: 0, y: 0 }); setQueueModal("ask"); }}
-                style={{
-                  padding: "6px 14px", borderRadius: 8, border: "none",
-                  background: "#1565c0",
-                  color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap",
-                }}
-              >변경</button>
-            </div>
-          )}
+          {/* 첫번호 / 다음날 첫 순번 표시 */}
+          {(todayFirstHint || queueStartName) && (() => {
+            const isAuto = !!todayFirstHint;
+            const displayName = todayFirstHint ?? queueStartName!;
+            return (
+              <div style={{
+                display: "flex", alignItems: "center", gap: 8, marginBottom: "12px",
+                padding: "9px 12px", borderRadius: 10,
+                background: isAuto ? "#f3e5f5" : "#e3f2fd",
+                border: isAuto ? "1px solid #ce93d8" : "1px solid #90caf9",
+              }}>
+                <span style={{ fontSize: 14, flex: 1, color: isAuto ? "#6a1b9a" : "#1565c0" }}>
+                  <span style={{ fontWeight: 700 }}>
+                    {isAuto ? "🔢 다음날 첫 순번 " : "📌 첫번호 고정 "}
+                  </span>
+                  <span style={{ fontWeight: 800 }}>"{displayName}"</span>
+                </span>
+                <button
+                  onClick={() => { setQueueModalPos({ x: 0, y: 0 }); setQueueModal("ask"); }}
+                  style={{
+                    padding: "6px 14px", borderRadius: 8, border: "none",
+                    background: isAuto ? "#6a1b9a" : "#1565c0",
+                    color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap",
+                  }}
+                >변경</button>
+              </div>
+            );
+          })()}
 
         </div>
       )}
