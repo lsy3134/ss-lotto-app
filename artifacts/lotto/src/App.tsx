@@ -289,84 +289,118 @@ function LottoPage() {
     return result;
   }
 
-  function isValid(nums: number[]): boolean {
+  // ── 공통 유효성 검사 ─────────────────────────────────────────
+  // noDuplast: 끝자리 중복 3개 이상 금지 (균형형만 적용)
+  function isValid(nums: number[], opts: { checkOddEven?: boolean; checkConsec?: boolean; checkLastDigit?: boolean } = {}): boolean {
+    const { checkOddEven = true, checkConsec = true, checkLastDigit = true } = opts;
+    if (nums.length !== 6) return false;
     if (nums.some((n) => !Number.isInteger(n) || n < 1 || n > 45)) return false;
-    if (new Set(nums).size !== nums.length) return false;
-    if (pastWinners.current.has(nums.join(","))) return false;
-    const last: Record<number, number> = {};
-    nums.forEach((n) => { const d = n % 10; last[d] = (last[d] || 0) + 1; });
-    if (Object.values(last).some((v) => v >= 3)) return false;
-    let cnt = 1;
-    for (let i = 1; i < nums.length; i++) {
-      if (nums[i] === nums[i - 1] + 1) { cnt++; if (cnt >= 3) return false; } else cnt = 1;
+    if (new Set(nums).size !== 6) return false;                        // 중복 숫자 금지
+    if (pastWinners.current.has(nums.join(","))) return false;         // 과거 당첨 조합 제외
+    if (checkLastDigit) {
+      const last: Record<number, number> = {};
+      nums.forEach((n) => { const d = n % 10; last[d] = (last[d] || 0) + 1; });
+      if (Object.values(last).some((v) => v >= 3)) return false;       // 끝자리 3개 이상 중복 금지
     }
-    const odd = nums.filter((n) => n % 2).length;
-    if (odd < 2 || odd > 4) return false;
+    if (checkConsec) {
+      let cnt = 1;
+      for (let i = 1; i < nums.length; i++) {
+        if (nums[i] === nums[i - 1] + 1) { cnt++; if (cnt >= 3) return false; } else cnt = 1;
+      }
+    }
+    if (checkOddEven) {
+      const odd = nums.filter((n) => n % 2).length;
+      if (odd < 2 || odd > 4) return false;                            // 홀짝 2~4 유지
+    }
     return true;
   }
 
+  // ── Hot / Cold 계산 ──────────────────────────────────────────
+  // 최근 10회 기준, 1~45 전체 번호를 등장 횟수로 정렬
+  // → 상위 6개 = Hot(자주 나온 번호), 하위 6개 = Cold(거의 안 나온 번호)
+  // → 1~45 전체를 대상으로 하므로 hot ∩ cold = ∅ 보장
   function getHotCold() {
-    // 데이터가 10개 미만이면 hot/cold 구분 불가 → 빈 배열 반환
-    if (allDraws.current.length < 10) return { hot: [], cold: [] };
+    if (allDraws.current.length < 10) return { hot: [] as number[], cold: [] as number[] };
 
     const freq: Record<number, number> = {};
-    allDraws.current.slice(0, 10).forEach((draw) => { draw.forEach((n) => { freq[n] = (freq[n] || 0) + 1; }); });
+    // 1~45 모든 번호를 0으로 초기화 → Cold 후보에 미등장 번호도 포함
+    for (let i = 1; i <= 45; i++) freq[i] = 0;
+    allDraws.current.slice(0, 10).forEach((draw) => {
+      draw.forEach((n) => { freq[n] = (freq[n] || 0) + 1; });
+    });
 
     const entries = Object.entries(freq)
       .map(([num, count]) => ({ num: Number(num), count: Number(count) }))
-      .sort((a, b) => b.count - a.count);
+      .sort((a, b) => b.count - a.count);   // 빈도 내림차순
 
-    // hot과 cold가 겹치지 않도록 상위/하위 6개를 분리
-    const hot  = entries.slice(0, 6).map((x) => x.num);
-    const cold = entries.slice(-6).map((x) => x.num);
-
-    // 만약 hot과 cold가 겹치면(데이터 부족) 빈 배열로 처리
-    const overlap = hot.some((n) => cold.includes(n));
-    if (overlap) return { hot: [], cold: [] };
+    const hot  = entries.slice(0, 6).map((x) => x.num);   // 상위 6개 (자주 등장)
+    const cold = entries.slice(-6).map((x) => x.num);      // 하위 6개 (거의 미등장)
 
     return { hot, cold };
   }
 
-  // 최대 시도 횟수 제한 — 모바일 브라우저 멈춤 방지
+  // ── 균형형 조합 ───────────────────────────────────────────────
+  // Hot 2개 + Cold 2개 + 랜덤 2개 / 중복·연속3·홀짝2~4 조건 통과
   function generateBalanced(hot: number[], cold: number[]): number[] {
+    const useHotCold = hot.length >= 2 && cold.length >= 2;
     for (let attempt = 0; attempt < 5000; attempt++) {
       const nums: number[] = [];
-      nums.push(...safePick(nums, hot, 2));   // hot에서 2개 (중복 없이)
-      nums.push(...safePick(nums, cold, 2));  // cold에서 2개 (hot 선택분 제외)
+      if (useHotCold) {
+        nums.push(...safePick(nums, hot, 2));   // Hot에서 2개
+        nums.push(...safePick(nums, cold, 2));  // Cold에서 2개 (Hot과 중복 불가)
+      }
+      // 나머지 랜덤 채움
       let inner = 0;
-      while (nums.length < 6 && inner++ < 200) { const n = rand(); if (!nums.includes(n)) nums.push(n); }
+      while (nums.length < 6 && inner++ < 500) {
+        const n = rand();
+        if (!nums.includes(n)) nums.push(n);
+      }
       nums.sort((a, b) => a - b);
-      if (nums.length === 6 && isValid(nums)) return nums;
+      if (isValid(nums, { checkOddEven: true, checkConsec: true, checkLastDigit: true })) return nums;
     }
-    // 최종 fallback: 조건 완화
-    for (;;) {
+    // 최종 fallback: 홀짝 조건만 유지
+    for (let i = 0; i < 10000; i++) {
       const nums = pick([], 6).sort((a, b) => a - b);
       const odd = nums.filter((n) => n % 2).length;
-      if (odd >= 2 && odd <= 4) return nums;
+      if (odd >= 2 && odd <= 4 && new Set(nums).size === 6) return nums;
     }
+    return pick([], 6).sort((a, b) => a - b);
   }
 
+  // ── 독식형 조합 ───────────────────────────────────────────────
+  // Cold 4개 + 31 이상 랜덤 2개 / 끝자리 중복 최소화 (2개까지 허용)
   function generateGreedy(cold: number[]): number[] {
+    const useCold = cold.length >= 4;
     for (let attempt = 0; attempt < 5000; attempt++) {
       const nums: number[] = [];
-      nums.push(...safePick(nums, cold, 4));  // cold에서 4개 (중복 없이)
+      if (useCold) {
+        nums.push(...safePick(nums, cold, 4));                  // Cold에서 4개
+      }
+      // 31 이상 숫자로 나머지 채움
       let inner = 0;
-      while (nums.length < 6 && inner++ < 200) { const n = rand(); if (n >= 31 && !nums.includes(n)) nums.push(n); }
-      // inner 실패 시 범위 제한 없이 채움
+      while (nums.length < 6 && inner++ < 500) {
+        const n = rand();
+        if (n >= 31 && !nums.includes(n)) nums.push(n);
+      }
+      // 31 이상으로 채우지 못하면 범위 제한 없이 채움
       let fill = 0;
-      while (nums.length < 6 && fill++ < 200) { const n = rand(); if (!nums.includes(n)) nums.push(n); }
+      while (nums.length < 6 && fill++ < 500) {
+        const n = rand();
+        if (!nums.includes(n)) nums.push(n);
+      }
       nums.sort((a, b) => a - b);
-      if (nums.length === 6 && isValid(nums)) return nums;
+      // 독식형: 홀짝·연속 조건 완화, 끝자리는 최소화(2개까지)
+      if (isValid(nums, { checkOddEven: false, checkConsec: false, checkLastDigit: true })) return nums;
     }
     return pick([], 6).sort((a, b) => a - b);
   }
 
   function generate() {
     const { hot, cold } = getHotCold();
-    const hasData = allDraws.current.length > 0;
+    const hasData = allDraws.current.length >= 10;
     setHotText(hasData
-      ? "🔥 핫: " + hot.join(", ") + " / ❄ 콜드: " + cold.join(", ")
-      : "📊 데이터 없음 — 랜덤 모드로 생성"
+      ? `🔥 핫(상위6): ${hot.join(", ")}  |  ❄️ 콜드(하위6): ${cold.join(", ")}`
+      : "📊 데이터 10회 미만 — 랜덤 모드로 생성"
     );
     const result: Game[] = [];
     for (let i = 0; i < 3; i++) result.push({ type: "균형형", nums: generateBalanced(hot, cold) });
