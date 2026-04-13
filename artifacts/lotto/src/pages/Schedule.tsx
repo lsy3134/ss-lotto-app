@@ -325,7 +325,7 @@ function parseHolidayExcelBuffer(buf: ArrayBuffer, contextMonth?: number): { map
       if (wdCount >= 3) { headerRow = r; break; }
     }
     if (headerRow >= 0) {
-      // 요일→열 매핑
+      // 요일→열 목록
       const colsWithDates: number[] = [];
       for (let c = range.s.c; c <= range.e.c; c++) {
         const v = String(getCell(headerRow, c) ?? "").trim();
@@ -338,13 +338,10 @@ function parseHolidayExcelBuffer(buf: ArrayBuffer, contextMonth?: number): { map
         for (const c of colsWithDates) {
           const key = dk(getCell(dateRow, c));
           if (!key) continue;
-          // 이름행의 해당 열 + 인접 열에서 이름 수집
-          for (let nc = c - 1; nc <= c + 1; nc++) {
-            if (nc < range.s.c || nc > range.e.c) continue;
-            const names = extractNames(getCell(nameRow, nc));
-            if (!fmtG[key]) fmtG[key] = [];
-            for (const name of names) if (!fmtG[key].includes(name)) { fmtG[key].push(name); gS++; }
-          }
+          // 이름행의 같은 열에서만 이름 수집 (인접 열 제외)
+          const names = extractNames(getCell(nameRow, c));
+          if (!fmtG[key]) fmtG[key] = [];
+          for (const name of names) if (!fmtG[key].includes(name)) { fmtG[key].push(name); gS++; }
         }
       }
     }
@@ -863,7 +860,24 @@ export default function SchedulePage() {
         setHolidayFileName(file.name);
         localStorage.setItem("lotto_holidayFileName", file.name);
         const totalPeople = Object.values(map).reduce((s, a) => s + a.length, 0);
-        alert(`✅ 휴무 엑셀 업로드 완료!\n${dateCount}개 날짜 · 총 ${totalPeople}건 휴무 정보를 불러왔습니다.`);
+        // 기존 잘못된 휴무 상태 초기화 여부 확인
+        const shouldReset = confirm(
+          `✅ 휴무 엑셀 업로드 완료!\n${dateCount}개 날짜 · 총 ${totalPeople}건\n\n` +
+          `기존에 잘못 적용된 휴무 데이터를 초기화할까요?\n(확인: 모든 날짜의 휴무 상태 초기화\n취소: 기존 상태 유지)`
+        );
+        if (shouldReset) {
+          setDateStatuses(prev => {
+            const next: typeof prev = {};
+            for (const [dl, statuses] of Object.entries(prev)) {
+              const cleaned: Record<string, StatusType> = {};
+              for (const [name, st] of Object.entries(statuses)) {
+                if (st !== "휴무") cleaned[name] = st;
+              }
+              if (Object.keys(cleaned).length > 0) next[dl] = cleaned;
+            }
+            return next;
+          });
+        }
       } catch (err) {
         alert("엑셀 파일 읽기 실패: " + String(err));
       }
