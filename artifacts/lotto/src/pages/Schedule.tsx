@@ -3192,14 +3192,16 @@ export default function SchedulePage() {
                   );
                 }
 
-                if (sp2.length > 0) {
-                  cutRows.push(
-                    <div key="sp2" style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                      <span style={{
-                        fontSize: "0.7rem", fontWeight: 800, color: "#92400e",
-                        background: "#fef3c7", borderRadius: 6, padding: "2px 8px",
-                        minWidth: 76, textAlign: "center", flexShrink: 0, marginTop: 2,
-                      }}>2부 스페어</span>
+                cutRows.push(
+                  <div key="sp2" style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                    <span style={{
+                      fontSize: "0.7rem", fontWeight: 800, color: "#92400e",
+                      background: "#fef3c7", borderRadius: 6, padding: "2px 8px",
+                      minWidth: 76, textAlign: "center", flexShrink: 0, marginTop: sp2.length > 0 ? 2 : 0,
+                    }}>2부 스페어</span>
+                    {sp2.length === 0 ? (
+                      <span style={{ fontWeight: 700, fontSize: "0.9rem", color: "#d1d5db" }}>없음</span>
+                    ) : (
                       <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: 1 }}>
                         {sp2.slice(0, 2).map((n, i) => (
                           <div key={n} style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -3219,9 +3221,9 @@ export default function SchedulePage() {
                           </div>
                         ))}
                       </div>
-                    </div>
-                  );
-                }
+                    )}
+                  </div>
+                );
 
                 return cutRows;
               })() : (() => {
