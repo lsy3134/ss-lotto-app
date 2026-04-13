@@ -306,10 +306,25 @@ function LottoPage() {
   }
 
   function getHotCold() {
+    // 데이터가 10개 미만이면 hot/cold 구분 불가 → 빈 배열 반환
+    if (allDraws.current.length < 10) return { hot: [], cold: [] };
+
     const freq: Record<number, number> = {};
     allDraws.current.slice(0, 10).forEach((draw) => { draw.forEach((n) => { freq[n] = (freq[n] || 0) + 1; }); });
-    const sorted = Object.entries(freq).sort((a, b) => Number(b[1]) - Number(a[1])).map((x) => Number(x[0]));
-    return { hot: sorted.slice(0, 6), cold: sorted.slice(-6) };
+
+    const entries = Object.entries(freq)
+      .map(([num, count]) => ({ num: Number(num), count: Number(count) }))
+      .sort((a, b) => b.count - a.count);
+
+    // hot과 cold가 겹치지 않도록 상위/하위 6개를 분리
+    const hot  = entries.slice(0, 6).map((x) => x.num);
+    const cold = entries.slice(-6).map((x) => x.num);
+
+    // 만약 hot과 cold가 겹치면(데이터 부족) 빈 배열로 처리
+    const overlap = hot.some((n) => cold.includes(n));
+    if (overlap) return { hot: [], cold: [] };
+
+    return { hot, cold };
   }
 
   // 최대 시도 횟수 제한 — 모바일 브라우저 멈춤 방지
