@@ -124,71 +124,127 @@ function parseExcelBuffer(buf: ArrayBuffer): ExcelDayData[] {
 // 유연하게 두 포맷 모두 시도 후 더 많은 날짜를 인식한 것 채택
 function parseHolidayExcelBuffer(buf: ArrayBuffer): Record<string, string[]> {
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  if (!ws) return {};
-  const range = XLSX.utils.decode_range(ws["!ref"] ?? "A1");
 
-  const getCellVal = (r: number, c: number): unknown => {
-    const cell = ws[XLSX.utils.encode_cell({ r, c })];
-    return cell ? cell.v : undefined;
-  };
+  // 모든 시트 시도, 데이터가 가장 많은 시트 사용
+  const results: Record<string, string[]>[] = [];
 
-  // 날짜 값 → "MM.DD" 키
-  function toDateKey(v: unknown): string | null {
-    if (v === undefined || v === null || v === "") return null;
-    if (v instanceof Date) {
-      return `${String(v.getMonth() + 1).padStart(2, "0")}.${String(v.getDate()).padStart(2, "0")}`;
+  for (const sheetName of wb.SheetNames) {
+    const ws = wb.Sheets[sheetName];
+    if (!ws) continue;
+    const ref = ws["!ref"];
+    if (!ref) continue;
+    const range = XLSX.utils.decode_range(ref);
+
+    const getCellVal = (r: number, c: number): unknown => {
+      const cell = ws[XLSX.utils.encode_cell({ r, c })];
+      return cell ? cell.v : undefined;
+    };
+
+    // 날짜 값 → "MM.DD" 키
+    function toDateKey(v: unknown): string | null {
+      if (v === undefined || v === null || v === "") return null;
+      if (v instanceof Date) {
+        return `${String(v.getMonth() + 1).padStart(2, "0")}.${String(v.getDate()).padStart(2, "0")}`;
+      }
+      if (typeof v === "number" && v > 35000 && v < 60000) {
+        const d = new Date(Math.round((v - 25569) * 86400 * 1000));
+        return `${String(d.getUTCMonth() + 1).padStart(2, "0")}.${String(d.getUTCDate()).padStart(2, "0")}`;
+      }
+      const s = String(v).trim();
+      let m = s.match(/^(\d{1,2})[.\-\/](\d{1,2})/);
+      if (m) return `${m[1].padStart(2, "0")}.${m[2].padStart(2, "0")}`;
+      m = s.match(/^\d{4}[-.](\d{1,2})[-.](\d{1,2})/);
+      if (m) return `${m[1].padStart(2, "0")}.${m[2].padStart(2, "0")}`;
+      // "4월 13일", "4월13일" 등
+      m = s.match(/(\d{1,2})월\s*(\d{1,2})일/);
+      if (m) return `${m[1].padStart(2, "0")}.${m[2].padStart(2, "0")}`;
+      return null;
     }
-    if (typeof v === "number" && v > 35000 && v < 60000) {
-      // Excel 날짜 시리얼 → JS Date
-      const d = new Date(Math.round((v - 25569) * 86400 * 1000));
-      return `${String(d.getUTCMonth() + 1).padStart(2, "0")}.${String(d.getUTCDate()).padStart(2, "0")}`;
+
+    // 이름 여부: 2~5자 한글 (공백 허용)
+    function isName(v: unknown): boolean {
+      if (!v) return false;
+      const s = String(v).trim();
+      // 순수 한글 2~5자
+      if (/^[\uAC00-\uD7A3]{2,5}$/.test(s)) return true;
+      // 한글 포함 2~6자 (공백 있는 이름: "남 궁민")
+      if (/^[\uAC00-\uD7A3\s]{2,6}$/.test(s) && /[\uAC00-\uD7A3]{2,}/.test(s)) return true;
+      return false;
     }
-    const s = String(v).trim();
-    // "MM.DD (요일)" / "MM.DD" / "MM/DD" 등
-    let m = s.match(/^(\d{1,2})[.\-\/](\d{1,2})/);
-    if (m) return `${m[1].padStart(2, "0")}.${m[2].padStart(2, "0")}`;
-    // "YYYY-MM-DD" / "YYYY.MM.DD"
-    m = s.match(/^\d{4}[-.](\d{1,2})[-.](\d{1,2})/);
-    if (m) return `${m[1].padStart(2, "0")}.${m[2].padStart(2, "0")}`;
-    return null;
+
+    // ── 포맷A: 첫 열 = 날짜, 나머지 열 = 이름들 ──
+    const fmtA: Record<string, string[]> = {};
+    let aCount = 0;
+    for (let r = range.s.r; r <= range.e.r; r++) {
+      const dk = toDateKey(getCellVal(r, range.s.c));
+      if (!dk) continue;
+      const names: string[] = [];
+      for (let c = range.s.c + 1; c <= range.e.c; c++) {
+        const v = getCellVal(r, c);
+        if (isName(v)) names.push(String(v).trim());
+      }
+      if (names.length > 0) { fmtA[dk] = names; aCount++; }
+    }
+
+    // ── 포맷B: 첫 행 = 날짜, 나머지 행 = 이름들 ──
+    const fmtB: Record<string, string[]> = {};
+    let bCount = 0;
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const dk = toDateKey(getCellVal(range.s.r, c));
+      if (!dk) continue;
+      const names: string[] = [];
+      for (let r = range.s.r + 1; r <= range.e.r; r++) {
+        const v = getCellVal(r, c);
+        if (isName(v)) names.push(String(v).trim());
+      }
+      if (names.length > 0) { fmtB[dk] = names; bCount++; }
+    }
+
+    // ── 포맷C: 첫 열 = 이름, 나머지 열 = 날짜들 (인별 휴무) ──
+    const fmtC: Record<string, string[]> = {};
+    let cCount = 0;
+    for (let r = range.s.r; r <= range.e.r; r++) {
+      const nameVal = getCellVal(r, range.s.c);
+      if (!isName(nameVal)) continue;
+      const personName = String(nameVal).trim();
+      for (let c = range.s.c + 1; c <= range.e.c; c++) {
+        const dk = toDateKey(getCellVal(r, c));
+        if (!dk) continue;
+        if (!fmtC[dk]) fmtC[dk] = [];
+        if (!fmtC[dk].includes(personName)) fmtC[dk].push(personName);
+        cCount++;
+      }
+    }
+
+    // ── 포맷D: 첫 행 = 이름, 나머지 행 = 날짜들 ──
+    const fmtD: Record<string, string[]> = {};
+    let dCount = 0;
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const nameVal = getCellVal(range.s.r, c);
+      if (!isName(nameVal)) continue;
+      const personName = String(nameVal).trim();
+      for (let r = range.s.r + 1; r <= range.e.r; r++) {
+        const dk = toDateKey(getCellVal(r, c));
+        if (!dk) continue;
+        if (!fmtD[dk]) fmtD[dk] = [];
+        if (!fmtD[dk].includes(personName)) fmtD[dk].push(personName);
+        dCount++;
+      }
+    }
+
+    const best = [
+      { map: fmtA, count: aCount },
+      { map: fmtB, count: bCount },
+      { map: fmtC, count: cCount },
+      { map: fmtD, count: dCount },
+    ].reduce((a, b) => (b.count > a.count ? b : a));
+
+    if (best.count > 0) results.push(best.map);
   }
 
-  // 이름 여부: 2~4자 한글
-  function isName(v: unknown): boolean {
-    if (!v) return false;
-    return /^[\uAC00-\uD7A3]{2,4}$/.test(String(v).trim());
-  }
-
-  // 포맷A: 첫 열 기준 날짜
-  const fmtA: Record<string, string[]> = {};
-  let aCount = 0;
-  for (let r = range.s.r; r <= range.e.r; r++) {
-    const dk = toDateKey(getCellVal(r, range.s.c));
-    if (!dk) continue;
-    const names: string[] = [];
-    for (let c = range.s.c + 1; c <= range.e.c; c++) {
-      const v = getCellVal(r, c);
-      if (isName(v)) names.push(String(v).trim());
-    }
-    if (names.length > 0) { fmtA[dk] = names; aCount++; }
-  }
-
-  // 포맷B: 첫 행 기준 날짜
-  const fmtB: Record<string, string[]> = {};
-  let bCount = 0;
-  for (let c = range.s.c; c <= range.e.c; c++) {
-    const dk = toDateKey(getCellVal(range.s.r, c));
-    if (!dk) continue;
-    const names: string[] = [];
-    for (let r = range.s.r + 1; r <= range.e.r; r++) {
-      const v = getCellVal(r, c);
-      if (isName(v)) names.push(String(v).trim());
-    }
-    if (names.length > 0) { fmtB[dk] = names; bCount++; }
-  }
-
-  return aCount >= bCount ? fmtA : fmtB;
+  if (results.length === 0) return {};
+  // 가장 날짜 수 많은 시트 결과 반환
+  return results.reduce((a, b) => (Object.keys(b).length > Object.keys(a).length ? b : a));
 }
 
 // ── 엑셀 파싱 훅 ──────────────────────────────────
