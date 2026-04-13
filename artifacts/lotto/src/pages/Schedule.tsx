@@ -1618,13 +1618,24 @@ export default function SchedulePage() {
 
             {/* ── 날짜 그리드 ── */}
             <div style={S.dateGrid}>
-              {viewDays.map((d) => {
+              {viewDays.map((d, idx) => {
                 const isSelected = selectedDate?.dateLabel === d.dateLabel;
                 const isWeekend = d.dayIdx === 5 || d.dayIdx === 6;
                 const hasTeams = d.예약팀수 > 0;
                 const savedStatuses = dateStatuses[d.dateLabel] ?? {};
                 const hasManual = Object.keys(savedStatuses).length > 0;
                 const hasExcel = d.가용인원 > 0 || hasTeams;
+
+                // 이 날의 "첫대기" = 전날 배정의 spare2[0]
+                // viewDays에 없으면 excelDays에서 전날 탐색
+                const prevDayLabel: string | null = (() => {
+                  if (idx > 0) return viewDays[idx - 1].dateLabel;
+                  // 첫날: excelDays에서 이 날 바로 앞 날짜 탐색
+                  const ei = excelDays.findIndex(e => e.dateLabel === d.dateLabel);
+                  return ei > 0 ? excelDays[ei - 1].dateLabel : null;
+                })();
+                const nextFirstHint = prevDayLabel ? (savedSpare2[prevDayLabel]?.[0] ?? null) : null;
+
                 return (
                   <button
                     key={d.dateLabel}
@@ -1642,6 +1653,7 @@ export default function SchedulePage() {
                       animation: isSelected ? "glowPulse 2s ease-in-out infinite" : "none",
                       transform: isSelected ? "scale(1.05)" : "scale(1)",
                       opacity: !hasExcel && !hasManual && !isSelected ? 0.75 : 1,
+                      minHeight: nextFirstHint ? "64px" : "52px",
                     }}
                   >
                     <span style={{ fontSize: "0.72rem", fontWeight: 700 }}>{d.dateLabel.split(" ")[0]}</span>
@@ -1662,6 +1674,19 @@ export default function SchedulePage() {
                         lineHeight: 1,
                       }}>
                         {d.예약팀수}팀
+                      </span>
+                    )}
+                    {/* 전날 spare2[0] → 이 날의 첫대기 힌트 */}
+                    {nextFirstHint && (
+                      <span style={{
+                        fontSize: "0.52rem", fontWeight: 800, lineHeight: 1,
+                        color: isSelected ? "rgba(255,255,255,0.9)" : "#b91c1c",
+                        background: isSelected ? "rgba(255,255,255,0.15)" : "#fef2f2",
+                        borderRadius: 4, padding: "1px 4px",
+                        marginTop: 1,
+                        maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      }}>
+                        ↑{nextFirstHint}
                       </span>
                     )}
                   </button>
