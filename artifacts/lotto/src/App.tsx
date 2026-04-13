@@ -305,32 +305,137 @@ function LottoPage() {
     setGames(result); setLog("생성 완료");
   }
 
+  const ballColor = (n: number) => {
+    if (n <= 10) return "#f9a825";
+    if (n <= 20) return "#1e88e5";
+    if (n <= 30) return "#e53935";
+    if (n <= 40) return "#6d4c41";
+    return "#43a047";
+  };
+
   return (
-    <div style={{ fontFamily: "sans-serif", textAlign: "center", background: "#f4f7f9", minHeight: "100vh", padding: "20px" }}>
-      <div style={{ background: "white", padding: "20px", borderRadius: "15px", marginTop: "30px", display: "inline-block", minWidth: "360px", textAlign: "center" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-          <button onClick={() => setLocation(`${base}/`)} style={{ padding: "6px 14px", background: "#f0f0f0", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "0.85rem", color: "#555" }}>← 홈</button>
-          <h2 style={{ margin: 0, flex: 1 }}>🚀 끝판왕 로또 추천기</h2>
+    <div style={{
+      fontFamily: "'Pretendard', 'Apple SD Gothic Neo', sans-serif",
+      background: "linear-gradient(160deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%)",
+      minHeight: "100vh",
+      display: "flex",
+      flexDirection: "column",
+      padding: "0",
+    }}>
+      {/* 헤더 */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 10,
+        padding: "16px 18px 12px",
+        borderBottom: "1px solid rgba(255,255,255,0.08)",
+      }}>
+        <button
+          onClick={() => setLocation(`${base}/`)}
+          style={{
+            padding: "8px 14px", background: "rgba(255,255,255,0.1)",
+            border: "none", borderRadius: 10, cursor: "pointer",
+            fontSize: "0.9rem", color: "#fff", fontWeight: 600,
+          }}
+        >← 홈</button>
+        <div style={{ flex: 1, textAlign: "center" }}>
+          <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#fff" }}>🚀 끝판왕 로또 추천기</div>
         </div>
-        <input value={input} onChange={(e) => setInput(e.target.value)}
-          placeholder="번호 입력 (예: 3 11 15 29 35 44)"
-          style={{ padding: "10px", width: "80%", border: "1px solid #ccc", borderRadius: "6px" }} />
-        <button onClick={addLatest} style={{ padding: "12px", width: "100%", background: "#222", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "1rem", marginTop: "10px" }}>이번주 번호 추가</button>
-        {hotText && <div style={{ margin: "12px 0", color: "#555", fontSize: "0.9rem" }}>{hotText}</div>}
-        <button onClick={generate} style={{ padding: "12px", width: "100%", background: "#222", color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "1rem", marginTop: "6px" }}>5게임 생성</button>
-        <div style={{ marginTop: "10px" }}>
-          {games.map((game, i) => (
-            <div key={i}>
-              <span style={{ fontSize: "0.8rem", color: "#888" }}>[{game.type}]</span>
-              <div style={{ display: "flex", justifyContent: "center", gap: "8px", margin: "6px 0 10px" }}>
-                {game.nums.map((n) => (
-                  <div key={n} style={{ width: "40px", height: "40px", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: "bold", background: "#333" }}>{n}</div>
-                ))}
+        <div style={{ width: 60 }} />
+      </div>
+
+      {/* 본문 */}
+      <div style={{ flex: 1, padding: "20px 16px", display: "flex", flexDirection: "column", gap: 14 }}>
+
+        {/* 번호 입력 카드 */}
+        <div style={{
+          background: "rgba(255,255,255,0.06)", borderRadius: 18,
+          padding: "16px", border: "1px solid rgba(255,255,255,0.1)",
+        }}>
+          <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.5)", marginBottom: 8, fontWeight: 600 }}>
+            이번주 당첨번호 등록
+          </div>
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="예: 3 11 15 29 35 44"
+            style={{
+              width: "100%", boxSizing: "border-box",
+              padding: "13px 14px", borderRadius: 12,
+              border: "1.5px solid rgba(255,255,255,0.15)",
+              background: "rgba(255,255,255,0.08)",
+              color: "#fff", fontSize: "1rem",
+              outline: "none",
+            }}
+          />
+          <button
+            onClick={addLatest}
+            style={{
+              width: "100%", marginTop: 10,
+              padding: "14px 0", borderRadius: 12, border: "none",
+              background: "rgba(255,255,255,0.15)",
+              color: "#fff", fontWeight: 700, fontSize: "1rem",
+              cursor: "pointer",
+            }}
+          >번호 추가</button>
+        </div>
+
+        {/* 핫/콜드 정보 */}
+        {hotText && (
+          <div style={{
+            background: "rgba(248,180,0,0.12)", borderRadius: 12,
+            padding: "10px 14px", border: "1px solid rgba(248,180,0,0.25)",
+            fontSize: "0.8rem", color: "#f8b400", lineHeight: 1.6,
+          }}>
+            {hotText}
+          </div>
+        )}
+
+        {/* 생성 버튼 */}
+        <button
+          onClick={generate}
+          style={{
+            width: "100%", padding: "18px 0", borderRadius: 16, border: "none",
+            background: "linear-gradient(135deg, #f8b400 0%, #e65100 100%)",
+            color: "#fff", fontWeight: 800, fontSize: "1.15rem",
+            cursor: "pointer", boxShadow: "0 6px 24px rgba(248,180,0,0.35)",
+            letterSpacing: 1,
+          }}
+        >✨ 5게임 생성</button>
+
+        {/* 결과 */}
+        {games.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {games.map((game, i) => (
+              <div key={i} style={{
+                background: "rgba(255,255,255,0.07)", borderRadius: 16,
+                padding: "14px 16px", border: "1px solid rgba(255,255,255,0.1)",
+              }}>
+                <div style={{
+                  fontSize: "0.72rem", color: "rgba(255,255,255,0.4)",
+                  fontWeight: 700, marginBottom: 10, letterSpacing: 0.5,
+                }}>
+                  게임 {i + 1} · {game.type}
+                </div>
+                <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
+                  {game.nums.map((n) => (
+                    <div key={n} style={{
+                      width: 46, height: 46, borderRadius: "50%",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      color: "#fff", fontWeight: 800, fontSize: "1rem",
+                      background: ballColor(n),
+                      boxShadow: `0 3px 10px ${ballColor(n)}88`,
+                    }}>{n}</div>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-        {log && <div style={{ marginTop: "8px", fontSize: "0.85rem", color: "#666" }}>{log}</div>}
+            ))}
+          </div>
+        )}
+
+        {log && (
+          <div style={{ textAlign: "center", fontSize: "0.8rem", color: "rgba(255,255,255,0.35)", marginTop: 4 }}>
+            {log}
+          </div>
+        )}
       </div>
     </div>
   );
