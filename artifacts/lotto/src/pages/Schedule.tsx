@@ -1248,12 +1248,13 @@ export default function SchedulePage() {
   }
 
   // 홈 이동 후 복귀 시 자동 재적용
-  // — customRoster가 있고 queueStartName이 저장돼 있으면 바로 배정 화면으로
+  // — customRoster가 있고 queueStartName이 저장돼 있으면 바로 카드(배정) 화면으로
   useEffect(() => {
     if (sortedCustomRoster.length > 0 && queueStartName && names.length === 0) {
       const base = sortedCustomRoster.map((p) => p.name);
       setNames(rotateNames(base, queueStartName));
       setRosterLoaded(true);
+      setView("assign");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
