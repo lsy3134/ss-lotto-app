@@ -3214,20 +3214,34 @@ export default function SchedulePage() {
             {/* 선택된 사람 칩 */}
             {names.filter(n => effectiveStatus(n) === modalStatus).length > 0 && (
               <div style={{ padding: "8px 14px 6px", display: "flex", flexWrap: "wrap", gap: "5px", borderBottom: "1px solid #f0f0f0" }}>
-                {names.filter(n => effectiveStatus(n) === modalStatus).map(n => (
-                  <span key={n}
-                    onClick={() => toggleStatus(n, modalStatus)}
-                    style={{
-                      display: "inline-flex", alignItems: "center", gap: "4px",
-                      padding: "4px 10px", borderRadius: "20px",
-                      background: (STATUS_COLOR[modalStatus] ?? { bg: "#eee" }).bg,
-                      color: (STATUS_COLOR[modalStatus] ?? { color: "#333" }).color,
-                      fontWeight: 700, fontSize: "0.8rem", cursor: "pointer",
-                      border: `1.5px solid ${(STATUS_COLOR[modalStatus] ?? { color: "#888" }).color}55`,
-                    }}>
-                    {n} <span style={{ fontSize: "0.7rem" }}>✕</span>
-                  </span>
-                ))}
+                {names.filter(n => effectiveStatus(n) === modalStatus).map(n => {
+                  const grp = NAME_GROUP[n];
+                  const dotColor = grp ? GROUP_DOT[grp] : null;
+                  return (
+                    <span key={n}
+                      onClick={() => toggleStatus(n, modalStatus)}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: "4px",
+                        padding: "4px 10px", borderRadius: "20px",
+                        background: (STATUS_COLOR[modalStatus] ?? { bg: "#eee" }).bg,
+                        color: (STATUS_COLOR[modalStatus] ?? { color: "#333" }).color,
+                        fontWeight: 700, fontSize: "0.8rem", cursor: "pointer",
+                        border: `1.5px solid ${(STATUS_COLOR[modalStatus] ?? { color: "#888" }).color}55`,
+                      }}>
+                      {n}
+                      {dotColor && (
+                        <span style={{
+                          display: "inline-block",
+                          width: "7px", height: "7px",
+                          borderRadius: "50%",
+                          background: dotColor,
+                          flexShrink: 0,
+                        }} />
+                      )}
+                      <span style={{ fontSize: "0.7rem", opacity: 0.7 }}>✕</span>
+                    </span>
+                  );
+                })}
               </div>
             )}
 
