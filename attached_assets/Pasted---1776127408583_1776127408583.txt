@@ -1,0 +1,124 @@
+📌 목표
+
+특정 날짜의 배정 결과를 수정하거나 "다시 배정하기"를 실행하면
+그 다음 날짜부터 자동으로 순번이 이어지도록 재계산 기능을 추가해주세요.
+
+---
+
+📌 현재 구조
+
+- assignmentData: 날짜별 배정 결과 저장 (localStorage)
+- savedSpare2: 날짜별 spare2 저장 (이미 존재)
+- generateAssignment(): 배정 결과 생성 함수 (저장 X)
+
+---
+
+📌 추가 구현 요구
+
+[1] 재계산 함수 추가
+
+function recalculateFrom(startDate) {
+
+  let currentDate = nextDate(startDate)
+
+  let lastSpare2 = savedSpare2[startDate]?.[0]
+
+  while (assignmentData[currentDate]) {
+
+    const result = generateAssignment({
+      firstNumber: lastSpare2
+    })
+
+    // 결과 덮어쓰기
+    assignmentData[currentDate] = result
+
+    // spare2 갱신
+    savedSpare2[currentDate] = result.spare2
+
+    lastSpare2 = result.spare2[0]
+
+    currentDate = nextDate(currentDate)
+  }
+
+  // 저장
+  localStorage.setItem('assignmentData', JSON.stringify(assignmentData))
+  localStorage.setItem('savedSpare2', JSON.stringify(savedSpare2))
+}
+
+---
+
+[2] 호출 위치 (중요)
+
+아래 두 경우에 반드시 실행:
+
+1. 배정 결과 수정 후 저장 시
+
+saveAssignment(date, result) {
+  assignmentData[date] = result
+  savedSpare2[date] = result.spare2
+
+  recalculateFrom(date)
+}
+
+2. "다시 배정하기" 버튼 클릭 시
+
+handleRegenerate(date) {
+  const result = generateAssignment(...)
+
+  saveAssignment(date, result)
+}
+
+---
+
+[3] 중요 조건
+
+- startDate 이전 데이터는 절대 변경 금지
+- startDate 이후만 재계산
+- assignmentData가 없는 날짜에서 재계산 중단
+
+---
+
+[4] UI 추가
+
+1. confirm 추가
+
+"이 날짜 이후 배정이 모두 다시 계산됩니다. 진행하시겠습니까?"
+
+2. 완료 메시지
+
+"이 날짜 이후 스케줄이 자동으로 업데이트되었습니다"
+
+---
+
+📌 핵심 요구 요약
+
+- 수정된 날짜 이후만 연쇄 재계산
+- 이전 데이터 보호
+- savedSpare2 기반 firstNumber 자동 연결
+- localStorage 기준으로 영구 반영[5] confirm 위치 (필수)
+
+재계산은 무조건 confirm 이후에만 실행
+
+handleRegenerate(date) {
+  const ok = confirm("이 날짜 이후 배정이 모두 다시 계산됩니다. 진행하시겠습니까?")
+
+  if (!ok) return
+
+  const result = generateAssignment(...)
+  saveAssignment(date, result)
+}[6] 안전 조건 (중요)
+
+recalculateFrom 실행 시:
+
+- savedSpare2[startDate]가 없으면 실행하지 않음
+- lastSpare2가 undefined이면 중단
+
+if (!lastSpare2) return[7] 주간 생성과의 충돌 방지
+
+recalculateFrom은 "이미 존재하는 날짜"까지만 실행
+
+즉:
+assignmentData[currentDate]가 존재할 때까지만 재계산
+
+→ 미래 날짜를 새로 생성하지 않음
+→ 주간 생성 기능과 역할 분리 유지<<이렇게 보내면되지?

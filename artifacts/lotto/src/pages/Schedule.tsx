@@ -1069,6 +1069,8 @@ export default function SchedulePage() {
   // 결과
   const [dayResult, setDayResult] = useState<DayResult | null>(null);
   const [weekly, setWeekly] = useState<{ day: string; result: DayResult; skipped?: boolean }[]>([]);
+  // 재계산 완료 메시지
+  const [recalcMessage, setRecalcMessage] = useState<string | null>(null);
   // 주간 근무표 날짜별 개별 토글 (기본: 요약 보기)
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
   function toggleDayExpand(day: string) {
@@ -1548,6 +1550,77 @@ export default function SchedulePage() {
     }
   }, [currentDateKey, ocrAllDates, ocrState]);
 
+  // ── 공통: currentNames 하루 전진 (컴포넌트 레벨) ──
+  function advanceNames(result: DayResult, curNames: string[]): string[] {
+    const spare2Set = new Set(result.spare2);
+    const nextSpares = [...result.spare2];
+    let nextRest = curNames.filter(n => !spare2Set.has(n));
+    if (result.spare2.length === 0) {
+      const todayLast = (mode === "2부제" ? result.shift2 : result.shift1).at(-1);
+      if (todayLast) {
+        const li = nextRest.indexOf(todayLast);
+        if (li >= 0 && nextRest.length > 1) {
+          const startAt = (li + 1) % nextRest.length;
+          nextRest = [...nextRest.slice(startAt), ...nextRest.slice(0, startAt)];
+        }
+      }
+    }
+    return [...nextSpares, ...nextRest];
+  }
+
+  // ── 특정 날짜 이후 연속 재계산 ──
+  // startDateLabel 다음날부터, assignmentData가 있는 날짜까지만 순차 재계산
+  function recalculateFrom(
+    startDateLabel: string,
+    baseAssignment: Record<string, DayResult>,
+    baseSpare2: Record<string, string[]>
+  ): { updatedAssignment: Record<string, DayResult>; updatedSpare2: Record<string, string[]>; count: number } {
+    const startIdx = excelDays.findIndex(d => d.dateLabel === startDateLabel);
+    if (startIdx < 0) return { updatedAssignment: baseAssignment, updatedSpare2: baseSpare2, count: 0 };
+
+    // 시작 기준: startDate 의 spare2[0]
+    const startSpare2 = baseSpare2[startDateLabel] ?? baseAssignment[startDateLabel]?.spare2 ?? [];
+    if (startSpare2.length === 0) return { updatedAssignment: baseAssignment, updatedSpare2: baseSpare2, count: 0 };
+
+    let currentNames = rotateNames([...names], startSpare2[0]);
+    const updatedAssignment = { ...baseAssignment };
+    const updatedSpare2 = { ...baseSpare2 };
+    let count = 0;
+
+    for (let i = startIdx + 1; i < excelDays.length; i++) {
+      const day = excelDays[i];
+      // assignmentData가 없는 날짜에서 멈춤 (미래 새 생성 금지)
+      if (!updatedAssignment[day.dateLabel]) break;
+
+      const savedDay = dateStatuses[day.dateLabel] ?? {};
+      const statuses: Record<string, StatusType> = {};
+      currentNames.forEach((n) => {
+        if (n in savedDay) { statuses[n] = savedDay[n]; return; }
+        const person = customRosterMap[n];
+        if (person && isAutoOff(person.group, day.dayIdx)) { statuses[n] = "휴무"; return; }
+        statuses[n] = null;
+      });
+
+      let s1 = shift1Size, s2 = shift2Size, ss = singleSize;
+      if (day.예약팀수 > 0) {
+        const tot = day.예약팀수;
+        s1 = Math.round(tot / 2); s2 = tot - s1; ss = tot;
+      }
+
+      const result = mode === "2부제"
+        ? assignDouble(currentNames, statuses, s1, s2, dateDaegeun[day.dateLabel] ?? {})
+        : assignSingle(currentNames, statuses, ss);
+
+      updatedAssignment[day.dateLabel] = result;
+      if (result.spare2.length > 0) updatedSpare2[day.dateLabel] = result.spare2;
+
+      currentNames = advanceNames(result, currentNames);
+      count++;
+    }
+
+    return { updatedAssignment, updatedSpare2, count };
+  }
+
   function assign() {
     const statuses = getEffective(dayOfWeek);
     const result = mode === "2부제"
@@ -1558,13 +1631,22 @@ export default function SchedulePage() {
     setTimeout(() => {
       resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 80);
-    // 배정 결과 날짜별 저장
-    if (currentDateKey) {
-      setAssignmentData(prev => ({ ...prev, [currentDateKey]: result }));
-    }
-    // spare2 저장 (다음날 첫번호 힌트)
-    if (currentDateKey && result.spare2.length > 0) {
-      setSavedSpare2(prev => ({ ...prev, [currentDateKey]: result.spare2 }));
+
+    if (!currentDateKey) return;
+
+    // 저장 후 즉시 동기로 재계산
+    const newAssignment = { ...assignmentData, [currentDateKey]: result };
+    const newSpare2 = result.spare2.length > 0
+      ? { ...savedSpare2, [currentDateKey]: result.spare2 }
+      : { ...savedSpare2 };
+
+    const { updatedAssignment, updatedSpare2, count } = recalculateFrom(currentDateKey, newAssignment, newSpare2);
+    setAssignmentData(updatedAssignment);
+    setSavedSpare2(updatedSpare2);
+
+    if (count > 0) {
+      setRecalcMessage(`이 날짜 이후 ${count}일 스케줄이 자동으로 업데이트되었습니다.`);
+      setTimeout(() => setRecalcMessage(null), 4000);
     }
   }
 
@@ -1574,24 +1656,6 @@ export default function SchedulePage() {
       ? excelDays.findIndex(d => d.dateLabel === selectedDate.dateLabel)
       : -1;
     const mondayIdx = selIdx >= 0 ? selIdx - (selectedDate?.dayIdx ?? 0) : -1;
-
-    // ── 공통: currentNames 하루 전진 ──
-    function advanceNames(result: DayResult, curNames: string[]): string[] {
-      const spare2Set = new Set(result.spare2);
-      const nextSpares = [...result.spare2];
-      let nextRest = curNames.filter(n => !spare2Set.has(n));
-      if (result.spare2.length === 0) {
-        const todayLast = (mode === "2부제" ? result.shift2 : result.shift1).at(-1);
-        if (todayLast) {
-          const li = nextRest.indexOf(todayLast);
-          if (li >= 0 && nextRest.length > 1) {
-            const startAt = (li + 1) % nextRest.length;
-            nextRest = [...nextRest.slice(startAt), ...nextRest.slice(0, startAt)];
-          }
-        }
-      }
-      return [...nextSpares, ...nextRest];
-    }
 
     // ── 직전 배정 데이터 탐색 → firstNumber 이어받기 ──
     // 이번 주 월요일 이전의 가장 마지막 assignmentData 날짜 찾기
@@ -3737,10 +3801,20 @@ export default function SchedulePage() {
             </div>
 
             <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-              <button onClick={assign} style={{
-                ...S.primaryBtn, flex: 1,
-                background: currentDateKey && assignmentData[currentDateKey] ? "#b45309" : undefined,
-              }}>
+              <button
+                onClick={() => {
+                  if (currentDateKey && assignmentData[currentDateKey]) {
+                    const ok = confirm(
+                      `${currentDateKey} 배정을 다시 실행하면\n이 날짜 이후 배정이 모두 자동으로 재계산됩니다.\n\n진행하시겠습니까?`
+                    );
+                    if (!ok) return;
+                  }
+                  assign();
+                }}
+                style={{
+                  ...S.primaryBtn, flex: 1,
+                  background: currentDateKey && assignmentData[currentDateKey] ? "#b45309" : undefined,
+                }}>
                 {currentDateKey && assignmentData[currentDateKey] ? "재배정 ⚠️" : "배정하기"}
               </button>
               <button onClick={generateWeek} style={{ ...S.primaryBtn, flex: 1, background: "#374151" }}>
@@ -3910,6 +3984,21 @@ export default function SchedulePage() {
 
                 return cutRows;
               })()}
+            </div>
+          )}
+
+          {/* 재계산 완료 배너 */}
+          {recalcMessage && (
+            <div style={{
+              background: "linear-gradient(135deg, #dcfce7, #bbf7d0)",
+              border: "1.5px solid #86efac", borderRadius: 12,
+              padding: "12px 16px", display: "flex", alignItems: "center", gap: 10,
+              animation: "fadeIn 0.3s ease",
+            }}>
+              <span style={{ fontSize: "1.2rem" }}>✅</span>
+              <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#15803d" }}>
+                {recalcMessage}
+              </span>
             </div>
           )}
 
