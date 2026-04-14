@@ -959,6 +959,18 @@ export default function SchedulePage() {
     localStorage.setItem(SPARE2_KEY, JSON.stringify(savedSpare2));
   }, [savedSpare2, SPARE2_KEY]);
 
+  // ── 날짜별 배정 결과 영구 저장 ──────────────────────────
+  const ASSIGNMENT_KEY = `lotto_assignmentData_${new Date().getFullYear()}`;
+  const [assignmentData, setAssignmentData] = useState<Record<string, DayResult>>(() => {
+    try {
+      const saved = localStorage.getItem(`lotto_assignmentData_${new Date().getFullYear()}`);
+      return saved ? (JSON.parse(saved) as Record<string, DayResult>) : {};
+    } catch { return {}; }
+  });
+  useEffect(() => {
+    localStorage.setItem(ASSIGNMENT_KEY, JSON.stringify(assignmentData));
+  }, [assignmentData, ASSIGNMENT_KEY]);
+
   // 이전날 날짜 레이블 찾기
   const prevDateLabel = useMemo(() => {
     if (!selectedDate) return null;
@@ -1056,7 +1068,7 @@ export default function SchedulePage() {
 
   // 결과
   const [dayResult, setDayResult] = useState<DayResult | null>(null);
-  const [weekly, setWeekly] = useState<{ day: string; result: DayResult }[]>([]);
+  const [weekly, setWeekly] = useState<{ day: string; result: DayResult; skipped?: boolean }[]>([]);
   // 주간 근무표 날짜별 개별 토글 (기본: 요약 보기)
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
   function toggleDayExpand(day: string) {
@@ -1218,6 +1230,14 @@ export default function SchedulePage() {
       });
       // 이 날짜를 "자동 적용 완료"로 표시 → 다음에 다시 와도 덮어쓰기 안 함
       setHolidayAppliedDates(prev => ({ ...prev, [day.dateLabel]: true }));
+    }
+
+    // 이미 배정된 날짜면 저장된 결과 자동 표시 (weekly 초기화)
+    if (assignmentData[day.dateLabel]) {
+      setDayResult(assignmentData[day.dateLabel]);
+      setWeekly([]);
+    } else {
+      setDayResult(null);
     }
   }
 
@@ -1538,7 +1558,11 @@ export default function SchedulePage() {
     setTimeout(() => {
       resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 80);
-    // ★ 기능2: 이 날짜의 2부스페어 자동 저장 (다음날 첫번호 힌트)
+    // 배정 결과 날짜별 저장
+    if (currentDateKey) {
+      setAssignmentData(prev => ({ ...prev, [currentDateKey]: result }));
+    }
+    // spare2 저장 (다음날 첫번호 힌트)
     if (currentDateKey && result.spare2.length > 0) {
       setSavedSpare2(prev => ({ ...prev, [currentDateKey]: result.spare2 }));
     }
@@ -1551,20 +1575,58 @@ export default function SchedulePage() {
       : -1;
     const mondayIdx = selIdx >= 0 ? selIdx - (selectedDate?.dayIdx ?? 0) : -1;
 
-    // 첫날은 현재 names 배열 사용 (queueStartName 회전 이미 적용됨)
-    // 다음날부터는 전날 2부스페어 첫번째 인원을 첫번호로 회전
+    // ── 공통: currentNames 하루 전진 ──
+    function advanceNames(result: DayResult, curNames: string[]): string[] {
+      const spare2Set = new Set(result.spare2);
+      const nextSpares = [...result.spare2];
+      let nextRest = curNames.filter(n => !spare2Set.has(n));
+      if (result.spare2.length === 0) {
+        const todayLast = (mode === "2부제" ? result.shift2 : result.shift1).at(-1);
+        if (todayLast) {
+          const li = nextRest.indexOf(todayLast);
+          if (li >= 0 && nextRest.length > 1) {
+            const startAt = (li + 1) % nextRest.length;
+            nextRest = [...nextRest.slice(startAt), ...nextRest.slice(0, startAt)];
+          }
+        }
+      }
+      return [...nextSpares, ...nextRest];
+    }
+
+    // ── 직전 배정 데이터 탐색 → firstNumber 이어받기 ──
+    // 이번 주 월요일 이전의 가장 마지막 assignmentData 날짜 찾기
     let currentNames = [...names];
+    if (mondayIdx > 0) {
+      for (let i = mondayIdx - 1; i >= 0; i--) {
+        const prevDay = excelDays[i];
+        if (prevDay && assignmentData[prevDay.dateLabel]) {
+          const lastSpare2 = assignmentData[prevDay.dateLabel].spare2;
+          if (lastSpare2?.length > 0) {
+            currentNames = rotateNames([...names], lastSpare2[0]);
+          }
+          break;
+        }
+      }
+    }
 
-    const results = DAY_LABELS.reduce<{ day: string; result: DayResult }[]>((acc, day, di) => {
-      // ★ Bug3 수정: mondayIdx + di >= 0 체크 (mondayIdx 자체가 음수여도 di로 보정)
+    const results: { day: string; result: DayResult; skipped?: boolean }[] = [];
+    const newAssignments: Record<string, DayResult> = {};
+
+    DAY_LABELS.forEach((day, di) => {
       const absIdx = mondayIdx + di;
-      const weekDay = absIdx >= 0 && absIdx < excelDays.length
-        ? excelDays[absIdx]
-        : null;
+      const weekDay = absIdx >= 0 && absIdx < excelDays.length ? excelDays[absIdx] : null;
       const dateLabel = weekDay?.dateLabel ?? "";
-      const dayIdx    = weekDay?.dayIdx ?? di;
 
-      // ★ 날짜별 저장된 상태 사용 → 모든 상태는 지정한 날에만!
+      // ── 이미 배정된 날짜: 결과 재사용, currentNames만 연속 업데이트 ──
+      if (dateLabel && assignmentData[dateLabel]) {
+        const existingResult = assignmentData[dateLabel];
+        results.push({ day: dateLabel || day, result: existingResult, skipped: true });
+        currentNames = advanceNames(existingResult, currentNames);
+        return;
+      }
+
+      // ── 새 배정 ──
+      const dayIdx = weekDay?.dayIdx ?? di;
       const savedDay = dateStatuses[dateLabel] ?? {};
       const statuses: Record<string, StatusType> = {};
       currentNames.forEach((n) => {
@@ -1574,7 +1636,6 @@ export default function SchedulePage() {
         statuses[n] = null;
       });
 
-      // 날짜별 예약팀수 자동 반영
       let s1 = shift1Size, s2 = shift2Size, ss = singleSize;
       if (weekDay && weekDay.예약팀수 > 0) {
         const tot = weekDay.예약팀수;
@@ -1585,45 +1646,24 @@ export default function SchedulePage() {
         ? assignDouble(currentNames, statuses, s1, s2, dateDaegeun[dateLabel] ?? {})
         : assignSingle(currentNames, statuses, ss);
 
-      // ── 다음날 currentNames 재정렬 (규정: 2부스페어 앞번호 → 나머지 순번 대기) ──
-      {
-        const spare2Set = new Set(result.spare2);
+      results.push({ day: dateLabel || day, result, skipped: false });
+      if (dateLabel) newAssignments[dateLabel] = result;
+      currentNames = advanceNames(result, currentNames);
+    });
 
-        // 찾근은 당일만 적용 — 내일 큐 재정렬 시 찾근 구분 없음
-        // ① 오늘 2부스페어 → 앞번호 순서 (내일 첫번호)
-        const nextSpares = [...result.spare2];
-
-        // ② 나머지 전원 (스페어 제외, 찾근 여부 무관) → 큐 순서 유지
-        let nextRest = currentNames.filter(n => !spare2Set.has(n));
-
-        if (result.spare2.length > 0) {
-          // spare2 있음: rest 순서는 그대로 유지
-        } else {
-          // spare2 없음: 오늘 마지막 근무자 다음 번호부터 시작
-          const todayLast = (mode === "2부제" ? result.shift2 : result.shift1).at(-1);
-          if (todayLast) {
-            const li = nextRest.indexOf(todayLast);
-            if (li >= 0 && nextRest.length > 1) {
-              const startAt = (li + 1) % nextRest.length;
-              nextRest = [...nextRest.slice(startAt), ...nextRest.slice(0, startAt)];
-            }
-          }
-        }
-
-        currentNames = [...nextSpares, ...nextRest];
-      }
-
-      return [...acc, { day: dateLabel || day, result }];
-    }, []);
     setWeekly(results);
     setDayResult(null);
-    // ★ 기능2: 일주일 각 날짜의 2부스페어 자동 저장
-    const newSpare2: Record<string, string[]> = {};
-    results.forEach(({ day, result: r }) => {
-      if (day && r.spare2.length > 0) newSpare2[day] = r.spare2;
-    });
-    if (Object.keys(newSpare2).length > 0) {
-      setSavedSpare2(prev => ({ ...prev, ...newSpare2 }));
+
+    // ── 새 배정만 저장 ──
+    if (Object.keys(newAssignments).length > 0) {
+      setAssignmentData(prev => ({ ...prev, ...newAssignments }));
+      const newSpare2: Record<string, string[]> = {};
+      Object.entries(newAssignments).forEach(([d, r]) => {
+        if (d && r.spare2.length > 0) newSpare2[d] = r.spare2;
+      });
+      if (Object.keys(newSpare2).length > 0) {
+        setSavedSpare2(prev => ({ ...prev, ...newSpare2 }));
+      }
     }
   }
 
@@ -1877,6 +1917,7 @@ export default function SchedulePage() {
                   return ei > 0 ? excelDays[ei - 1].dateLabel : null;
                 })();
                 const nextFirstHint = prevDayLabel ? (savedSpare2[prevDayLabel]?.[0] ?? null) : null;
+                const hasAssigned = Boolean(assignmentData[d.dateLabel]);
 
                 return (
                   <button
@@ -1886,10 +1927,12 @@ export default function SchedulePage() {
                       ...S.dateBtn,
                       background: isSelected
                         ? "linear-gradient(135deg, #1a1a2e 0%, #4e89ae 100%)"
+                        : hasAssigned ? "#f0fdf4"
                         : hasManual ? "#eff6ff" : "#f8fafc",
                       color: isSelected ? "#fff" : isWeekend ? "#c62828" : "#1a1a2e",
                       border: isSelected
                         ? "2px solid #4e89ae"
+                        : hasAssigned ? "2px solid #86efac"
                         : hasManual ? "2px solid #93c5fd"
                         : hasTeams ? "2px solid #60a5fa" : "1.5px solid #e5e7eb",
                       animation: isSelected ? "glowPulse 2s ease-in-out infinite" : "none",
@@ -1900,6 +1943,13 @@ export default function SchedulePage() {
                   >
                     <span style={{ fontSize: "0.72rem", fontWeight: 700 }}>{d.dateLabel.split(" ")[0]}</span>
                     <span style={{ fontSize: "0.65rem", opacity: 0.7 }}>{d.dayName}</span>
+                    {hasAssigned && !isSelected && (
+                      <span style={{
+                        fontSize: "0.5rem", fontWeight: 800, lineHeight: 1,
+                        color: "#15803d", background: "#dcfce7",
+                        borderRadius: 4, padding: "1px 4px",
+                      }}>✓완료</span>
+                    )}
                     {d.가용인원 > 0 && (
                       <span style={{
                         fontSize: "0.6rem", fontWeight: 700,
@@ -3687,7 +3737,12 @@ export default function SchedulePage() {
             </div>
 
             <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-              <button onClick={assign} style={{ ...S.primaryBtn, flex: 1 }}>배정하기</button>
+              <button onClick={assign} style={{
+                ...S.primaryBtn, flex: 1,
+                background: currentDateKey && assignmentData[currentDateKey] ? "#b45309" : undefined,
+              }}>
+                {currentDateKey && assignmentData[currentDateKey] ? "재배정 ⚠️" : "배정하기"}
+              </button>
               <button onClick={generateWeek} style={{ ...S.primaryBtn, flex: 1, background: "#374151" }}>
                 일주일 생성
               </button>
@@ -3863,12 +3918,30 @@ export default function SchedulePage() {
             <div ref={resultRef} style={S.card} id="print-area">
               <div style={{ ...S.sectionTitle, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <span>📋 {selectedDate ? selectedDate.dateLabel : DAY_LABELS[dayOfWeek] + "요일"} 배정 결과</span>
-                <button
-                  onClick={() => window.print()}
-                  style={{ ...S.smallBtn, fontSize: "0.75rem", padding: "4px 10px" }}
-                >
-                  🖨️ 출력
-                </button>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {currentDateKey && assignmentData[currentDateKey] && (
+                    <button
+                      onClick={() => {
+                        if (!confirm(`${currentDateKey} 배정을 초기화하시겠습니까?`)) return;
+                        setAssignmentData(prev => {
+                          const next = { ...prev };
+                          delete next[currentDateKey];
+                          return next;
+                        });
+                        setDayResult(null);
+                      }}
+                      style={{ ...S.smallBtn, fontSize: "0.7rem", padding: "4px 10px", background: "#fee2e2", color: "#b91c1c", border: "1px solid #fca5a5" }}
+                    >
+                      🗑 초기화
+                    </button>
+                  )}
+                  <button
+                    onClick={() => window.print()}
+                    style={{ ...S.smallBtn, fontSize: "0.75rem", padding: "4px 10px" }}
+                  >
+                    🖨️ 출력
+                  </button>
+                </div>
               </div>
               <DayResultView result={dayResult} mode={mode} />
             </div>
@@ -3884,11 +3957,13 @@ export default function SchedulePage() {
                 </button>
               </div>
 
-              {weekly.map(({ day, result: r }, di) => {
+              {weekly.map(({ day, result: r, skipped }, di) => {
                 const isExpanded = expandedDays.has(day);
                 const isWeekend  = di === 5 || di === 6;
                 const chipBg = isWeekend
                   ? "linear-gradient(135deg, #c62828, #ef5350)"
+                  : skipped
+                  ? "linear-gradient(135deg, #374151, #6b7280)"
                   : "linear-gradient(135deg, #1a1a2e, #4e89ae)";
 
                 // ── 요약 행: 컷 기준 + 스페어만 표시 ──
@@ -3941,7 +4016,7 @@ export default function SchedulePage() {
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <div style={{ ...S.dayChip, background: chipBg }}>
                         <span style={{ fontSize: "0.85rem", fontWeight: 800 }}>{day}</span>
-                        <span style={{ fontSize: "0.55rem", opacity: 0.8 }}>요일</span>
+                        <span style={{ fontSize: "0.55rem", opacity: 0.8 }}>{skipped ? "기존" : "요일"}</span>
                       </div>
                       <SummaryRow />
                       <button
@@ -3956,6 +4031,28 @@ export default function SchedulePage() {
                       >
                         {isExpanded ? "요약" : "자세히"}
                       </button>
+                      {skipped && (
+                        <button
+                          onClick={() => {
+                            if (!confirm(`${day} 배정을 초기화하시겠습니까?`)) return;
+                            setAssignmentData(prev => {
+                              const next = { ...prev };
+                              delete next[day];
+                              return next;
+                            });
+                            setWeekly(prev => prev.filter(w => w.day !== day));
+                          }}
+                          style={{
+                            flexShrink: 0, padding: "3px 8px",
+                            border: "1px solid #fca5a5", borderRadius: 8,
+                            background: "#fee2e2", color: "#b91c1c",
+                            fontSize: "0.65rem", fontWeight: 700, cursor: "pointer",
+                          }}
+                          title="이 날 배정 초기화"
+                        >
+                          🗑
+                        </button>
+                      )}
                     </div>
 
                     {/* 상세 내용 (토글) */}
