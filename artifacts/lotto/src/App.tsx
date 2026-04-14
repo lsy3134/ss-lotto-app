@@ -133,7 +133,7 @@ function HomePage() {
     <div style={{
       backgroundColor: C.bgPage,
       minHeight: "100dvh",
-      padding: "48px 24px 32px",
+      padding: "48px 24px 100px",
       color: C.textPrimary,
     }}>
       <header style={{ marginBottom: "36px" }}>
@@ -463,7 +463,7 @@ function LottoPage() {
       </div>
 
       {/* 본문 */}
-      <div style={{ flex: 1, padding: "20px 16px", display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ flex: 1, padding: "20px 16px 100px", display: "flex", flexDirection: "column", gap: 14 }}>
 
         {/* 번호 입력 카드 */}
         <div style={{
@@ -569,6 +569,74 @@ function LottoPage() {
 }
 
 // ───────────────────────────────────────────
+// 하단 탭바
+// ───────────────────────────────────────────
+function BottomTabBar() {
+  const [location, navigate] = useLocation();
+
+  const tabs = [
+    { path: `${base}/`,         icon: "🏠", label: "홈"    },
+    { path: `${base}/schedule`, icon: "📋", label: "근무표" },
+    { path: `${base}/lotto`,    icon: "🎰", label: "로또"  },
+  ];
+
+  return (
+    <nav style={{
+      position: "fixed",
+      bottom: 0, left: 0, right: 0,
+      background: "#ffffff",
+      borderTop: "1.5px solid #e8ecf4",
+      display: "flex",
+      zIndex: 100,
+      boxShadow: "0 -2px 16px rgba(100,110,180,0.10)",
+      paddingBottom: "env(safe-area-inset-bottom)",
+    }}>
+      {tabs.map((tab) => {
+        const isActive = location === tab.path || (tab.path === `${base}/` && location === `${base}`);
+        return (
+          <button
+            key={tab.path}
+            onClick={() => navigate(tab.path)}
+            style={{
+              flex: 1,
+              display: "flex", flexDirection: "column",
+              alignItems: "center", justifyContent: "center",
+              gap: "3px", padding: "10px 0 8px",
+              border: "none", background: "transparent",
+              cursor: "pointer", transition: "all 0.15s",
+            }}
+          >
+            <span style={{
+              fontSize: "22px", lineHeight: 1,
+              filter: isActive ? "none" : "grayscale(1) opacity(0.35)",
+              transition: "all 0.2s",
+            }}>
+              {tab.icon}
+            </span>
+            <span style={{
+              fontSize: "10px", fontWeight: 700,
+              color: isActive ? "#7c6ef7" : "#b0b8ca",
+              transition: "all 0.2s",
+              fontFamily: "'Noto Sans KR', sans-serif",
+            }}>
+              {tab.label}
+            </span>
+            {isActive && (
+              <div style={{
+                width: "4px", height: "4px",
+                borderRadius: "50%",
+                background: "#7c6ef7",
+                marginTop: "1px",
+              }} />
+            )}
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+// ───────────────────────────────────────────
 // 라우터
 // ───────────────────────────────────────────
 export default function App() {
@@ -580,6 +648,7 @@ export default function App() {
         <Route path="/lotto" component={LottoPage} />
         <Route component={HomePage} />
       </Switch>
+      <BottomTabBar />
     </WouterRouter>
   );
 }
