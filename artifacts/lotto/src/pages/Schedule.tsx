@@ -1066,7 +1066,6 @@ export default function SchedulePage() {
       return next;
     });
   }
-  const [view, setView] = useState<"input" | "assign">("input");
 
   // 상태 선택 모달 (전체 순번표 표시)
   const [modalStatus, setModalStatus] = useState<StatusType | null>(null);
@@ -1272,7 +1271,9 @@ export default function SchedulePage() {
     setRosterLoaded(true);
     setDayResult(null);
     setWeekly([]);
-    setView("assign");
+    setTimeout(() => {
+      resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
   }
 
   // 홈 이동 후 복귀 시 자동 재적용
@@ -1282,7 +1283,6 @@ export default function SchedulePage() {
       const base = sortedCustomRoster.map((p) => p.name);
       setNames(rotateNames(base, queueStartName));
       setRosterLoaded(true);
-      setView("assign");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1305,7 +1305,9 @@ export default function SchedulePage() {
     setRosterLoaded(false);
     setDayResult(null);
     setWeekly([]);
-    setView("assign");
+    setTimeout(() => {
+      resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
   }
 
   // ── 순번표 편집 함수들 ──────────────────────────
@@ -1704,13 +1706,16 @@ export default function SchedulePage() {
         <button onClick={() => setLocation(`${BASE}/`)} style={S.backBtn}>←</button>
         <img src={`${BASE}/char_dino.png`} alt="" style={{ width: 30, height: 30, objectFit: "contain" }} />
         <span style={S.headerTitle}>캐디 근무표</span>
-        {view === "assign" && (
+        {names.length > 0 && (
           <button
-            onClick={() => { setView("input"); setDayResult(null); setWeekly([]); }}
+            onClick={() => {
+              setNames([]); setRosterLoaded(false); setDayResult(null); setWeekly([]);
+              window.scrollTo({ top: 0, behavior: "smooth" });
+            }}
             style={S.smallBtn}
-            className="text-[14px]">↩ 휴무</button>
+            className="text-[14px]">↩ 초기화</button>
         )}
-        {view === "input" && customRoster.length > 0 && (
+        {names.length === 0 && customRoster.length > 0 && (
           <button
             onClick={() => applyRoster(queueStartName)}
             style={{
@@ -1728,8 +1733,7 @@ export default function SchedulePage() {
           </button>
         )}
       </div>
-      {/* ─── 입력 단계 ─── */}
-      {view === "input" && (
+      {/* ─── 입력 단계 (항상 표시) ─── */}
         <div style={S.card}>
           {/* 운영 모드 */}
           <label style={S.label}>운영 방식</label>
@@ -2349,7 +2353,6 @@ export default function SchedulePage() {
           })()}
 
         </div>
-      )}
       {/* ── 첫번호: 이 순번대로 가시겠습니까? ── */}
       {queueModal === "ask" && (() => {
         // 가장 최근 저장된 2부스페어 첫번째 찾기
@@ -3543,8 +3546,8 @@ export default function SchedulePage() {
           </div>
         </div>
       )}
-      {/* ─── 배정 단계 ─── */}
-      {view === "assign" && (
+      {/* ─── 배정 결과 (인라인 표시 — names 로드 시) ─── */}
+      {names.length > 0 && (
         <>
           <div style={S.card}>
             {/* 선택 날짜 표시 */}

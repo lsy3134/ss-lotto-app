@@ -1,5 +1,5 @@
 // ── SS앱 Service Worker ──────────────────────────────
-const CACHE_NAME = "ssapp-v5";
+const CACHE_NAME = "ssapp-v6";
 const OFFLINE_URL = "./";
 
 // 설치 시 캐시할 핵심 리소스
