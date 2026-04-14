@@ -38,6 +38,18 @@ const GROUP_STYLE: Record<GroupType, { bg: string; color: string; label: string 
   주말:   { bg: "#fce4ec", color: "#c62828", label: "주말" },
 };
 
+// 휴무 chip 그룹 dot 색상 (사용자 지정 팔레트)
+const GROUP_DOT: Record<GroupType, string> = {
+  하우스: "#7c6ef7",
+  주중:   "#5b8dee",
+  주말:   "#f59e0b",
+};
+
+// 이름 → 그룹 조회 맵
+const NAME_GROUP: Record<string, GroupType> = Object.fromEntries(
+  ROSTER.map(p => [p.name, p.group])
+);
+
 const DAY_LABELS = ["월", "화", "수", "목", "금", "토", "일"];
 const DAY_MAP: Record<string, number> = { 월: 0, 화: 1, 수: 2, 목: 3, 금: 4, 토: 5, 일: 6 };
 
@@ -4536,7 +4548,23 @@ function DayResultView({ result, mode, compact = false }: {
   const spare1Set = new Set(result.spare1 ?? []); // 1부스페어는 shift2 앞에 이미 배정 → 중복 제거용
 
   function renderPeople(people: string[], key: string) {
-    if (compact) return people.join("  ·  ");
+    const isExcluded = key === "excluded";
+    if (compact) {
+      if (isExcluded) {
+        return people.map((n, i) => {
+          const grp = NAME_GROUP[n];
+          const dot = grp ? GROUP_DOT[grp] : null;
+          return (
+            <span key={n}>
+              {i > 0 && "  ·  "}
+              {n}
+              {dot && <span style={{ color: dot, marginLeft: "2px", fontSize: "0.65rem" }}>●</span>}
+            </span>
+          );
+        });
+      }
+      return people.join("  ·  ");
+    }
     return (
       <span style={{ fontSize: "0.88rem", color: "#333", lineHeight: 1.7 }}>
         {people.map((n, i) => {
@@ -4545,6 +4573,8 @@ function DayResultView({ result, mode, compact = false }: {
           const isSpare1= (key === "shift2") && spare1Set.has(n);
           const isTwoR  = key === "twoRound";
           const suffix  = isCho ? " [조출]" : isHu ? " [후출]" : isSpare1 ? " [1부스페어]" : "";
+          const grp     = isExcluded ? NAME_GROUP[n] : undefined;
+          const dotColor = grp ? GROUP_DOT[grp] : null;
           return (
             <span key={n}>
               {i > 0 && <span style={{ color: "#d1d5db" }}> · </span>}
@@ -4556,6 +4586,17 @@ function DayResultView({ result, mode, compact = false }: {
               }}>
                 {n}{suffix}
               </span>
+              {dotColor && (
+                <span style={{
+                  display: "inline-block",
+                  width: "7px", height: "7px",
+                  borderRadius: "50%",
+                  background: dotColor,
+                  marginLeft: "3px",
+                  verticalAlign: "middle",
+                  flexShrink: 0,
+                }} />
+              )}
             </span>
           );
         })}
