@@ -3211,40 +3211,64 @@ export default function SchedulePage() {
               />
             </div>
 
-            {/* 선택된 사람 칩 */}
-            {names.filter(n => effectiveStatus(n) === modalStatus).length > 0 && (
-              <div style={{ padding: "8px 14px 6px", display: "flex", flexWrap: "wrap", gap: "6px", borderBottom: "1px solid #f0f0f0" }}>
-                {names.filter(n => effectiveStatus(n) === modalStatus).map(n => {
-                  const grp = NAME_GROUP[n];
-                  const gs = grp ? GROUP_STYLE[grp] : null;
-                  return (
-                    <div key={n}
-                      onClick={() => toggleStatus(n, modalStatus)}
-                      style={{
-                        display: "inline-flex", alignItems: "center", gap: "6px",
-                        padding: "6px 10px", borderRadius: "999px",
-                        background: "#ffffff",
-                        border: "1.5px solid #e0e5f0",
-                        fontSize: "0.85rem", fontWeight: 700,
-                        cursor: "pointer",
-                      }}>
-                      <span style={{ color: "#1a2035" }}>{n}</span>
-                      {gs && (
-                        <span style={{
-                          padding: "2px 6px", borderRadius: "6px",
-                          fontSize: "0.65rem", fontWeight: 800,
-                          background: gs.bg, color: gs.color,
-                          lineHeight: 1.4,
+            {/* 선택된 사람 칩 — 그룹별 묶음 */}
+            {(() => {
+              const selectedNames = names.filter(n => effectiveStatus(n) === modalStatus);
+              if (selectedNames.length === 0) return null;
+
+              const GROUP_ORDER: GroupType[] = ["하우스", "주중", "주말"];
+              const grouped: Record<GroupType, string[]> = { 하우스: [], 주중: [], 주말: [] };
+              selectedNames.forEach(n => {
+                const g = NAME_GROUP[n];
+                if (g) grouped[g].push(n);
+              });
+
+              return (
+                <div style={{ padding: "8px 14px 8px", borderBottom: "1px solid #f0f0f0", display: "flex", flexDirection: "column", gap: "8px" }}>
+                  {GROUP_ORDER.filter(g => grouped[g].length > 0).map(g => {
+                    const gs = GROUP_STYLE[g];
+                    return (
+                      <div key={g}>
+                        {/* 그룹 헤더 */}
+                        <div style={{
+                          display: "inline-flex", alignItems: "center", gap: "5px",
+                          marginBottom: "5px",
                         }}>
-                          {gs.label}
-                        </span>
-                      )}
-                      <span style={{ marginLeft: "2px", color: "#9aa3b5", fontWeight: 800, fontSize: "0.9rem" }}>×</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                          <span style={{
+                            width: "8px", height: "8px", borderRadius: "50%",
+                            background: gs.color, display: "inline-block", flexShrink: 0,
+                          }} />
+                          <span style={{ fontSize: "0.72rem", fontWeight: 800, color: gs.color }}>
+                            {gs.label}
+                          </span>
+                          <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#9aa3b5" }}>
+                            {grouped[g].length}명
+                          </span>
+                        </div>
+                        {/* 해당 그룹 chip 목록 */}
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+                          {grouped[g].map(n => (
+                            <div key={n}
+                              onClick={() => toggleStatus(n, modalStatus)}
+                              style={{
+                                display: "inline-flex", alignItems: "center", gap: "5px",
+                                padding: "5px 10px", borderRadius: "999px",
+                                background: "#ffffff",
+                                border: `1.5px solid ${gs.color}55`,
+                                fontSize: "0.83rem", fontWeight: 700,
+                                cursor: "pointer",
+                              }}>
+                              <span style={{ color: "#1a2035" }}>{n}</span>
+                              <span style={{ color: "#9aa3b5", fontWeight: 800, fontSize: "0.85rem", lineHeight: 1 }}>×</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
 
             {/* 순번표 목록 */}
             <div style={{ overflowY: "auto", flex: 1, padding: "6px 0 16px" }}>
