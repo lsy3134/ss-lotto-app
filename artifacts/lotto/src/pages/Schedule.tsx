@@ -3547,21 +3547,6 @@ export default function SchedulePage() {
       {view === "assign" && (
         <>
           <div style={S.card}>
-            {/* 요일 선택 */}
-            <label style={{ ...S.label, marginBottom: "8px" }}>오늘 요일</label>
-            <div style={{ display: "flex", gap: "6px", marginBottom: "10px", flexWrap: "wrap" }}>
-              {DAY_LABELS.map((d, i) => (
-                <button key={d} onClick={() => setDayOfWeek(i)}
-                  style={{
-                    ...S.dayBtn,
-                    background: dayOfWeek === i ? "#1a1a2e" : "#f0f0f0",
-                    color: dayOfWeek === i ? "#fff" : "#555",
-                  }}>
-                  {d}
-                </button>
-              ))}
-            </div>
-
             {/* 선택 날짜 표시 */}
             {selectedDate && (
               <div style={S.dateBar}>
