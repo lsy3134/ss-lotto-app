@@ -33,9 +33,9 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
 };
 
 const GROUP_STYLE: Record<GroupType, { bg: string; color: string; label: string }> = {
-  하우스: { bg: "#e8f5e9", color: "#2e7d32", label: "하우스" },
-  주중:   { bg: "#e3f2fd", color: "#1565c0", label: "주중" },
-  주말:   { bg: "#fce4ec", color: "#c62828", label: "주말" },
+  하우스: { bg: "#eeebff", color: "#7c6ef7", label: "하우스" },
+  주중:   { bg: "#eef3ff", color: "#5b8dee", label: "주중" },
+  주말:   { bg: "#fff7ed", color: "#f59e0b", label: "주말" },
 };
 
 // 휴무 chip 그룹 dot 색상 (사용자 지정 팔레트)
@@ -3213,33 +3213,34 @@ export default function SchedulePage() {
 
             {/* 선택된 사람 칩 */}
             {names.filter(n => effectiveStatus(n) === modalStatus).length > 0 && (
-              <div style={{ padding: "8px 14px 6px", display: "flex", flexWrap: "wrap", gap: "5px", borderBottom: "1px solid #f0f0f0" }}>
+              <div style={{ padding: "8px 14px 6px", display: "flex", flexWrap: "wrap", gap: "6px", borderBottom: "1px solid #f0f0f0" }}>
                 {names.filter(n => effectiveStatus(n) === modalStatus).map(n => {
                   const grp = NAME_GROUP[n];
-                  const dotColor = grp ? GROUP_DOT[grp] : null;
+                  const gs = grp ? GROUP_STYLE[grp] : null;
                   return (
-                    <span key={n}
+                    <div key={n}
                       onClick={() => toggleStatus(n, modalStatus)}
                       style={{
-                        display: "inline-flex", alignItems: "center", gap: "4px",
-                        padding: "4px 10px", borderRadius: "20px",
-                        background: (STATUS_COLOR[modalStatus] ?? { bg: "#eee" }).bg,
-                        color: (STATUS_COLOR[modalStatus] ?? { color: "#333" }).color,
-                        fontWeight: 700, fontSize: "0.8rem", cursor: "pointer",
-                        border: `1.5px solid ${(STATUS_COLOR[modalStatus] ?? { color: "#888" }).color}55`,
+                        display: "inline-flex", alignItems: "center", gap: "6px",
+                        padding: "6px 10px", borderRadius: "999px",
+                        background: "#ffffff",
+                        border: "1.5px solid #e0e5f0",
+                        fontSize: "0.85rem", fontWeight: 700,
+                        cursor: "pointer",
                       }}>
-                      {n}
-                      {dotColor && (
+                      <span style={{ color: "#1a2035" }}>{n}</span>
+                      {gs && (
                         <span style={{
-                          display: "inline-block",
-                          width: "7px", height: "7px",
-                          borderRadius: "50%",
-                          background: dotColor,
-                          flexShrink: 0,
-                        }} />
+                          padding: "2px 6px", borderRadius: "6px",
+                          fontSize: "0.65rem", fontWeight: 800,
+                          background: gs.bg, color: gs.color,
+                          lineHeight: 1.4,
+                        }}>
+                          {gs.label}
+                        </span>
                       )}
-                      <span style={{ fontSize: "0.7rem", opacity: 0.7 }}>✕</span>
-                    </span>
+                      <span style={{ marginLeft: "2px", color: "#9aa3b5", fontWeight: 800, fontSize: "0.9rem" }}>×</span>
+                    </div>
                   );
                 })}
               </div>
