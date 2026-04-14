@@ -1,0 +1,72 @@
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// App.tsx 의 기존 C 상수 전체를 아래로 교체하세요
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const C = {
+  // 배경
+  bgPage:    "#eef1f8",   // 전체 페이지 배경 (기존 bgDark 대체)
+  cardBg:    "#ffffff",   // 카드 배경 (기존 cardBg 대체)
+
+  // 포인트 컬러
+  purple:    "#7c6ef7",   // 보라 포인트 (버튼, 선택상태)
+  purpleLight: "#eeebff", // 보라 연한 배경
+  blue:      "#5b8dee",   // 파란 포인트
+  blueLight: "#eef3ff",   // 파란 연한 배경
+
+  // 상태 컬러
+  green:     "#3db882",   // 성공/완료
+  greenLight:"#e6f9f1",
+  yellow:    "#f0b429",   // 경고/골드
+  yellowLight:"#fff8e6",
+  red:       "#f76e6e",   // 오류/당번
+  redLight:  "#fff0f0",
+  orange:    "#f7a55a",   // 병가/주의
+  orangeLight:"#fff5eb",
+
+  // 텍스트
+  textPrimary:   "#1a2035",
+  textSecondary: "#5a6478",
+  textMuted:     "#9aa3b5",
+
+  // 테두리
+  border:    "#e0e5f0",
+  borderMid: "#c8d0e4",
+
+  // 기존 호환용 (기존 코드에서 C.white, C.bgDark 등 쓰는 곳 대비)
+  white:     "#ffffff",
+  bgDark:    "#7c6ef7",   // 혹시 bgDark 그대로 쓰는 곳 있으면 보라로 대체
+};
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// App.tsx 인라인 스타일 교체 가이드
+// 찾기(Ctrl+F) → 바꾸기(Ctrl+H) 로 한번에 처리하세요
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/*
+  찾기 → 바꾸기 목록:
+
+  "#1a1a2e"   →  "#1a2035"        (헤더/배경 어두운 색)
+  "#16213e"   →  "#ffffff"        (카드 배경)
+  "#0f3460"   →  "#eef1f8"        (섹션 배경)
+  "#4e89ae"   →  "#7c6ef7"        (포인트 컬러 → 보라로)
+  "#52de97"   →  "#3db882"        (초록)
+  "#f8b400"   →  "#f0b429"        (골드)
+  "color: C.white"  그대로 유지
+  "background: C.bgDark"  →  "background: C.bgPage"
+
+  스플래시 페이지 전체 배경:
+  background: "#1a1a2e"  →  background: "#eef1f8"
+
+  서비스 선택 카드:
+  background: "#16213e"  →  background: "#ffffff"
+  color: "white"         →  color: "#1a2035"  (카드 텍스트)
+
+  입장하기 버튼:
+  background: "..." (어두운 색)  →  background: "linear-gradient(135deg, #7c6ef7, #5b4de8)"
+
+  로또 페이지:
+  전체 배경 "#1a1a2e"  →  "#eef1f8"
+  카드 배경 "#16213e"  →  "#ffffff"
+  버튼 어두운색       →  "linear-gradient(135deg, #f0b429, #d08000)"  (골드)
+*/
