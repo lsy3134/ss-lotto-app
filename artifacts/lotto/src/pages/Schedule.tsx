@@ -3219,8 +3219,8 @@ export default function SchedulePage() {
               const GROUP_ORDER: GroupType[] = ["하우스", "주중", "주말"];
               const grouped: Record<GroupType, string[]> = { 하우스: [], 주중: [], 주말: [] };
               selectedNames.forEach(n => {
-                const g = NAME_GROUP[n];
-                if (g) grouped[g].push(n);
+                const g: GroupType = (customRosterMap[n]?.group ?? NAME_GROUP[n]) ?? "하우스";
+                grouped[g].push(n);
               });
 
               return (
