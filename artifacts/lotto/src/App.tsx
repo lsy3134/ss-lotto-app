@@ -7,12 +7,27 @@ const BASE_URL = import.meta.env.BASE_URL;
 const base = BASE_URL.replace(/\/$/, "");
 
 const C = {
-  bgDark:    "#1a1a2e",
-  cardBg:    "#16213e",
-  blue:      "#4e89ae",
-  green:     "#52de97",
-  yellow:    "#f8b400",
-  white:     "#ffffff",
+  bgPage:       "#eef1f8",
+  cardBg:       "#ffffff",
+  purple:       "#7c6ef7",
+  purpleLight:  "#eeebff",
+  blue:         "#5b8dee",
+  blueLight:    "#eef3ff",
+  green:        "#3db882",
+  greenLight:   "#e6f9f1",
+  yellow:       "#f0b429",
+  yellowLight:  "#fff8e6",
+  red:          "#f76e6e",
+  redLight:     "#fff0f0",
+  orange:       "#f7a55a",
+  orangeLight:  "#fff5eb",
+  textPrimary:   "#1a2035",
+  textSecondary: "#5a6478",
+  textMuted:     "#9aa3b5",
+  border:        "#e0e5f0",
+  borderMid:     "#c8d0e4",
+  white:         "#ffffff",
+  bgDark:        "#7c6ef7",
 };
 
 interface Game { type: string; nums: number[]; }
@@ -23,13 +38,13 @@ interface Game { type: string; nums: number[]; }
 function IntroView({ onEnter }: { onEnter: () => void }) {
   return (
     <div style={{
-      backgroundColor: C.bgDark,
+      backgroundColor: C.bgPage,
       minHeight: "100dvh",
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
       justifyContent: "center",
-      color: C.white,
+      color: C.textPrimary,
       textAlign: "center",
       padding: "20px",
     }}>
@@ -42,7 +57,7 @@ function IntroView({ onEnter }: { onEnter: () => void }) {
           objectFit: "cover",
           borderRadius: "50%",
           marginBottom: "20px",
-          boxShadow: `0 0 24px ${C.blue}`,
+          boxShadow: `0 0 24px ${C.purple}`,
           animation: "floatBob 3s ease-in-out infinite",
         }}
       />
@@ -79,7 +94,7 @@ function IntroView({ onEnter }: { onEnter: () => void }) {
       <button
         onClick={onEnter}
         style={{
-          backgroundColor: C.blue,
+          background: "linear-gradient(135deg, #7c6ef7 0%, #5b4de8 100%)",
           color: "white",
           border: "none",
           padding: "15px 52px",
@@ -87,7 +102,7 @@ function IntroView({ onEnter }: { onEnter: () => void }) {
           fontSize: "1.1rem",
           fontWeight: 700,
           cursor: "pointer",
-          boxShadow: "0 4px 20px rgba(78,137,174,0.5)",
+          boxShadow: "0 4px 20px rgba(124,110,247,0.45)",
           transition: "transform 0.15s, box-shadow 0.15s",
         }}
         onMouseEnter={e => (e.currentTarget.style.transform = "scale(1.05)")}
@@ -116,14 +131,14 @@ function HomePage() {
 
   return (
     <div style={{
-      backgroundColor: C.bgDark,
+      backgroundColor: C.bgPage,
       minHeight: "100dvh",
       padding: "48px 24px 32px",
-      color: C.white,
+      color: C.textPrimary,
     }}>
       <header style={{ marginBottom: "36px" }}>
-        <h2 style={{ fontSize: "1.5rem", margin: "0 0 6px", fontWeight: 800 }}>서비스 선택</h2>
-        <p style={{ margin: 0, opacity: 0.55, fontSize: "0.9rem" }}>필요한 업무를 골라주세요.</p>
+        <h2 style={{ fontSize: "1.5rem", margin: "0 0 6px", fontWeight: 800, color: C.textPrimary }}>서비스 선택</h2>
+        <p style={{ margin: 0, color: C.textSecondary, fontSize: "0.9rem" }}>필요한 업무를 골라주세요.</p>
       </header>
 
       {/* 근무표 카드 */}
@@ -136,17 +151,17 @@ function HomePage() {
           display: "flex",
           alignItems: "center",
           cursor: "pointer",
-          border: "1px solid rgba(255,255,255,0.08)",
+          border: `1px solid ${C.border}`,
           transition: "transform 0.15s, box-shadow 0.15s",
-          boxShadow: `0 0 0 1px rgba(78,137,174,0.2)`,
+          boxShadow: `0 2px 12px rgba(100,110,180,0.08)`,
         }}
           onMouseEnter={e => {
             (e.currentTarget as HTMLDivElement).style.transform = "translateY(-2px)";
-            (e.currentTarget as HTMLDivElement).style.boxShadow = `0 8px 24px rgba(78,137,174,0.3)`;
+            (e.currentTarget as HTMLDivElement).style.boxShadow = `0 8px 24px rgba(91,141,238,0.2)`;
           }}
           onMouseLeave={e => {
             (e.currentTarget as HTMLDivElement).style.transform = "translateY(0)";
-            (e.currentTarget as HTMLDivElement).style.boxShadow = `0 0 0 1px rgba(78,137,174,0.2)`;
+            (e.currentTarget as HTMLDivElement).style.boxShadow = `0 2px 12px rgba(100,110,180,0.08)`;
           }}
         >
           <img
@@ -155,32 +170,33 @@ function HomePage() {
             style={{ width: "60px", height: "60px", objectFit: "cover", borderRadius: "14px", marginRight: "18px", flexShrink: 0 }}
           />
           <div style={{ flex: 1, textAlign: "left" }}>
-            <div style={{ fontWeight: 800, fontSize: "1.1rem", marginBottom: "4px" }}>근무표 생성</div>
-            <div style={{ opacity: 0.55, fontSize: "0.83rem" }}>63명 캐디 배정 및 일정 관리</div>
+            <div style={{ fontWeight: 800, fontSize: "1.1rem", marginBottom: "4px", color: C.textPrimary }}>근무표 생성</div>
+            <div style={{ color: C.textSecondary, fontSize: "0.83rem" }}>63명 캐디 배정 및 일정 관리</div>
           </div>
-          <div style={{ fontSize: "1.5rem", opacity: 0.35, color: C.blue }}>›</div>
+          <div style={{ fontSize: "1.5rem", color: C.blue, opacity: 0.6 }}>›</div>
         </div>
       </Link>
 
       {/* 로또 카드 */}
       <Link href={`${base}/lotto`} style={{ textDecoration: "none" }}>
         <div style={{
-          backgroundColor: "#23234a",
+          backgroundColor: C.yellowLight,
           borderRadius: "20px",
           padding: "22px 20px",
           display: "flex",
           alignItems: "center",
           cursor: "pointer",
-          border: `1px solid ${C.yellow}33`,
+          border: `1px solid #f0d080`,
           transition: "transform 0.15s, box-shadow 0.15s",
+          boxShadow: `0 2px 12px rgba(240,180,41,0.10)`,
         }}
           onMouseEnter={e => {
             (e.currentTarget as HTMLDivElement).style.transform = "translateY(-2px)";
-            (e.currentTarget as HTMLDivElement).style.boxShadow = `0 8px 24px rgba(248,180,0,0.2)`;
+            (e.currentTarget as HTMLDivElement).style.boxShadow = `0 8px 24px rgba(240,180,41,0.22)`;
           }}
           onMouseLeave={e => {
             (e.currentTarget as HTMLDivElement).style.transform = "translateY(0)";
-            (e.currentTarget as HTMLDivElement).style.boxShadow = "none";
+            (e.currentTarget as HTMLDivElement).style.boxShadow = `0 2px 12px rgba(240,180,41,0.10)`;
           }}
         >
           <img
@@ -189,10 +205,10 @@ function HomePage() {
             style={{ width: "60px", height: "60px", objectFit: "cover", borderRadius: "14px", marginRight: "18px", flexShrink: 0 }}
           />
           <div style={{ flex: 1, textAlign: "left" }}>
-            <div style={{ fontWeight: 800, fontSize: "1.1rem", marginBottom: "4px", color: C.yellow }}>나만의 로또 생성</div>
-            <div style={{ opacity: 0.55, fontSize: "0.83rem" }}>오늘의 행운 번호 추출</div>
+            <div style={{ fontWeight: 800, fontSize: "1.1rem", marginBottom: "4px", color: "#a07000" }}>나만의 로또 생성</div>
+            <div style={{ color: C.textSecondary, fontSize: "0.83rem" }}>오늘의 행운 번호 추출</div>
           </div>
-          <div style={{ fontSize: "1.5rem", color: C.yellow, opacity: 0.5 }}>›</div>
+          <div style={{ fontSize: "1.5rem", color: C.yellow, opacity: 0.8 }}>›</div>
         </div>
       </Link>
 
@@ -418,8 +434,8 @@ function LottoPage() {
 
   return (
     <div style={{
-      fontFamily: "'Pretendard', 'Apple SD Gothic Neo', sans-serif",
-      background: "#f0f2f5",
+      fontFamily: "'Noto Sans KR', 'Pretendard', 'Apple SD Gothic Neo', sans-serif",
+      background: "#eef1f8",
       minHeight: "100dvh",
       display: "flex",
       flexDirection: "column",
@@ -476,9 +492,10 @@ function LottoPage() {
             style={{
               width: "100%", marginTop: 10,
               padding: "14px 0", borderRadius: 12, border: "none",
-              background: "#222",
+              background: "linear-gradient(135deg, #7c6ef7 0%, #5b4de8 100%)",
               color: "#fff", fontWeight: 700, fontSize: "1rem",
               cursor: "pointer",
+              boxShadow: "0 4px 14px rgba(124,110,247,0.30)",
             }}
           >번호 추가</button>
         </div>
@@ -499,10 +516,11 @@ function LottoPage() {
           onClick={generate}
           style={{
             width: "100%", padding: "18px 0", borderRadius: 16, border: "none",
-            background: "#222",
+            background: "linear-gradient(135deg, #f0b429 0%, #d08000 100%)",
             color: "#fff", fontWeight: 800, fontSize: "1.15rem",
             cursor: "pointer",
             letterSpacing: 1,
+            boxShadow: "0 6px 20px rgba(240,180,41,0.38)",
           }}
         > 5게임 생성</button>
 
