@@ -2057,9 +2057,18 @@ export default function SchedulePage() {
               <div style={S.excelInfoTitle}>
                 📋 {selectedDate.dateLabel} 기준 데이터
               </div>
-              {/* 총인원 · 가용인원(계산) · 대근 요약 */}
-              <div style={{ ...S.excelStatRow, alignItems: "center" }}>
+              {/* 총인원 · 가용인원(계산) · 투인원 · 대근 · 병가 — 5열 그리드 */}
+              <div style={{ overflowX: "auto" }}>
+              <div style={{ ...S.excelStatRow, alignItems: "stretch" }}>
                 <StatBadge label="총 인원" value={selectedDate.가용인원} color="#1565c0" />
+                {(() => {
+                  const baseNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
+                  const danBeon = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "당번").length;
+                  const byungGa = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "병가").length;
+                  const hyumu   = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "휴무").length;
+                  const avail   = selectedDate.가용인원 - danBeon - byungGa - hyumu;
+                  return <StatBadge label="가용인원" value={avail} color="#7c3aed" />;
+                })()}
                 {(() => {
                   const baseNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
                   const danBeon = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "당번").length;
@@ -2069,14 +2078,11 @@ export default function SchedulePage() {
                   const totalTeams = mode === "2부제" ? totalSize : singleSize;
                   const tuInwon = teamsLocked ? Math.max(0, totalTeams - avail) : null;
                   return (
-                    <>
-                      <StatBadge label="가용인원" value={avail} color="#7c3aed" />
-                      <StatBadge
-                        label="투 인원"
-                        value={tuInwon !== null ? tuInwon : "–"}
-                        color={tuInwon !== null && tuInwon > 0 ? "#e65100" : "#9e9e9e"}
-                      />
-                    </>
+                    <StatBadge
+                      label="투 인원"
+                      value={tuInwon !== null ? tuInwon : "–"}
+                      color={tuInwon !== null && tuInwon > 0 ? "#e65100" : "#9e9e9e"}
+                    />
                   );
                 })()}
                 {(() => {
@@ -2092,12 +2098,13 @@ export default function SchedulePage() {
                       style={{
                         display: "flex", flexDirection: "column",
                         alignItems: "center", justifyContent: "center",
-                        padding: "6px 10px",
+                        padding: "6px 4px",
                         borderRadius: "8px",
                         border: `1px solid ${activeDaegeun.length > 0 ? "#f59e0b" : "#f59e0b33"}`,
                         background: activeDaegeun.length > 0 ? "#fef3c7" : "#f59e0b15",
                         cursor: "pointer",
-                        minWidth: "52px",
+                        width: "100%",
+                        boxSizing: "border-box",
                         fontFamily: "inherit",
                         lineHeight: 1,
                         outline: "none",
@@ -2121,12 +2128,13 @@ export default function SchedulePage() {
                       style={{
                         display: "flex", flexDirection: "column",
                         alignItems: "center", justifyContent: "center",
-                        padding: "6px 10px",
+                        padding: "6px 4px",
                         borderRadius: "8px",
                         border: `1px solid ${active ? "#c62828" : "#c6282833"}`,
                         background: active ? "#ffebee" : "#c6282815",
                         cursor: "pointer",
-                        minWidth: "52px",
+                        width: "100%",
+                        boxSizing: "border-box",
                         fontFamily: "inherit",
                         lineHeight: 1,
                         outline: "none",
@@ -2139,6 +2147,7 @@ export default function SchedulePage() {
                     </button>
                   );
                 })()}
+              </div>
               </div>
 
               {/* ── 6개 상태 선택 버튼 ── */}
@@ -4546,11 +4555,13 @@ function StatBadge({ label, value, color, small = false }: {
 }) {
   return (
     <div style={{
-      display: "flex", flexDirection: "column", alignItems: "center",
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
       background: color + "15", borderRadius: "8px",
       padding: small ? "3px 7px" : "6px 10px",
       border: `1px solid ${color}33`,
-      minWidth: small ? "44px" : "52px",
+      minWidth: small ? "44px" : "0",
+      width: "100%",
+      boxSizing: "border-box",
     }}>
       <span style={{ fontSize: small ? "0.6rem" : "0.65rem", color, fontWeight: 600 }}>{label}</span>
       <span style={{ fontSize: small ? "0.85rem" : "1rem", fontWeight: 700, color }}>{value}</span>
@@ -5088,9 +5099,9 @@ const S: Record<string, React.CSSProperties> = {
     marginBottom: "8px",
   },
   excelStatRow: {
-    display: "flex",
+    display: "grid",
+    gridTemplateColumns: "repeat(5, 1fr)",
     gap: "6px",
-    flexWrap: "wrap",
   },
   dateBar: {
     display: "flex",
