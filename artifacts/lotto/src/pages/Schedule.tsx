@@ -494,7 +494,7 @@ function assignDouble(
   // ★ 2부 스페어: remaining 잔여 + 1부 배정에서 투라운드 못 한 사람
   //   (extra2부Count > 0 일 때만: 실제로 투라운드가 발생한 경우에만 투라운드 탈락자가 spare)
   const spare2fromShift1 = extra2부Count > 0 ? shift1Regular.slice(extra2부Count) : [];
-  const spare2 = [...spare2fromRemaining, ...spare2fromShift1];
+  let spare2 = [...spare2fromRemaining, ...spare2fromShift1];
 
   // twoRound 삽입 위치: 2부의 약 1/4 지점 (spare1 + 대근2부List 뒤 기준)
   const twoRoundInsertAt = Math.max(0, Math.floor(shift2Size / 4) - spare1.length - 대근2부List.length);
@@ -548,6 +548,10 @@ function assignDouble(
         }
       } else {
         nextDayQueue = [...rest, ...excls];
+      }
+      // ★ full rotation(한바퀴 완전 소화): 다음날 첫 2명을 2부스페어로 지정
+      if (nextDayQueue.length >= 2) {
+        spare2 = nextDayQueue.slice(0, 2);
       }
     }
   }
