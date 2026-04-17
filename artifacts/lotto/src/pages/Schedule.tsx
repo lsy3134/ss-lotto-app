@@ -1214,14 +1214,6 @@ export default function SchedulePage() {
       setShift1Size(saved.shift1Size ?? 35);
       setSingleSize(saved.singleSize ?? 60);
       setTeamsLocked(saved.locked ?? false);
-    } else if (day.예약팀수 > 0) {
-      // 저장 없음 → 예약팀수로 자동 설정, 모드는 현재 그대로 유지
-      const total = day.예약팀수;
-      const half = Math.round(total / 2);
-      setTotalSize(total);
-      setShift1Size(half);
-      setSingleSize(total);
-      setTeamsLocked(false);
     } else {
       // 기본값으로 팀수만 리셋, 모드는 현재 그대로 유지
       setTotalSize(70);
@@ -1617,11 +1609,7 @@ export default function SchedulePage() {
         statuses[n] = null;
       });
 
-      let s1 = shift1Size, s2 = shift2Size, ss = singleSize;
-      if (day.예약팀수 > 0) {
-        const tot = day.예약팀수;
-        s1 = Math.round(tot / 2); s2 = tot - s1; ss = tot;
-      }
+      const s1 = shift1Size, s2 = shift2Size, ss = singleSize;
 
       const result = mode === "2부제"
         ? assignDouble(currentNames, statuses, s1, s2, dateDaegeun[day.dateLabel] ?? {})
@@ -1716,11 +1704,7 @@ export default function SchedulePage() {
         statuses[n] = null;
       });
 
-      let s1 = shift1Size, s2 = shift2Size, ss = singleSize;
-      if (weekDay && weekDay.예약팀수 > 0) {
-        const tot = weekDay.예약팀수;
-        s1 = Math.round(tot / 2); s2 = tot - s1; ss = tot;
-      }
+      const s1 = shift1Size, s2 = shift2Size, ss = singleSize;
 
       const result = mode === "2부제"
         ? assignDouble(currentNames, statuses, s1, s2, dateDaegeun[dateLabel] ?? {})
@@ -2072,16 +2056,18 @@ export default function SchedulePage() {
             <div style={S.excelInfo}>
               <div style={S.excelInfoTitle}>
                 📋 {selectedDate.dateLabel} 기준 데이터
-                {selectedDate.예약팀수 > 0 && (
-                  <span style={{ marginLeft: "8px", color: "#1565c0", fontWeight: 700 }}>
-                    → 팀수 자동 입력 완료
-                  </span>
-                )}
               </div>
-              {/* 가용인원 · 예약팀수 · 대근 요약 */}
+              {/* 총인원 · 가용인원(계산) · 대근 요약 */}
               <div style={{ ...S.excelStatRow, alignItems: "center" }}>
-                <StatBadge label="가용인원" value={selectedDate.가용인원} color="#1565c0" />
-                <StatBadge label="예약팀수" value={selectedDate.예약팀수 || "미입력"} color={selectedDate.예약팀수 > 0 ? "#2e7d32" : "#9e9e9e"} />
+                <StatBadge label="총 인원" value={selectedDate.가용인원} color="#1565c0" />
+                {(() => {
+                  const baseNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
+                  const danBeon = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "당번").length;
+                  const byungGa = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "병가").length;
+                  const hyumu   = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "휴무").length;
+                  const avail   = selectedDate.가용인원 - danBeon - byungGa - hyumu;
+                  return <StatBadge label="가용인원" value={avail} color="#7c3aed" />;
+                })()}
                 {(() => {
                   const daegeunBaseNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
                   const daegeunCandidates = daegeunBaseNames.filter(n => {
@@ -2184,11 +2170,6 @@ export default function SchedulePage() {
                   );
                 })}
               </div>
-              {selectedDate.예약팀수 === 0 && (
-                <div style={{ fontSize: "0.72rem", color: "#ff8f00", marginTop: "4px" }}>
-                  ⚠ 예약팀수 미입력 — 아래에서 직접 팀수를 입력해 주세요
-                </div>
-              )}
 
               {/* ── VIP 섹션 ── */}
               <div style={{ marginTop: "12px", borderTop: "1px solid #e8e0f0", paddingTop: "10px" }}>
