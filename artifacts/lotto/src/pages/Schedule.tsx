@@ -2066,7 +2066,18 @@ export default function SchedulePage() {
                   const byungGa = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "병가").length;
                   const hyumu   = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "휴무").length;
                   const avail   = selectedDate.가용인원 - danBeon - byungGa - hyumu;
-                  return <StatBadge label="가용인원" value={avail} color="#7c3aed" />;
+                  const totalTeams = mode === "2부제" ? totalSize : singleSize;
+                  const tuInwon = teamsLocked ? Math.max(0, totalTeams - avail) : null;
+                  return (
+                    <>
+                      <StatBadge label="가용인원" value={avail} color="#7c3aed" />
+                      <StatBadge
+                        label="투 인원"
+                        value={tuInwon !== null ? tuInwon : "–"}
+                        color={tuInwon !== null && tuInwon > 0 ? "#e65100" : "#9e9e9e"}
+                      />
+                    </>
+                  );
                 })()}
                 {(() => {
                   const daegeunBaseNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
