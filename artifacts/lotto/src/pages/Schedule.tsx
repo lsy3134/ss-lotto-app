@@ -2076,7 +2076,7 @@ export default function SchedulePage() {
                   const hyumu   = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "휴무").length;
                   const avail   = selectedDate.가용인원 - danBeon - byungGa - hyumu;
                   const totalTeams = mode === "2부제" ? totalSize : singleSize;
-                  const tuInwon = teamsLocked ? Math.max(0, totalTeams - avail) : null;
+                  const tuInwon = totalTeams > 0 ? Math.max(0, totalTeams - avail) : null;
                   return (
                     <StatBadge
                       label="투 인원"
