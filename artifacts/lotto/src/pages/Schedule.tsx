@@ -2119,7 +2119,7 @@ export default function SchedulePage() {
                         outline: "none",
                         WebkitTapHighlightColor: "transparent",
                       }}>
-                      <span style={{ fontSize: "0.65rem", fontWeight: 600, color: "#92400e" }}>대근</span>
+                      <span style={{ fontSize: "0.62rem", fontWeight: 600, color: "#92400e", whiteSpace: "nowrap" }}>대근</span>
                       <span style={{ fontSize: "1rem", fontWeight: 700, color: activeDaegeun.length > 0 ? "#f59e0b" : "#d1d5db" }}>
                         {activeDaegeun.length > 0 ? activeDaegeun.length : daegeunCandidates.length}
                       </span>
@@ -2149,7 +2149,7 @@ export default function SchedulePage() {
                         outline: "none",
                         WebkitTapHighlightColor: "transparent",
                       }}>
-                      <span style={{ fontSize: "0.65rem", fontWeight: 600, color: "#b71c1c" }}>병가</span>
+                      <span style={{ fontSize: "0.62rem", fontWeight: 600, color: "#b71c1c", whiteSpace: "nowrap" }}>병가</span>
                       <span style={{ fontSize: "1rem", fontWeight: 700, color: active ? "#c62828" : "#d1d5db" }}>
                         {active ? sickCnt : "–"}
                       </span>
@@ -4566,13 +4566,13 @@ function StatBadge({ label, value, color, small = false }: {
     <div style={{
       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
       background: color + "15", borderRadius: "8px",
-      padding: small ? "3px 7px" : "6px 10px",
+      padding: small ? "3px 4px" : "6px 4px",
       border: `1px solid ${color}33`,
       minWidth: small ? "44px" : "0",
       width: "100%",
       boxSizing: "border-box",
     }}>
-      <span style={{ fontSize: small ? "0.6rem" : "0.65rem", color, fontWeight: 600 }}>{label}</span>
+      <span style={{ fontSize: small ? "0.6rem" : "0.62rem", color, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{label}</span>
       <span style={{ fontSize: small ? "0.85rem" : "1rem", fontWeight: 700, color }}>{value}</span>
     </div>
   );
