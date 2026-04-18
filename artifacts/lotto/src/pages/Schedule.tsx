@@ -2063,18 +2063,27 @@ export default function SchedulePage() {
                 <StatBadge label="총 인원" value={selectedDate.가용인원} color="#1565c0" />
                 {(() => {
                   const baseNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
-                  const danBeon = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "당번").length;
-                  const byungGa = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "병가").length;
-                  const hyumu   = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "휴무").length;
-                  const avail   = selectedDate.가용인원 - danBeon - byungGa - hyumu;
+                  const danBeon    = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "당번").length;
+                  const byungGa   = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "병가").length;
+                  // 추가휴무: 상태가 "휴무"이면서 자동휴무(정기휴무) 대상이 아닌 경우만 계산에 반영
+                  const extraOff  = baseNames.filter(n => {
+                    if (effectiveStatus(n, dayOfWeek) !== "휴무") return false;
+                    const p = customRosterMap[n];
+                    return !p || !isAutoOff(p.group, dayOfWeek);
+                  }).length;
+                  const avail = selectedDate.가용인원 - danBeon - byungGa - extraOff;
                   return <StatBadge label="가용인원" value={avail} color="#7c3aed" />;
                 })()}
                 {(() => {
                   const baseNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
-                  const danBeon = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "당번").length;
-                  const byungGa = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "병가").length;
-                  const hyumu   = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "휴무").length;
-                  const avail   = selectedDate.가용인원 - danBeon - byungGa - hyumu;
+                  const danBeon   = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "당번").length;
+                  const byungGa   = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "병가").length;
+                  const extraOff  = baseNames.filter(n => {
+                    if (effectiveStatus(n, dayOfWeek) !== "휴무") return false;
+                    const p = customRosterMap[n];
+                    return !p || !isAutoOff(p.group, dayOfWeek);
+                  }).length;
+                  const avail = selectedDate.가용인원 - danBeon - byungGa - extraOff;
                   const totalTeams = mode === "2부제" ? totalSize : singleSize;
                   const tuInwon = totalTeams > 0 ? Math.max(0, totalTeams - avail) : null;
                   return (
