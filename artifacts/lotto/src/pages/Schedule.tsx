@@ -1084,6 +1084,10 @@ export default function SchedulePage() {
 
   // 결과
   const [dayResult, setDayResult] = useState<DayResult | null>(null);
+  // 배정하기 후 저장 전 임시 결과 (저장 버튼 누르기 전까지 dayResult를 덮어쓰지 않음)
+  const [pendingResult, setPendingResult] = useState<DayResult | null>(null);
+  // 화면에 표시할 결과 = 임시 결과 우선, 없으면 저장된 결과
+  const displayResult = pendingResult ?? dayResult;
   const [weekly, setWeekly] = useState<{ day: string; result: DayResult; skipped?: boolean }[]>([]);
   // 재계산 완료 메시지
   const [recalcMessage, setRecalcMessage] = useState<string | null>(null);
@@ -1242,6 +1246,9 @@ export default function SchedulePage() {
       setHolidayAppliedDates(prev => ({ ...prev, [day.dateLabel]: true }));
     }
 
+    // 날짜 이동 시 미저장 임시 결과 항상 초기화
+    setPendingResult(null);
+
     // 이미 배정된 날짜면 저장된 결과 자동 표시 (weekly 초기화)
     if (assignmentData[day.dateLabel]) {
       setDayResult(assignmentData[day.dateLabel]);
@@ -1300,6 +1307,7 @@ export default function SchedulePage() {
     setNames(rotated);
     setRosterLoaded(true);
     setDayResult(null);
+    setPendingResult(null);
     setWeekly([]);
     setTimeout(() => {
       resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1334,6 +1342,7 @@ export default function SchedulePage() {
     setNames(parsed);
     setRosterLoaded(false);
     setDayResult(null);
+    setPendingResult(null);
     setWeekly([]);
     setTimeout(() => {
       resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1630,23 +1639,28 @@ export default function SchedulePage() {
     const result = mode === "2부제"
       ? assignDouble(names, statuses, shift1Size, shift2Size, currentDaegeun)
       : assignSingle(names, statuses, singleSize);
-    setDayResult(result);
+    // 저장하지 않고 임시 결과만 보여줌 — 저장은 saveAssignment()에서
+    setPendingResult(result);
     setWeekly([]);
     setTimeout(() => {
       resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 80);
+  }
 
-    if (!currentDateKey) return;
+  function saveAssignment() {
+    if (!pendingResult || !currentDateKey) return;
 
-    // 저장 후 즉시 동기로 재계산
-    const newAssignment = { ...assignmentData, [currentDateKey]: result };
-    const newSpare2 = result.spare2.length > 0
-      ? { ...savedSpare2, [currentDateKey]: result.spare2 }
+    setDayResult(pendingResult);
+
+    const newAssignment = { ...assignmentData, [currentDateKey]: pendingResult };
+    const newSpare2 = pendingResult.spare2.length > 0
+      ? { ...savedSpare2, [currentDateKey]: pendingResult.spare2 }
       : { ...savedSpare2 };
 
     const { updatedAssignment, updatedSpare2, count } = recalculateFrom(currentDateKey, newAssignment, newSpare2);
     setAssignmentData(updatedAssignment);
     setSavedSpare2(updatedSpare2);
+    setPendingResult(null);
 
     if (count > 0) {
       setRecalcMessage(`이 날짜 이후 ${count}일 스케줄이 자동으로 업데이트되었습니다.`);
@@ -1717,6 +1731,7 @@ export default function SchedulePage() {
 
     setWeekly(results);
     setDayResult(null);
+    setPendingResult(null);
 
     // ── 새 배정만 저장 ──
     if (Object.keys(newAssignments).length > 0) {
@@ -1813,7 +1828,7 @@ export default function SchedulePage() {
         {names.length > 0 && (
           <button
             onClick={() => {
-              setNames([]); setRosterLoaded(false); setDayResult(null); setWeekly([]);
+              setNames([]); setRosterLoaded(false); setDayResult(null); setPendingResult(null); setWeekly([]);
               window.scrollTo({ top: 0, behavior: "smooth" });
             }}
             style={S.smallBtn}
@@ -3867,15 +3882,7 @@ export default function SchedulePage() {
 
             <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
               <button
-                onClick={() => {
-                  if (currentDateKey && assignmentData[currentDateKey]) {
-                    const ok = confirm(
-                      `${currentDateKey} 배정을 다시 실행하면\n이 날짜 이후 배정이 모두 자동으로 재계산됩니다.\n\n진행하시겠습니까?`
-                    );
-                    if (!ok) return;
-                  }
-                  assign();
-                }}
+                onClick={assign}
                 style={{
                   ...S.primaryBtn, flex: 1,
                   background: currentDateKey && assignmentData[currentDateKey] ? "#b45309" : undefined,
@@ -3886,12 +3893,35 @@ export default function SchedulePage() {
                 일주일 생성
               </button>
             </div>
+            {/* 임시 결과 저장 / 취소 버튼 */}
+            {pendingResult && (
+              <div style={{ display: "flex", gap: "8px", marginTop: "6px" }}>
+                <button
+                  onClick={saveAssignment}
+                  style={{
+                    ...S.primaryBtn, flex: 1,
+                    background: "linear-gradient(135deg, #16a34a, #15803d)",
+                    fontSize: "0.9rem", fontWeight: 800,
+                  }}>
+                  💾 저장
+                </button>
+                <button
+                  onClick={() => setPendingResult(null)}
+                  style={{
+                    ...S.primaryBtn, flex: 1,
+                    background: "#6b7280",
+                    fontSize: "0.9rem",
+                  }}>
+                  ↩ 취소
+                </button>
+              </div>
+            )}
           </div>
 
           {/* ── 컷 기준 요약 ── */}
-          {(dayResult || (livePreview && names.length > 0)) && (() => {
-            // dayResult가 있으면 저장된 결과 기준, 없으면 livePreview 사용
-            const cutSource = dayResult ?? livePreview!;
+          {(displayResult || (livePreview && names.length > 0)) && (() => {
+            // pendingResult(임시) → dayResult(저장) → livePreview(미배정) 순 우선
+            const cutSource = displayResult ?? livePreview!;
             return (
             <div style={{
               background: "#f8f9ff", border: "1.5px solid #c5cae9", borderRadius: 12,
@@ -4072,12 +4102,27 @@ export default function SchedulePage() {
           )}
 
           {/* 1일 결과 */}
-          {dayResult && weekly.length === 0 && (
+          {displayResult && weekly.length === 0 && (
             <div ref={resultRef} style={S.card} id="print-area">
               <div style={{ ...S.sectionTitle, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span>📋 {selectedDate ? selectedDate.dateLabel : DAY_LABELS[dayOfWeek] + "요일"} 배정 결과</span>
+                <span>
+                  📋 {selectedDate ? selectedDate.dateLabel : DAY_LABELS[dayOfWeek] + "요일"} 배정 결과
+                  {pendingResult && (
+                    <span style={{ marginLeft: 8, fontSize: "0.65rem", fontWeight: 700, color: "#d97706", background: "#fef3c7", borderRadius: 5, padding: "2px 7px" }}>
+                      미저장
+                    </span>
+                  )}
+                </span>
                 <div style={{ display: "flex", gap: 6 }}>
-                  {currentDateKey && assignmentData[currentDateKey] && (
+                  {/* 미저장 상태면 취소, 저장 상태면 초기화 */}
+                  {pendingResult ? (
+                    <button
+                      onClick={() => setPendingResult(null)}
+                      style={{ ...S.smallBtn, fontSize: "0.7rem", padding: "4px 10px", background: "#f3f4f6", color: "#374151", border: "1px solid #d1d5db" }}
+                    >
+                      ↩ 취소
+                    </button>
+                  ) : currentDateKey && assignmentData[currentDateKey] ? (
                     <button
                       onClick={() => {
                         if (!confirm(`${currentDateKey} 배정을 초기화하시겠습니까?`)) return;
@@ -4092,7 +4137,7 @@ export default function SchedulePage() {
                     >
                       🗑 초기화
                     </button>
-                  )}
+                  ) : null}
                   <button
                     onClick={() => window.print()}
                     style={{ ...S.smallBtn, fontSize: "0.75rem", padding: "4px 10px" }}
@@ -4101,7 +4146,7 @@ export default function SchedulePage() {
                   </button>
                 </div>
               </div>
-              <DayResultView result={dayResult} mode={mode} />
+              <DayResultView result={displayResult} mode={mode} />
             </div>
           )}
 
@@ -4531,17 +4576,17 @@ export default function SchedulePage() {
         </>
       )}
       {/* ── 플로팅 바: 다음날 첫번호 ── */}
-      {dayResult && dayResult.spare2?.[0] && weekly.length === 0 && (
+      {displayResult && displayResult.spare2?.[0] && weekly.length === 0 && (
         <div style={S.floatingBar}>
           <img src={`${BASE}/char_smile.png`} alt="" style={{ width: 36, height: 36, objectFit: "contain" }} />
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: "0.68rem", color: "rgba(255,255,255,0.65)", marginBottom: 2 }}>🏁 내일 2부 첫번호</div>
-            <div style={{ fontWeight: 800, fontSize: "1.1rem", color: "#f8b400" }}>{dayResult.spare2[0]}</div>
+            <div style={{ fontWeight: 800, fontSize: "1.1rem", color: "#f8b400" }}>{displayResult.spare2[0]}</div>
           </div>
-          {dayResult.spare2[1] && (
+          {displayResult.spare2[1] && (
             <div style={{ textAlign: "right" }}>
               <div style={{ fontSize: "0.65rem", color: "rgba(255,255,255,0.55)" }}>대기</div>
-              <div style={{ fontWeight: 600, fontSize: "0.85rem", color: "rgba(255,255,255,0.8)" }}>{dayResult.spare2[1]}</div>
+              <div style={{ fontWeight: 600, fontSize: "0.85rem", color: "rgba(255,255,255,0.8)" }}>{displayResult.spare2[1]}</div>
             </div>
           )}
         </div>
