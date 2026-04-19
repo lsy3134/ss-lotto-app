@@ -3889,7 +3889,10 @@ export default function SchedulePage() {
           </div>
 
           {/* ── 컷 기준 요약 ── */}
-          {livePreview && names.length > 0 && (
+          {(dayResult || (livePreview && names.length > 0)) && (() => {
+            // dayResult가 있으면 저장된 결과 기준, 없으면 livePreview 사용
+            const cutSource = dayResult ?? livePreview!;
+            return (
             <div style={{
               background: "#f8f9ff", border: "1.5px solid #c5cae9", borderRadius: 12,
               padding: "10px 14px", display: "flex", flexDirection: "column", gap: 5,
@@ -3899,10 +3902,10 @@ export default function SchedulePage() {
               </div>
 
               {mode === "2부제" ? (() => {
-                const s1 = livePreview.shift1 ?? [];
-                const s2 = livePreview.shift2 ?? [];
-                const sp1 = livePreview.spare1 ?? [];
-                const sp2 = livePreview.spare2 ?? [];
+                const s1 = cutSource.shift1 ?? [];
+                const s2 = cutSource.shift2 ?? [];
+                const sp1 = cutSource.spare1 ?? [];
+                const sp2 = cutSource.spare2 ?? [];
                 const cutRows: React.ReactNode[] = [];
 
                 if (s1.length > 0) {
@@ -3990,8 +3993,8 @@ export default function SchedulePage() {
 
                 return cutRows;
               })() : (() => {
-                const s1 = livePreview.shift1 ?? [];
-                const sp2 = livePreview.spare2 ?? [];
+                const s1 = cutSource.shift1 ?? [];
+                const sp2 = cutSource.spare2 ?? [];
                 const cutRows: React.ReactNode[] = [];
 
                 if (s1.length > 0) {
@@ -4050,7 +4053,8 @@ export default function SchedulePage() {
                 return cutRows;
               })()}
             </div>
-          )}
+            );
+          })()}
 
           {/* 재계산 완료 배너 */}
           {recalcMessage && (
