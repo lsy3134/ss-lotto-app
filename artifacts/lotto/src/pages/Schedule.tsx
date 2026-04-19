@@ -1452,16 +1452,35 @@ export default function SchedulePage() {
     return base;
   }
 
+  // ── 현재 날짜 기준 실제 순번 ──────────────────────────
+  // 현재 날짜 이전 마지막 저장된 날의 spare2[0] 기준으로 names를 rotate
+  // (Day1: firstStarter 기준, Day2+: 전날 spare2[0] 체인 기준)
+  const effectiveNames = useMemo(() => {
+    if (names.length === 0) return [];
+    const currentIdx = excelDays.findIndex(d => d.dateLabel === currentDateKey);
+    if (currentIdx <= 0) return names;
+    for (let i = currentIdx - 1; i >= 0; i--) {
+      const dl = excelDays[i].dateLabel;
+      const spare2 = savedSpare2[dl] ?? assignmentData[dl]?.spare2;
+      if (spare2 && spare2.length > 0) {
+        return rotateNames([...names], spare2[0]);
+      }
+    }
+    return names;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [names, currentDateKey, excelDays, savedSpare2, assignmentData]);
+
   // ── 실시간 배정 미리보기 ──────────────────────────
   // 현재 상태(휴무/조출/...)를 반영한 배정 경계 계산 (배정 버튼 누르지 않아도 표시)
   const livePreview = useMemo(() => {
-    if (names.length === 0) return null;
-    const statuses = getEffective(dayOfWeek);
+    if (effectiveNames.length === 0) return null;
+    const statuses: Record<string, StatusType> = {};
+    effectiveNames.forEach((n) => { statuses[n] = effectiveStatus(n, dayOfWeek); });
     return mode === "2부제"
-      ? assignDouble(names, statuses, shift1Size, shift2Size, currentDaegeun)
-      : assignSingle(names, statuses, singleSize);
+      ? assignDouble(effectiveNames, statuses, shift1Size, shift2Size, currentDaegeun)
+      : assignSingle(effectiveNames, statuses, singleSize);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [names, manualStatuses, currentDaegeun, mode, shift1Size, shift2Size, singleSize, dayOfWeek, customRosterMap]);
+  }, [effectiveNames, manualStatuses, currentDaegeun, mode, shift1Size, shift2Size, singleSize, dayOfWeek, customRosterMap]);
 
   // 이름 → 배정 카테고리 맵 (live)
   const liveCategoryMap = useMemo<Record<string, "1부" | "1부스페어" | "2부" | "2부스페어" | "스페어" | "단부" | "찾근" | "제외">>(() => {
@@ -1641,10 +1660,12 @@ export default function SchedulePage() {
   }
 
   function assign() {
-    const statuses = getEffective(dayOfWeek);
+    const en = effectiveNames.length > 0 ? effectiveNames : names;
+    const statuses: Record<string, StatusType> = {};
+    en.forEach((n) => { statuses[n] = effectiveStatus(n, dayOfWeek); });
     const result = mode === "2부제"
-      ? assignDouble(names, statuses, shift1Size, shift2Size, currentDaegeun)
-      : assignSingle(names, statuses, singleSize);
+      ? assignDouble(en, statuses, shift1Size, shift2Size, currentDaegeun)
+      : assignSingle(en, statuses, singleSize);
     // 저장하지 않고 임시 결과만 보여줌 — 저장은 saveAssignment()에서
     setPendingResult(result);
     setWeekly([]);
