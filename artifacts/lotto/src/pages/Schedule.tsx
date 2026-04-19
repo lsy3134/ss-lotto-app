@@ -1496,16 +1496,23 @@ export default function SchedulePage() {
   }, [names, currentDateKey, overrideStartByDate, excelDays, savedSpare2, assignmentData, queueStartName]);
 
   // ── 실시간 배정 미리보기 ──────────────────────────
-  // 현재 상태(휴무/조출/...)를 반영한 배정 경계 계산 (배정 버튼 누르지 않아도 표시)
+  // generateWeek/recalculateFrom과 동일한 패턴: dateStatuses → isAutoOff 순으로 적용
   const livePreview = useMemo(() => {
     if (effectiveNames.length === 0) return null;
+    const savedDay = currentDateKey ? (dateStatuses[currentDateKey] ?? {}) : {};
+    const dayIdx = selectedDate?.dayIdx ?? dayOfWeek;
     const statuses: Record<string, StatusType> = {};
-    effectiveNames.forEach((n) => { statuses[n] = effectiveStatus(n, dayOfWeek); });
+    effectiveNames.forEach((n) => {
+      if (n in savedDay) { statuses[n] = savedDay[n]; return; }
+      const person = customRosterMap[n];
+      if (person && isAutoOff(person.group, dayIdx)) { statuses[n] = "휴무"; return; }
+      statuses[n] = null;
+    });
     return mode === "2부제"
       ? assignDouble(effectiveNames, statuses, shift1Size, shift2Size, currentDaegeun)
       : assignSingle(effectiveNames, statuses, singleSize);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveNames, manualStatuses, currentDaegeun, mode, shift1Size, shift2Size, singleSize, dayOfWeek, customRosterMap]);
+  }, [effectiveNames, dateStatuses, currentDateKey, selectedDate, dayOfWeek, customRosterMap, currentDaegeun, mode, shift1Size, shift2Size, singleSize]);
 
   // 이름 → 배정 카테고리 맵 (live)
   const liveCategoryMap = useMemo<Record<string, "1부" | "1부스페어" | "2부" | "2부스페어" | "스페어" | "단부" | "찾근" | "제외">>(() => {
@@ -1686,8 +1693,16 @@ export default function SchedulePage() {
 
   function assign() {
     const en = effectiveNames.length > 0 ? effectiveNames : names;
+    // generateWeek/recalculateFrom과 동일한 패턴으로 통일
+    const savedDay = currentDateKey ? (dateStatuses[currentDateKey] ?? {}) : {};
+    const dayIdx = selectedDate?.dayIdx ?? dayOfWeek;
     const statuses: Record<string, StatusType> = {};
-    en.forEach((n) => { statuses[n] = effectiveStatus(n, dayOfWeek); });
+    en.forEach((n) => {
+      if (n in savedDay) { statuses[n] = savedDay[n]; return; }
+      const person = customRosterMap[n];
+      if (person && isAutoOff(person.group, dayIdx)) { statuses[n] = "휴무"; return; }
+      statuses[n] = null;
+    });
     const result = mode === "2부제"
       ? assignDouble(en, statuses, shift1Size, shift2Size, currentDaegeun)
       : assignSingle(en, statuses, singleSize);
