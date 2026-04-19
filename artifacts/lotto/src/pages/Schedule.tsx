@@ -2029,15 +2029,8 @@ export default function SchedulePage() {
                 const hasManual = Object.keys(savedStatuses).length > 0;
                 const hasExcel = d.가용인원 > 0 || hasTeams;
 
-                // 이 날의 "첫대기" = 전날 배정의 spare2[0]
-                // viewDays에 없으면 excelDays에서 전날 탐색
-                const prevDayLabel: string | null = (() => {
-                  if (idx > 0) return viewDays[idx - 1].dateLabel;
-                  // 첫날: excelDays에서 이 날 바로 앞 날짜 탐색
-                  const ei = excelDays.findIndex(e => e.dateLabel === d.dateLabel);
-                  return ei > 0 ? excelDays[ei - 1].dateLabel : null;
-                })();
-                const nextFirstHint = prevDayLabel ? (savedSpare2[prevDayLabel]?.[0] ?? null) : null;
+                // 이 날의 첫번호: override → spare2 체인 → queueStartName 순 우선
+                const nextFirstHint = getStartNameForDate(d.dateLabel);
                 const hasAssigned = Boolean(assignmentData[d.dateLabel]);
 
                 return (
@@ -2090,18 +2083,21 @@ export default function SchedulePage() {
                       </span>
                     )}
                     {/* 전날 spare2[0] → 이 날의 첫대기 힌트 */}
-                    {nextFirstHint && (
-                      <span style={{
-                        fontSize: "0.52rem", fontWeight: 800, lineHeight: 1,
-                        color: isSelected ? "rgba(255,255,255,0.9)" : "#b91c1c",
-                        background: isSelected ? "rgba(255,255,255,0.15)" : "#fef2f2",
-                        borderRadius: 4, padding: "1px 4px",
-                        marginTop: 1,
-                        maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                      }}>
-                        ↑{nextFirstHint}
-                      </span>
-                    )}
+                    {nextFirstHint && (() => {
+                      const isOverride = !!(overrideStartByDate[d.dateLabel]);
+                      return (
+                        <span style={{
+                          fontSize: "0.52rem", fontWeight: 800, lineHeight: 1,
+                          color: isSelected ? "rgba(255,255,255,0.9)" : isOverride ? "#2e7d32" : "#b91c1c",
+                          background: isSelected ? "rgba(255,255,255,0.15)" : isOverride ? "#e8f5e9" : "#fef2f2",
+                          borderRadius: 4, padding: "1px 4px",
+                          marginTop: 1,
+                          maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        }}>
+                          {isOverride ? "📌" : "↑"}{nextFirstHint}
+                        </span>
+                      );
+                    })()}
                   </button>
                 );
               })}
