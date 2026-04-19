@@ -1708,17 +1708,18 @@ export default function SchedulePage() {
   }
 
   function generateWeek() {
-    // 현재 선택된 날짜 기준으로 해당 주(월~일)의 excelDay 찾기
+    // 선택한 날짜 기준으로 시작 (월요일 고정 X → 선택 날짜부터 7일)
     const selIdx = selectedDate
       ? excelDays.findIndex(d => d.dateLabel === selectedDate.dateLabel)
       : -1;
-    const mondayIdx = selIdx >= 0 ? selIdx - (selectedDate?.dayIdx ?? 0) : -1;
+    const startIdx = selIdx >= 0 ? selIdx : -1;
+    const startDayIdx = selectedDate?.dayIdx ?? 0; // 요일 레이블 offset
 
     // ── 직전 배정 데이터 탐색 → firstNumber 이어받기 ──
-    // 이번 주 월요일 이전의 가장 마지막 assignmentData 날짜 찾기
+    // 선택 날짜 이전의 가장 마지막 assignmentData 날짜 찾기
     let currentNames = [...names];
-    if (mondayIdx > 0) {
-      for (let i = mondayIdx - 1; i >= 0; i--) {
+    if (startIdx > 0) {
+      for (let i = startIdx - 1; i >= 0; i--) {
         const prevDay = excelDays[i];
         if (prevDay && assignmentData[prevDay.dateLabel]) {
           const lastSpare2 = assignmentData[prevDay.dateLabel].spare2;
@@ -1733,8 +1734,8 @@ export default function SchedulePage() {
     const results: { day: string; result: DayResult; skipped?: boolean }[] = [];
     const newAssignments: Record<string, DayResult> = {};
 
-    DAY_LABELS.forEach((day, di) => {
-      const absIdx = mondayIdx + di;
+    Array.from({ length: 7 }, (_, di) => DAY_LABELS[(startDayIdx + di) % 7]).forEach((day, di) => {
+      const absIdx = startIdx + di;
       const weekDay = absIdx >= 0 && absIdx < excelDays.length ? excelDays[absIdx] : null;
       const dateLabel = weekDay?.dateLabel ?? "";
 
