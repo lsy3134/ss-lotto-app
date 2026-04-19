@@ -1259,7 +1259,8 @@ export default function SchedulePage() {
   }
 
   // ── 첫번호 지정 (세션 전용 — localStorage 저장 X, 다음날 이어지지 않음) ───
-  const TODAY_KEY = `lotto_queueStart_${new Date().toISOString().slice(0, 10)}`;
+  const _now = new Date();
+  const TODAY_KEY = `lotto_queueStart_${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, "0")}-${String(_now.getDate()).padStart(2, "0")}`;
   const [queueStartName, setQueueStartName] = useState<string | null>(() =>
     localStorage.getItem(TODAY_KEY)
   );
@@ -1295,8 +1296,13 @@ export default function SchedulePage() {
   // 이름 배열을 startName 위치부터 회전
   function rotateNames(base: string[], startName: string | null): string[] {
     if (!startName) return base;
-    const idx = base.indexOf(startName);
-    if (idx <= 0) return base;
+    const norm = (s: string) => s.trim();
+    const idx = base.findIndex((n) => norm(n) === norm(startName));
+    if (idx === -1) {
+      console.warn("[rotateNames] startName not found in base:", startName);
+      return base;
+    }
+    if (idx === 0) return base;
     return [...base.slice(idx), ...base.slice(0, idx)];
   }
 
