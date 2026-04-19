@@ -1264,6 +1264,10 @@ export default function SchedulePage() {
   const [queueStartName, setQueueStartName] = useState<string | null>(() =>
     localStorage.getItem(TODAY_KEY)
   );
+  // 사이클 시작 날짜: applyRoster 호출 시 설정, effectiveNames가 이 날짜 이전은 무시
+  const [cycleStartDate, setCycleStartDate] = useState<string | null>(() =>
+    localStorage.getItem("lotto_cycleStartDate")
+  );
   const [queueModal, setQueueModal] = useState<"ask" | "pick" | null>(null);
   const [queuePickSearch, setQueuePickSearch] = useState("");
   // 모달 드래그 위치
@@ -1315,6 +1319,11 @@ export default function SchedulePage() {
     setDayResult(null);
     setPendingResult(null);
     setWeekly([]);
+    // 사이클 시작 날짜 기록 → effectiveNames가 이 날짜 이전 spare2 무시
+    const newCycleStart = currentDateKey ?? null;
+    setCycleStartDate(newCycleStart);
+    if (newCycleStart) localStorage.setItem("lotto_cycleStartDate", newCycleStart);
+    else localStorage.removeItem("lotto_cycleStartDate");
     setTimeout(() => {
       resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 100);
@@ -1459,8 +1468,11 @@ export default function SchedulePage() {
     if (names.length === 0) return [];
     const currentIdx = excelDays.findIndex(d => d.dateLabel === currentDateKey);
     if (currentIdx <= 0) return names;
+    // cycleStartDate 이전 날짜의 spare2는 무시 (applyRoster로 새 사이클 시작한 경우)
+    // cycleStartDate 당일 포함 이전은 탐색하지 않음 → firstStarter 우선 적용
     for (let i = currentIdx - 1; i >= 0; i--) {
       const dl = excelDays[i].dateLabel;
+      if (cycleStartDate && dl < cycleStartDate) break; // 사이클 시작일 이전 무시
       const spare2 = savedSpare2[dl] ?? assignmentData[dl]?.spare2;
       if (spare2 && spare2.length > 0) {
         return rotateNames([...names], spare2[0]);
@@ -1468,7 +1480,7 @@ export default function SchedulePage() {
     }
     return names;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [names, currentDateKey, excelDays, savedSpare2, assignmentData]);
+  }, [names, currentDateKey, excelDays, savedSpare2, assignmentData, cycleStartDate]);
 
   // ── 실시간 배정 미리보기 ──────────────────────────
   // 현재 상태(휴무/조출/...)를 반영한 배정 경계 계산 (배정 버튼 누르지 않아도 표시)
