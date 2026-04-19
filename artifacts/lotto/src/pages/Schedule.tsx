@@ -1264,10 +1264,12 @@ export default function SchedulePage() {
   const [queueStartName, setQueueStartName] = useState<string | null>(() =>
     localStorage.getItem(TODAY_KEY)
   );
-  // 사이클 시작 날짜: applyRoster 호출 시 설정, effectiveNames가 이 날짜 이전은 무시
-  const [cycleStartDate, setCycleStartDate] = useState<string | null>(() =>
-    localStorage.getItem("lotto_cycleStartDate")
-  );
+  // 날짜별 수동 첫번호 override: { "2026-04-19": "김혜민", ... }
+  const OVERRIDE_KEY = `lotto_overrideStart_${new Date().getFullYear()}`;
+  const [overrideStartByDate, setOverrideStartByDate] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem(`lotto_overrideStart_${new Date().getFullYear()}`) ?? "{}") ?? {}; }
+    catch { return {}; }
+  });
   const [queueModal, setQueueModal] = useState<"ask" | "pick" | null>(null);
   const [queuePickSearch, setQueuePickSearch] = useState("");
   // 모달 드래그 위치
@@ -1319,11 +1321,14 @@ export default function SchedulePage() {
     setDayResult(null);
     setPendingResult(null);
     setWeekly([]);
-    // 사이클 시작 날짜 기록 → effectiveNames가 이 날짜 이전 spare2 무시
-    const newCycleStart = currentDateKey ?? null;
-    setCycleStartDate(newCycleStart);
-    if (newCycleStart) localStorage.setItem("lotto_cycleStartDate", newCycleStart);
-    else localStorage.removeItem("lotto_cycleStartDate");
+    // 수동 override 저장: 해당 날짜에만 적용, 이후 날짜는 spare2 체인으로 자동 이어짐
+    if (startName && currentDateKey) {
+      setOverrideStartByDate(prev => {
+        const next = { ...prev, [currentDateKey]: startName };
+        localStorage.setItem(OVERRIDE_KEY, JSON.stringify(next));
+        return next;
+      });
+    }
     setTimeout(() => {
       resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 100);
@@ -1464,23 +1469,31 @@ export default function SchedulePage() {
   // ── 현재 날짜 기준 실제 순번 ──────────────────────────
   // 현재 날짜 이전 마지막 저장된 날의 spare2[0] 기준으로 names를 rotate
   // (Day1: firstStarter 기준, Day2+: 전날 spare2[0] 체인 기준)
-  const effectiveNames = useMemo(() => {
-    if (names.length === 0) return [];
-    const currentIdx = excelDays.findIndex(d => d.dateLabel === currentDateKey);
-    if (currentIdx <= 0) return names;
-    // cycleStartDate 이전 날짜의 spare2는 무시 (applyRoster로 새 사이클 시작한 경우)
-    // cycleStartDate 당일 포함 이전은 탐색하지 않음 → firstStarter 우선 적용
-    for (let i = currentIdx - 1; i >= 0; i--) {
-      const dl = excelDays[i].dateLabel;
-      if (cycleStartDate && dl < cycleStartDate) break; // 사이클 시작일 이전 무시
-      const spare2 = savedSpare2[dl] ?? assignmentData[dl]?.spare2;
-      if (spare2 && spare2.length > 0) {
-        return rotateNames([...names], spare2[0]);
+  // getStartNameForDate: override → spare2 체인 → queueStartName 순 우선
+  function getStartNameForDate(dateLabel: string): string | null {
+    if (!dateLabel) return queueStartName;
+    // 1. 수동 override 최우선
+    if (overrideStartByDate[dateLabel]) return overrideStartByDate[dateLabel];
+    // 2. 이전 날짜 중 최근 저장된 dayResult의 spare2[0]
+    const idx = excelDays.findIndex(d => d.dateLabel === dateLabel);
+    if (idx > 0) {
+      for (let i = idx - 1; i >= 0; i--) {
+        const dl = excelDays[i].dateLabel;
+        const spare2 = savedSpare2[dl] ?? assignmentData[dl]?.spare2;
+        if (spare2 && spare2.length > 0) return spare2[0];
       }
     }
-    return names;
+    // 3. 기본 첫번호
+    return queueStartName;
+  }
+
+  const effectiveNames = useMemo(() => {
+    if (names.length === 0) return [];
+    const startName = getStartNameForDate(currentDateKey);
+    if (!startName) return names;
+    return rotateNames([...names], startName);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [names, currentDateKey, excelDays, savedSpare2, assignmentData, cycleStartDate]);
+  }, [names, currentDateKey, overrideStartByDate, excelDays, savedSpare2, assignmentData, queueStartName]);
 
   // ── 실시간 배정 미리보기 ──────────────────────────
   // 현재 상태(휴무/조출/...)를 반영한 배정 경계 계산 (배정 버튼 누르지 않아도 표시)
@@ -1715,21 +1728,10 @@ export default function SchedulePage() {
     const startIdx = selIdx >= 0 ? selIdx : -1;
     const startDayIdx = selectedDate?.dayIdx ?? 0; // 요일 레이블 offset
 
-    // ── 직전 배정 데이터 탐색 → firstNumber 이어받기 ──
-    // 선택 날짜 이전의 가장 마지막 assignmentData 날짜 찾기
-    let currentNames = [...names];
-    if (startIdx > 0) {
-      for (let i = startIdx - 1; i >= 0; i--) {
-        const prevDay = excelDays[i];
-        if (prevDay && assignmentData[prevDay.dateLabel]) {
-          const lastSpare2 = assignmentData[prevDay.dateLabel].spare2;
-          if (lastSpare2?.length > 0) {
-            currentNames = rotateNames([...names], lastSpare2[0]);
-          }
-          break;
-        }
-      }
-    }
+    // ── 시작 순번: override → spare2 체인 → queueStartName 순 결정 ──
+    const startDateLabel = excelDays[startIdx]?.dateLabel ?? "";
+    const startName = getStartNameForDate(startDateLabel);
+    let currentNames = startName ? rotateNames([...names], startName) : [...names];
 
     const results: { day: string; result: DayResult; skipped?: boolean }[] = [];
     const newAssignments: Record<string, DayResult> = {};
@@ -2520,27 +2522,30 @@ export default function SchedulePage() {
 
           {/* 첫번호 / 다음날 첫 순번 표시 */}
           {(todayFirstHint || queueStartName) && (() => {
-            const isAuto = !!todayFirstHint;
-            const displayName = todayFirstHint ?? queueStartName!;
+            const hasOverride = !!(currentDateKey && overrideStartByDate[currentDateKey]);
+            const displayName = hasOverride
+              ? overrideStartByDate[currentDateKey]
+              : (todayFirstHint ?? queueStartName!);
+            const isAuto = !hasOverride && !!todayFirstHint;
+            const bg = hasOverride ? "#e8f5e9" : isAuto ? "#f3e5f5" : "#e3f2fd";
+            const border = hasOverride ? "1px solid #a5d6a7" : isAuto ? "1px solid #ce93d8" : "1px solid #90caf9";
+            const color = hasOverride ? "#2e7d32" : isAuto ? "#6a1b9a" : "#1565c0";
+            const label = hasOverride ? "📌 수동 시작 " : isAuto ? "🔗 자동 이어짐 " : "첫 순번 ";
             return (
               <div style={{
                 display: "flex", alignItems: "center", gap: 8, marginBottom: "12px",
-                padding: "9px 12px", borderRadius: 10,
-                background: isAuto ? "#f3e5f5" : "#e3f2fd",
-                border: isAuto ? "1px solid #ce93d8" : "1px solid #90caf9",
+                padding: "9px 12px", borderRadius: 10, background: bg, border,
               }}>
-                <span style={{ fontSize: 14, flex: 1, color: isAuto ? "#6a1b9a" : "#1565c0" }}>
-                  <span style={{ fontWeight: 700 }}>
-                    {isAuto ? "     첫 순번 " : "📌 첫번호 고정 "}
-                  </span>
+                <span style={{ fontSize: 14, flex: 1, color }}>
+                  <span style={{ fontWeight: 700 }}>{label}</span>
                   <span style={{ fontWeight: 800 }}>"{displayName}"</span>
                 </span>
                 <button
                   onClick={() => { setQueueModalPos({ x: 0, y: 0 }); setQueueModal("ask"); }}
                   style={{
                     padding: "6px 14px", borderRadius: 8, border: "none",
-                    background: isAuto ? "#6a1b9a" : "#1565c0",
-                    color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap",
+                    background: color, color: "#fff", fontWeight: 700, fontSize: 12,
+                    cursor: "pointer", whiteSpace: "nowrap",
                   }}
                 >변경</button>
               </div>
@@ -2664,7 +2669,20 @@ export default function SchedulePage() {
               {/* 구분선 */}
               <div style={{ borderTop: "1px solid #eee", paddingTop: 12 }}>
                 <button
-                  onClick={() => { applyRoster(null); saveQueueStart(null); setQueueModal(null); }}
+                  onClick={() => {
+                    applyRoster(null);
+                    saveQueueStart(null);
+                    // 현재 날짜 override 삭제
+                    if (currentDateKey) {
+                      setOverrideStartByDate(prev => {
+                        const next = { ...prev };
+                        delete next[currentDateKey];
+                        localStorage.setItem(OVERRIDE_KEY, JSON.stringify(next));
+                        return next;
+                      });
+                    }
+                    setQueueModal(null);
+                  }}
                   style={{
                     width: "100%", padding: "8px 0", borderRadius: 8, border: "1px solid #ddd",
                     background: "transparent", color: "#999", fontSize: 13, cursor: "pointer",
