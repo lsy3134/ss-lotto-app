@@ -1727,6 +1727,28 @@ export default function SchedulePage() {
     setPendingResult(null);
   }
 
+  function saveAndRecalculate() {
+    if (!pendingResult || !currentDateKey) return;
+
+    setDayResult(pendingResult);
+
+    const newAssignment = { ...assignmentData, [currentDateKey]: pendingResult };
+    const newSpare2 = pendingResult.spare2.length > 0
+      ? { ...savedSpare2, [currentDateKey]: pendingResult.spare2 }
+      : { ...savedSpare2 };
+
+    // 해당 날짜 저장 후 이후 날짜 연쇄 재계산
+    const { updatedAssignment, updatedSpare2, count } = recalculateFrom(currentDateKey, newAssignment, newSpare2);
+    setAssignmentData(updatedAssignment);
+    setSavedSpare2(updatedSpare2);
+    setPendingResult(null);
+
+    if (count > 0) {
+      setRecalcMessage(`이 날짜 이후 ${count}일 스케줄이 업데이트되었습니다.`);
+      setTimeout(() => setRecalcMessage(null), 4000);
+    }
+  }
+
   function generateWeek() {
     // 선택한 날짜 기준으로 시작 (월요일 고정 X → 선택 날짜부터 7일)
     const selIdx = selectedDate
@@ -3956,20 +3978,31 @@ export default function SchedulePage() {
             </div>
             {/* 임시 결과 저장 / 취소 버튼 */}
             {pendingResult && (
-              <div style={{ display: "flex", gap: "8px", marginTop: "6px" }}>
-                <button
-                  onClick={saveAssignment}
-                  style={{
-                    ...S.primaryBtn, flex: 1,
-                    background: "linear-gradient(135deg, #16a34a, #15803d)",
-                    fontSize: "0.9rem", fontWeight: 800,
-                  }}>
-                  💾 저장
-                </button>
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "6px" }}>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button
+                    onClick={saveAssignment}
+                    style={{
+                      ...S.primaryBtn, flex: 1,
+                      background: "linear-gradient(135deg, #16a34a, #15803d)",
+                      fontSize: "0.9rem", fontWeight: 800,
+                    }}>
+                    💾 저장
+                  </button>
+                  <button
+                    onClick={saveAndRecalculate}
+                    style={{
+                      ...S.primaryBtn, flex: 1,
+                      background: "linear-gradient(135deg, #0369a1, #075985)",
+                      fontSize: "0.9rem", fontWeight: 800,
+                    }}>
+                    💾↪ 저장+이후재계산
+                  </button>
+                </div>
                 <button
                   onClick={() => setPendingResult(null)}
                   style={{
-                    ...S.primaryBtn, flex: 1,
+                    ...S.primaryBtn,
                     background: "#6b7280",
                     fontSize: "0.9rem",
                   }}>
