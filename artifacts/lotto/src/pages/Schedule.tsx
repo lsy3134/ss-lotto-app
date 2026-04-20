@@ -1151,6 +1151,7 @@ export default function SchedulePage() {
   // 통합 선택 모달 — StatusType | "VIP" 지원
   const [modalStatus, setModalStatus] = useState<StatusType | "VIP" | null>(null);
   const [modalSearch, setModalSearch] = useState("");
+  const [showFullList, setShowFullList] = useState(false);
 
   // 명단 보기 모달 (해당 상태인 사람만 표시)
   const [viewStatusModal, setViewStatusModal] = useState<"당번" | "휴무" | "병가" | null>(null);
@@ -3438,6 +3439,21 @@ export default function SchedulePage() {
           return items;
         };
 
+        // ── 섹션 헤더 스타일 헬퍼 ──
+        const SectionLabel = ({ num, title, count }: { num: string; title: string; count?: number }) => (
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "10px 14px 4px" }}>
+            <span style={{
+              fontSize: "0.65rem", fontWeight: 700, color: "#fff",
+              background: "#c0c6d0", borderRadius: "4px", padding: "1px 5px",
+              lineHeight: "1.4",
+            }}>{num}</span>
+            <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#444" }}>{title}</span>
+            {count !== undefined && (
+              <span style={{ fontSize: "0.75rem", color: "#9aa3b5", fontWeight: 600 }}>{count}명</span>
+            )}
+          </div>
+        );
+
         return (
           <div style={{
             position: "fixed", inset: 0, zIndex: 200,
@@ -3455,7 +3471,7 @@ export default function SchedulePage() {
               <div style={{
                 display: "flex", alignItems: "center", padding: "14px 16px 12px",
                 borderBottom: "1px solid #f0f0f0",
-                background: statusSc.bg,
+                background: statusSc.bg, flexShrink: 0,
               }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 800, fontSize: "1rem", color: statusSc.color }}>
@@ -3467,9 +3483,7 @@ export default function SchedulePage() {
                       : "이름을 탭하면 선택/해제됩니다"}
                   </div>
                 </div>
-                <div style={{
-                  display: "flex", alignItems: "center", gap: "8px",
-                }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                   {selectedNames.length > 0 && (
                     <span style={{
                       padding: "3px 10px", borderRadius: "20px",
@@ -3487,16 +3501,20 @@ export default function SchedulePage() {
                 </div>
               </div>
 
-              {/* 1. 선택된 휴무자 chip 영역 */}
-              {selectedNames.length > 0 && (
+              {/* ── 스크롤 영역 ── */}
+              <div style={{ overflowY: "auto", flex: 1 }}>
+
+                {/* 1. 선택된 휴무자 chip 영역 */}
+                <SectionLabel num="1" title="선택된 휴무자" count={selectedNames.length} />
                 <div style={{
-                  borderBottom: "1px solid #f0f0f0",
-                  padding: "8px 14px",
+                  padding: "4px 14px 10px",
                   display: "flex", flexWrap: "wrap", gap: "6px",
-                  maxHeight: "80px", overflowY: "auto",
-                  background: "#fafafa",
+                  minHeight: "36px",
+                  borderBottom: "1px solid #f0f0f0",
                 }}>
-                  {isVip ? (
+                  {selectedNames.length === 0 ? (
+                    <span style={{ fontSize: "0.8rem", color: "#ccc", alignSelf: "center" }}>선택된 인원 없음</span>
+                  ) : isVip ? (
                     currentVipMembers.map(({ name, type }) => {
                       const sc = STATUS_COLOR[type] ?? { bg: "#f3e5f5", color: "#7b1fa2" };
                       const lbl = type === "VIP1부" ? "1부" : type === "VIP2부" ? "2부" : "투근무";
@@ -3533,42 +3551,83 @@ export default function SchedulePage() {
                     })
                   )}
                 </div>
-              )}
 
-              {/* 2-1. 검색 결과 리스트 (검색어 있을 때만 표시) */}
-              {query && (
-                <div style={{ overflowY: "auto", maxHeight: "35vh", borderBottom: "1px solid #f0f0f0" }}>
-                  {renderItems(filteredNames, false)}
+                {/* 2. 검색 영역 */}
+                <SectionLabel num="2" title="검색" />
+                <div style={{ padding: "2px 14px 4px" }}>
+                  {/* 2-1. 검색 결과 */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 0 4px" }}>
+                    <span style={{ fontSize: "0.68rem", fontWeight: 700, color: "#9aa3b5" }}>2-1</span>
+                    <span style={{ fontSize: "0.76rem", color: "#777" }}>
+                      검색결과 <strong style={{ color: "#444" }}>{filteredNames.length}</strong>명
+                    </span>
+                  </div>
+                  <div style={{
+                    border: "1px solid #eee", borderRadius: "10px",
+                    overflow: "hidden", maxHeight: "220px", overflowY: "auto",
+                    marginBottom: "10px",
+                  }}>
+                    {renderItems(filteredNames, false)}
+                  </div>
+
+                  {/* 2-2. 이름 검색 input */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "2px 0 4px" }}>
+                    <span style={{ fontSize: "0.68rem", fontWeight: 700, color: "#9aa3b5" }}>2-2</span>
+                    <span style={{ fontSize: "0.76rem", color: "#777" }}>이름 검색</span>
+                  </div>
+                  <input
+                    value={modalSearch}
+                    onChange={(e) => setModalSearch(e.target.value)}
+                    placeholder="🔍 이름 검색..."
+                    autoFocus
+                    style={{
+                      width: "100%", padding: "9px 14px", borderRadius: "12px",
+                      border: `1.5px solid ${statusSc.color}44`, fontSize: "0.9rem",
+                      outline: "none", boxSizing: "border-box",
+                      background: statusSc.bg + "55",
+                    }}
+                  />
                 </div>
-              )}
 
-              {/* 2-2. 검색 input */}
-              <div style={{ padding: "10px 14px 8px" }}>
-                <input
-                  value={modalSearch}
-                  onChange={(e) => setModalSearch(e.target.value)}
-                  placeholder="🔍 이름 검색..."
-                  autoFocus
-                  style={{
-                    width: "100%", padding: "9px 14px", borderRadius: "12px",
-                    border: `1.5px solid ${statusSc.color}44`, fontSize: "0.9rem",
-                    outline: "none", boxSizing: "border-box",
-                    background: statusSc.bg + "55",
-                  }}
-                />
-              </div>
+                {/* 3. 순번 전체 (펼치기/접기) */}
+                <div style={{ borderTop: "1px solid #f0f0f0", marginTop: "6px" }}>
+                  <SectionLabel num="3" title="순번 전체" />
+                  <div style={{ padding: "4px 14px 10px" }}>
+                    <button
+                      onClick={() => setShowFullList(v => !v)}
+                      style={{
+                        width: "100%", padding: "10px 14px",
+                        borderRadius: "10px", border: "1.5px solid #e0e0e0",
+                        background: "#fafafa", cursor: "pointer",
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
+                        fontSize: "0.85rem", fontWeight: 700, color: "#555",
+                      }}
+                    >
+                      <span style={{ fontSize: "1rem" }}>{showFullList ? "➖" : "➕"}</span>
+                      {showFullList ? "순번 접기" : "순번 펼치기"}
+                      <span style={{ marginLeft: "auto", color: "#bbb", fontSize: "0.8rem" }}>
+                        {showFullList ? "▲" : "▼"}
+                      </span>
+                    </button>
+                    {showFullList && (
+                      <div style={{
+                        marginTop: "8px", border: "1px solid #eee",
+                        borderRadius: "10px", overflow: "hidden",
+                      }}>
+                        {renderItems(listNames, true)}
+                      </div>
+                    )}
+                  </div>
+                </div>
 
-              {/* 3. 전체 순번 리스트 */}
-              <div style={{ overflowY: "auto", flex: 1 }}>
-                {renderItems(listNames, true)}
-              </div>
+              </div>{/* ── 스크롤 영역 끝 ── */}
 
-              {/* 완료 버튼 */}
-              <div style={{ padding: "10px 14px", borderTop: "1px solid #f0f0f0" }}>
+              {/* 완료 버튼 - 하단 고정 */}
+              <div style={{ padding: "10px 14px", borderTop: "1px solid #f0f0f0", flexShrink: 0, background: "#fff" }}>
                 <button onClick={() => { setModalStatus(null); setVipSubPicking(null); }}
                   style={{
                     width: "100%", padding: "13px", borderRadius: "12px", border: "none",
-                    background: statusSc.color,
+                    background: "#1a2035",
                     color: "#fff",
                     fontWeight: 700, fontSize: "0.95rem", cursor: "pointer",
                   }}>
