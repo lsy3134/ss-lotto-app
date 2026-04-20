@@ -1791,6 +1791,21 @@ export default function SchedulePage() {
       setSavedSpare2(prev => ({ ...prev, [currentDateKey]: pendingResult.spare2 }));
     }
     setPendingResult(null);
+
+    // 다음 날짜 override 자동 정리:
+    // 오늘 spare2[0]이 체인으로 이어지므로, 다음 날에 수동 override가 남아 있으면
+    // getStartNameForDate가 spare2 결과 대신 이전 값을 반환해 달력과 컷 요약이 불일치함
+    const curIdx = excelDays.findIndex(d => d.dateLabel === currentDateKey);
+    if (curIdx >= 0 && curIdx + 1 < excelDays.length) {
+      const nextDateKey = excelDays[curIdx + 1].dateLabel;
+      setOverrideStartByDate(prev => {
+        if (!prev[nextDateKey]) return prev; // 없으면 그대로
+        const next = { ...prev };
+        delete next[nextDateKey];
+        localStorage.setItem(OVERRIDE_KEY, JSON.stringify(next));
+        return next;
+      });
+    }
   }
 
   function saveAndRecalculate() {
@@ -1808,6 +1823,20 @@ export default function SchedulePage() {
     setAssignmentData(updatedAssignment);
     setSavedSpare2(updatedSpare2);
     setPendingResult(null);
+
+    // 재계산된 이후 날짜들의 override를 모두 정리
+    // (spare2 체인이 새로 계산된 값으로 이어지므로 이전 수동 override는 모두 무효)
+    const curIdx = excelDays.findIndex(d => d.dateLabel === currentDateKey);
+    if (curIdx >= 0) {
+      const subsequentKeys = new Set(excelDays.slice(curIdx + 1).map(d => d.dateLabel));
+      setOverrideStartByDate(prev => {
+        const hasAny = Object.keys(prev).some(k => subsequentKeys.has(k));
+        if (!hasAny) return prev;
+        const next = Object.fromEntries(Object.entries(prev).filter(([k]) => !subsequentKeys.has(k)));
+        localStorage.setItem(OVERRIDE_KEY, JSON.stringify(next));
+        return next;
+      });
+    }
 
     if (count > 0) {
       setRecalcMessage(`이 날짜 이후 ${count}일 스케줄이 업데이트되었습니다.`);
