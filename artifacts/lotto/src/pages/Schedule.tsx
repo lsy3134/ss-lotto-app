@@ -1326,7 +1326,9 @@ export default function SchedulePage() {
   }
 
   // 실제로 names 적용 (회전 포함)
-  function applyRoster(startName: string | null) {
+  // saveOverride: true(기본) → 수동 선택, overrideStartByDate 저장
+  //              false        → 자동 이어짐 적용, override 저장하지 않음
+  function applyRoster(startName: string | null, { saveOverride = true }: { saveOverride?: boolean } = {}) {
     const base = sortedCustomRoster.map((p) => p.name);
     const rotated = rotateNames(base, startName);
     setNames(rotated);
@@ -1334,8 +1336,8 @@ export default function SchedulePage() {
     setDayResult(null);
     setPendingResult(null);
     setWeekly([]);
-    // 수동 override 저장: 해당 날짜에만 적용, 이후 날짜는 spare2 체인으로 자동 이어짐
-    if (startName && currentDateKey) {
+    // 수동 선택일 때만 override 저장
+    if (saveOverride && startName && currentDateKey) {
       setOverrideStartByDate(prev => {
         const next = { ...prev, [currentDateKey]: startName };
         localStorage.setItem(OVERRIDE_KEY, JSON.stringify(next));
@@ -2670,14 +2672,14 @@ export default function SchedulePage() {
                 </span>
               </button>
 
-              {/* 안하겠습니다 */}
+              {/* 안하겠습니다 — override 저장 없이 자동 체인 이름으로 적용 */}
               <button
                 onClick={() => {
                   if (spare2First) {
-                    applyRoster(spare2First);
+                    applyRoster(spare2First, { saveOverride: false });
                   } else {
-                    // 저장된 스페어 없으면 첫번호 그대로
-                    applyRoster(queueStartName);
+                    // 저장된 스페어 없으면 queueStartName 유지 (override 저장 X)
+                    applyRoster(queueStartName, { saveOverride: false });
                   }
                   setQueueModal(null);
                 }}
