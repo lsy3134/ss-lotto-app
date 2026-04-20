@@ -4013,9 +4013,9 @@ export default function SchedulePage() {
           </div>
 
           {/* ── 컷 기준 요약 ── */}
-          {(displayResult || (livePreview && names.length > 0)) && (() => {
-            // pendingResult(임시) → dayResult(저장) → livePreview(미배정) 순 우선
-            const cutSource = displayResult ?? livePreview!;
+          {(displayResult || (currentDateKey && assignmentData[currentDateKey]) || (livePreview && names.length > 0)) && (() => {
+            // pendingResult → dayResult → assignmentData(재진입 복원) → livePreview 순 우선
+            const cutSource = pendingResult ?? dayResult ?? (currentDateKey ? assignmentData[currentDateKey] : undefined) ?? livePreview!;
             return (
             <div style={{
               background: "#f8f9ff", border: "1.5px solid #c5cae9", borderRadius: 12,
