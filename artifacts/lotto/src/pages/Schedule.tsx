@@ -3532,23 +3532,41 @@ export default function SchedulePage() {
                       );
                     })
                   ) : (
-                    selectedNames.map(n => {
-                      const g: GroupType = getGroup(n);
-                      const gs = GROUP_STYLE[g];
-                      return (
-                        <div key={n}
-                          onClick={() => toggleStatus(n, modalStatus as StatusType)}
-                          style={{
-                            display: "inline-flex", alignItems: "center", gap: "5px",
-                            padding: "5px 10px", borderRadius: "999px", background: "#fff",
-                            border: `1.5px solid ${gs.color}55`,
-                            fontSize: "0.83rem", fontWeight: 700, cursor: "pointer",
-                          }}>
-                          <span style={{ color: "#1a2035" }}>{n}</span>
-                          <span style={{ color: "#9aa3b5", fontWeight: 800, fontSize: "0.85rem", lineHeight: 1 }}>×</span>
-                        </div>
-                      );
-                    })
+                    (() => {
+                      const chipGrouped: Record<"하우스" | "주말" | "주중", string[]> = { 하우스: [], 주말: [], 주중: [] };
+                      selectedNames.forEach(n => {
+                        const g = getGroup(n) as "하우스" | "주말" | "주중";
+                        chipGrouped[g].push(n);
+                      });
+                      return (["하우스", "주말", "주중"] as const).map(grp => {
+                        const grpNames = chipGrouped[grp];
+                        if (grpNames.length === 0) return null;
+                        const gs = GROUP_STYLE[grp];
+                        return (
+                          <div key={grp} style={{ width: "100%" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "5px", marginBottom: "5px" }}>
+                              <span style={{ color: gs.color, fontSize: "0.85rem", lineHeight: 1 }}>●</span>
+                              <span style={{ fontSize: "0.75rem", fontWeight: 800, color: gs.color }}>{grp} {grpNames.length}명</span>
+                            </div>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "6px" }}>
+                              {grpNames.map(n => (
+                                <div key={n}
+                                  onClick={() => toggleStatus(n, modalStatus as StatusType)}
+                                  style={{
+                                    display: "inline-flex", alignItems: "center", gap: "5px",
+                                    padding: "5px 10px", borderRadius: "999px", background: "#fff",
+                                    border: `1.5px solid ${gs.color}55`,
+                                    fontSize: "0.83rem", fontWeight: 700, cursor: "pointer",
+                                  }}>
+                                  <span style={{ color: "#1a2035" }}>{n}</span>
+                                  <span style={{ color: "#9aa3b5", fontWeight: 800, fontSize: "0.85rem", lineHeight: 1 }}>×</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()
                   )}
                 </div>
 
