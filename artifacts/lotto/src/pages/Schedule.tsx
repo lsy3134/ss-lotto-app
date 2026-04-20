@@ -3555,7 +3555,7 @@ export default function SchedulePage() {
                 {/* 2. 검색 영역 */}
                 <SectionLabel num="2" title="검색" />
                 <div style={{ padding: "2px 14px 4px" }}>
-                  {/* 2-1. 검색 결과 */}
+                  {/* 2-1. 검색 결과 (그룹별) */}
                   <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 0 4px" }}>
                     <span style={{ fontSize: "0.68rem", fontWeight: 700, color: "#9aa3b5" }}>2-1</span>
                     <span style={{ fontSize: "0.76rem", color: "#777" }}>
@@ -3564,10 +3564,44 @@ export default function SchedulePage() {
                   </div>
                   <div style={{
                     border: "1px solid #eee", borderRadius: "10px",
-                    overflow: "hidden", maxHeight: "220px", overflowY: "auto",
+                    overflow: "hidden", maxHeight: "260px", overflowY: "auto",
                     marginBottom: "10px",
                   }}>
-                    {renderItems(filteredNames, false)}
+                    {(() => {
+                      const grouped: Record<"하우스" | "주말" | "주중", string[]> = { 하우스: [], 주말: [], 주중: [] };
+                      filteredNames.forEach(n => {
+                        const key = normalize(n);
+                        const g = (customRosterMap[key]?.group ?? NAME_GROUP_NORMALIZED[key] ?? "하우스") as "하우스" | "주말" | "주중";
+                        grouped[g].push(n);
+                      });
+                      if (filteredNames.length === 0) {
+                        return <div style={{ textAlign: "center", color: "#bbb", padding: "20px" }}>검색 결과 없음</div>;
+                      }
+                      return (["하우스", "주말", "주중"] as const).map(grp => {
+                        const grpNames = grouped[grp];
+                        if (grpNames.length === 0) return null;
+                        const gs = GROUP_STYLE[grp];
+                        return (
+                          <div key={grp}>
+                            <div style={{
+                              padding: "5px 14px 3px",
+                              display: "flex", alignItems: "center", gap: "6px",
+                              background: gs.bg + "66",
+                              borderBottom: `1px solid ${gs.color}22`,
+                            }}>
+                              <span style={{
+                                background: gs.bg, color: gs.color,
+                                fontSize: "0.68rem", fontWeight: 800,
+                                padding: "1px 8px", borderRadius: "20px",
+                                border: `1px solid ${gs.color}44`,
+                              }}>{grp} {grpNames.length}명</span>
+                              <div style={{ flex: 1, height: 1, background: gs.color + "33" }} />
+                            </div>
+                            {renderItems(grpNames, false)}
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
 
                   {/* 2-2. 이름 검색 input */}
