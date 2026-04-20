@@ -3504,12 +3504,12 @@ export default function SchedulePage() {
               {/* ── 스크롤 영역 ── */}
               <div style={{ overflowY: "auto", flex: 1 }}>
 
-                {/* 1. 선택된 휴무자 chip 영역 */}
-                <SectionLabel num="1" title="선택된 휴무자" count={selectedNames.length} />
+                {/* 1. 선택된 인원 chip 영역 */}
+                <SectionLabel num="1" title={`선택된 ${isVip ? "VIP" : modalStatus}`} count={selectedNames.length} />
                 <div style={{
                   padding: "4px 14px 10px",
                   display: "flex", flexWrap: "wrap", gap: "6px",
-                  minHeight: "36px",
+                  minHeight: "36px", maxHeight: "200px", overflowY: "auto",
                   borderBottom: "1px solid #f0f0f0",
                 }}>
                   {selectedNames.length === 0 ? (
