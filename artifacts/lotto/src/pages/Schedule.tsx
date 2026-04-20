@@ -1272,6 +1272,19 @@ export default function SchedulePage() {
   });
   const [queueModal, setQueueModal] = useState<"ask" | "pick" | null>(null);
   const [queuePickSearch, setQueuePickSearch] = useState("");
+  // visualViewport 높이 추적 (키보드 올라올 때 모달 재계산용)
+  const [vvHeight, setVvHeight] = useState(() =>
+    (typeof window !== "undefined" && window.visualViewport?.height) || window.innerHeight
+  );
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const handler = () => setVvHeight(vv.height);
+    vv.addEventListener("resize", handler);
+    vv.addEventListener("scroll", handler);
+    return () => { vv.removeEventListener("resize", handler); vv.removeEventListener("scroll", handler); };
+  }, []);
+  const queueListRef = useRef<HTMLDivElement>(null);
   // 모달 드래그 위치
   const [queueModalPos, setQueueModalPos] = useState({ x: 0, y: 0 });
   const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
@@ -2727,10 +2740,14 @@ export default function SchedulePage() {
           position: "fixed", inset: 0, zIndex: 400,
           background: "rgba(0,0,0,0.55)",
           display: "flex", flexDirection: "column", justifyContent: "flex-end",
+          // 키보드가 올라온 만큼 하단 패딩 추가 → 시트가 키보드 위에 위치
+          paddingBottom: Math.max(0, window.innerHeight - vvHeight),
         }}>
           <div style={{
             background: "#fff", borderRadius: "18px 18px 0 0",
-            maxHeight: "75vh", display: "flex", flexDirection: "column",
+            // 키보드 가시 영역 기준 최대 높이 (vvHeight 88%)
+            maxHeight: Math.min(vvHeight * 0.88, vvHeight - 20),
+            display: "flex", flexDirection: "column",
             boxShadow: "0 -4px 24px rgba(0,0,0,0.18)",
           }}>
             {/* 헤더 */}
@@ -2795,6 +2812,12 @@ export default function SchedulePage() {
                 value={queuePickSearch}
                 onChange={e => setQueuePickSearch(e.target.value)}
                 placeholder="이름 검색..."
+                onFocus={() => {
+                  // 키보드 올라온 후 목록이 보이도록 약간의 지연 후 스크롤
+                  setTimeout(() => {
+                    queueListRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                  }, 350);
+                }}
                 style={{
                   width: "100%", padding: "9px 12px", borderRadius: 10,
                   border: "1px solid #ddd", fontSize: 14, boxSizing: "border-box",
@@ -2802,7 +2825,7 @@ export default function SchedulePage() {
               />
             </div>
             {/* 목록 */}
-            <div style={{ overflowY: "auto", flex: 1, paddingBottom: 16 }}>
+            <div ref={queueListRef} style={{ overflowY: "auto", flex: 1, paddingBottom: 16 }}>
               {sortedCustomRoster
                 .filter(p => !queuePickSearch || p.name.includes(queuePickSearch))
                 .map(p => (
