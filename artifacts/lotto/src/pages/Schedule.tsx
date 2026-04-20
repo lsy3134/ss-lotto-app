@@ -2153,8 +2153,10 @@ export default function SchedulePage() {
                 const hasManual = Object.keys(savedStatuses).length > 0;
                 const hasExcel = d.가용인원 > 0 || hasTeams;
 
-                // 이 날의 첫번호: override → spare2 체인 → queueStartName 순 우선
-                const nextFirstHint = getStartNameForDate(d.dateLabel);
+                // 이 날의 첫번호: pendingResult(현재 날짜 배정 직후) → override → spare2 체인 → queueStartName
+                const nextFirstHint =
+                  (d.dateLabel === currentDateKey ? pendingResult?.spare2?.[0] : undefined)
+                  ?? getStartNameForDate(d.dateLabel);
                 const hasAssigned = Boolean(assignmentData[d.dateLabel]);
 
                 return (
