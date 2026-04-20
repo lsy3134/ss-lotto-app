@@ -51,9 +51,16 @@ const GROUP_DOT: Record<GroupType, string> = {
   주말:   "#f59e0b",
 };
 
+// 이름 비교/조회용 normalize (공백 제거) — 저장 시 절대 사용 금지, 조회 시에만 사용
+const normalize = (name: string) => name.replace(/\s+/g, "");
+
 // 이름 → 그룹 조회 맵
 const NAME_GROUP: Record<string, GroupType> = Object.fromEntries(
   ROSTER.map(p => [p.name, p.group])
+);
+// normalize된 key로 그룹 조회 (공백 차이로 인한 key 불일치 방지)
+const NAME_GROUP_NORMALIZED: Record<string, GroupType> = Object.fromEntries(
+  Object.entries(NAME_GROUP).map(([k, v]) => [normalize(k), v])
 );
 
 const DAY_LABELS = ["월", "화", "수", "목", "금", "토", "일"];
@@ -1171,11 +1178,17 @@ export default function SchedulePage() {
     [...customRoster].sort((a, b) => a.조 !== b.조 ? a.조 - b.조 : a.no - b.no),
     [customRoster]
   );
-  // 이름 → PersonData 맵
+  // 이름 → PersonData 맵 (키는 normalize로 정규화, 조회 시 normalize(name) 사용)
   const customRosterMap = useMemo(() =>
-    Object.fromEntries(customRoster.map(p => [p.name, p])),
+    Object.fromEntries(customRoster.map(p => [normalize(p.name), p])),
     [customRoster]
   );
+  // lookup helper — 조회 시 항상 normalize 경유
+  const getRosterPerson = (name: string) => customRosterMap[normalize(name)];
+  const getGroup = (name: string): GroupType =>
+    customRosterMap[normalize(name)]?.group
+    ?? NAME_GROUP_NORMALIZED[normalize(name)]
+    ?? "하우스";
 
   // ── 순번표 편집 모달 ──
   const [rosterEditorOpen, setRosterEditorOpen] = useState(false);
@@ -1190,7 +1203,7 @@ export default function SchedulePage() {
     if (name in manualStatuses) return manualStatuses[name];
     // 병가 지속: sickLeave에 등록된 사람은 해제 전까지 자동 병가
     if (sickLeave[name]) return "병가";
-    const person = customRosterMap[name];
+    const person = getRosterPerson(name);
     if (person && isAutoOff(person.group, dayIdx)) {
       const dg = currentDaegeun[name];
       if (dg === "투라운드") return "찾근";
@@ -1569,7 +1582,7 @@ export default function SchedulePage() {
     const statuses: Record<string, StatusType> = {};
     effectiveNames.forEach((n) => {
       if (n in savedDay) { statuses[n] = savedDay[n]; return; }
-      const person = customRosterMap[n];
+      const person = getRosterPerson(n);
       if (person && isAutoOff(person.group, dayIdx)) { statuses[n] = "휴무"; return; }
       statuses[n] = null;
     });
@@ -1736,7 +1749,7 @@ export default function SchedulePage() {
       const statuses: Record<string, StatusType> = {};
       currentNames.forEach((n) => {
         if (n in savedDay) { statuses[n] = savedDay[n]; return; }
-        const person = customRosterMap[n];
+        const person = getRosterPerson(n);
         if (person && isAutoOff(person.group, day.dayIdx)) { statuses[n] = "휴무"; return; }
         statuses[n] = null;
       });
@@ -1765,7 +1778,7 @@ export default function SchedulePage() {
     const statuses: Record<string, StatusType> = {};
     en.forEach((n) => {
       if (n in savedDay) { statuses[n] = savedDay[n]; return; }
-      const person = customRosterMap[n];
+      const person = getRosterPerson(n);
       if (person && isAutoOff(person.group, dayIdx)) { statuses[n] = "휴무"; return; }
       statuses[n] = null;
     });
@@ -1879,7 +1892,7 @@ export default function SchedulePage() {
       const statuses: Record<string, StatusType> = {};
       currentNames.forEach((n) => {
         if (n in savedDay) { statuses[n] = savedDay[n]; return; }
-        const person = customRosterMap[n];
+        const person = getRosterPerson(n);
         if (person && isAutoOff(person.group, dayIdx)) { statuses[n] = "휴무"; return; }
         statuses[n] = null;
       });
@@ -2247,7 +2260,7 @@ export default function SchedulePage() {
                   // 추가휴무: 상태가 "휴무"이면서 자동휴무(정기휴무) 대상이 아닌 경우만 계산에 반영
                   const extraOff  = baseNames.filter(n => {
                     if (effectiveStatus(n, dayOfWeek) !== "휴무") return false;
-                    const p = customRosterMap[n];
+                    const p = getRosterPerson(n);
                     return !p || !isAutoOff(p.group, dayOfWeek);
                   }).length;
                   const avail = selectedDate.가용인원 - danBeon - byungGa - extraOff;
@@ -2259,7 +2272,7 @@ export default function SchedulePage() {
                   const byungGa   = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "병가").length;
                   const extraOff  = baseNames.filter(n => {
                     if (effectiveStatus(n, dayOfWeek) !== "휴무") return false;
-                    const p = customRosterMap[n];
+                    const p = getRosterPerson(n);
                     return !p || !isAutoOff(p.group, dayOfWeek);
                   }).length;
                   const avail = selectedDate.가용인원 - danBeon - byungGa - extraOff;
@@ -2276,7 +2289,7 @@ export default function SchedulePage() {
                 {(() => {
                   const daegeunBaseNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
                   const daegeunCandidates = daegeunBaseNames.filter(n => {
-                    const p = customRosterMap[n];
+                    const p = getRosterPerson(n);
                     return p != null && isAutoOff(p.group, dayOfWeek) && !(n in manualStatuses);
                   });
                   const activeDaegeun = daegeunCandidates.filter(n => currentDaegeun[n]);
@@ -3226,7 +3239,7 @@ export default function SchedulePage() {
         const query = modalSearch.trim().toLowerCase();
         const filteredNames = listNames.filter(n =>
           !query || n.toLowerCase().includes(query) ||
-          (customRosterMap[n]?.조?.toString() ?? "").includes(query)
+          (getRosterPerson(n)?.조?.toString() ?? "").includes(query)
         );
 
         const JO_COLORS: Record<number, { bg: string; color: string }> = {
@@ -3310,7 +3323,7 @@ export default function SchedulePage() {
                   const items: React.ReactNode[] = [];
 
                   filteredNames.forEach((name) => {
-                    const person = customRosterMap[name];
+                    const person = getRosterPerson(name);
                     const joNum = person?.조;
                     const effS = effectiveStatus(name);
 
@@ -3528,7 +3541,7 @@ export default function SchedulePage() {
                     })
                   ) : (
                     selectedNames.map(n => {
-                      const g: GroupType = (customRosterMap[n]?.group ?? NAME_GROUP[n]) ?? "하우스";
+                      const g: GroupType = getGroup(n);
                       const gs = GROUP_STYLE[g];
                       return (
                         <div key={n}
@@ -3621,7 +3634,7 @@ export default function SchedulePage() {
                   </div>
                 ) : (
                   people.map((name) => {
-                    const person = customRosterMap[name];
+                    const person = getRosterPerson(name);
                     const isAuto = !manualStatuses[name];
                     return (
                       <div key={name} style={{
@@ -3679,7 +3692,7 @@ export default function SchedulePage() {
       {batchDaegeunOpen && (() => {
         const batchBaseNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
         const candidates = batchBaseNames.filter(n => {
-          const p = customRosterMap[n];
+          const p = getRosterPerson(n);
           return p != null && isAutoOff(p.group, dayOfWeek) && !(n in manualStatuses);
         });
         const filtered = batchDaegeunSearch.trim()
@@ -3758,7 +3771,7 @@ export default function SchedulePage() {
                   </div>
                 ) : (
                   filtered.map((name) => {
-                    const p = customRosterMap[name];
+                    const p = getRosterPerson(name);
                     const dg: DaegeunType | undefined = currentDaegeun[name];
                     return (
                       <div key={name} style={{
@@ -4447,7 +4460,7 @@ export default function SchedulePage() {
                 4: { bg: "#fff8e1", color: "#f57f17" },
               };
               names.forEach((name, idx) => {
-                const person = customRosterMap[name];
+                const person = getRosterPerson(name);
                 const joNum = person?.조;
                 // 조 구분 헤더
                 if (rosterLoaded && joNum !== undefined && joNum !== lastGroup) {
@@ -4821,7 +4834,7 @@ function DayResultView({ result, mode, compact = false }: {
     if (compact) {
       if (isExcluded) {
         return people.map((n, i) => {
-          const grp = NAME_GROUP[n];
+          const grp = NAME_GROUP_NORMALIZED[normalize(n)];
           const dot = grp ? GROUP_DOT[grp] : null;
           return (
             <span key={n}>
@@ -4842,7 +4855,7 @@ function DayResultView({ result, mode, compact = false }: {
           const isSpare1= (key === "shift2") && spare1Set.has(n);
           const isTwoR  = key === "twoRound";
           const suffix  = isCho ? " [조출]" : isHu ? " [후출]" : isSpare1 ? " [1부스페어]" : "";
-          const grp     = isExcluded ? NAME_GROUP[n] : undefined;
+          const grp     = isExcluded ? NAME_GROUP_NORMALIZED[normalize(n)] : undefined;
           const dotColor = grp ? GROUP_DOT[grp] : null;
           return (
             <span key={n}>
