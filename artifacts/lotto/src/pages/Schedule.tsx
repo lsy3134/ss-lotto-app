@@ -3505,7 +3505,7 @@ export default function SchedulePage() {
               <div style={{ overflowY: "auto", flex: 1 }}>
 
                 {/* 1. 선택된 인원 chip 영역 */}
-                <SectionLabel num="1" title={`선택된 ${isVip ? "VIP" : modalStatus}`} count={selectedNames.length} />
+                <SectionLabel num="1" title={`총 ${selectedNames.length}명`} />
                 <div style={{
                   padding: "4px 14px 10px",
                   display: "flex", flexWrap: "wrap", gap: "6px",
@@ -3625,10 +3625,6 @@ export default function SchedulePage() {
                   </>}
 
                   {/* 2-2. 이름 검색 input */}
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "2px 0 4px" }}>
-                    <span style={{ fontSize: "0.68rem", fontWeight: 700, color: "#9aa3b5" }}>2-2</span>
-                    <span style={{ fontSize: "0.76rem", color: "#777" }}>이름 검색</span>
-                  </div>
                   <input
                     value={modalSearch}
                     onChange={(e) => setModalSearch(e.target.value)}
@@ -3641,37 +3637,6 @@ export default function SchedulePage() {
                       background: statusSc.bg + "55",
                     }}
                   />
-                </div>
-
-                {/* 3. 순번 전체 (펼치기/접기) */}
-                <div style={{ borderTop: "1px solid #f0f0f0", marginTop: "6px" }}>
-                  <SectionLabel num="3" title="순번 전체" />
-                  <div style={{ padding: "4px 14px 10px" }}>
-                    <button
-                      onClick={() => setShowFullList(v => !v)}
-                      style={{
-                        width: "100%", padding: "10px 14px",
-                        borderRadius: "10px", border: "1.5px solid #e0e0e0",
-                        background: "#fafafa", cursor: "pointer",
-                        display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
-                        fontSize: "0.85rem", fontWeight: 700, color: "#555",
-                      }}
-                    >
-                      <span style={{ fontSize: "1rem" }}>{showFullList ? "➖" : "➕"}</span>
-                      {showFullList ? "순번 접기" : "순번 펼치기"}
-                      <span style={{ marginLeft: "auto", color: "#bbb", fontSize: "0.8rem" }}>
-                        {showFullList ? "▲" : "▼"}
-                      </span>
-                    </button>
-                    {showFullList && (
-                      <div style={{
-                        marginTop: "8px", border: "1px solid #eee",
-                        borderRadius: "10px", overflow: "hidden",
-                      }}>
-                        {renderItems(listNames, true)}
-                      </div>
-                    )}
-                  </div>
                 </div>
 
               </div>{/* ── 스크롤 영역 끝 ── */}
