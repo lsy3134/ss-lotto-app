@@ -1719,20 +1719,12 @@ export default function SchedulePage() {
 
     setDayResult(pendingResult);
 
-    const newAssignment = { ...assignmentData, [currentDateKey]: pendingResult };
-    const newSpare2 = pendingResult.spare2.length > 0
-      ? { ...savedSpare2, [currentDateKey]: pendingResult.spare2 }
-      : { ...savedSpare2 };
-
-    const { updatedAssignment, updatedSpare2, count } = recalculateFrom(currentDateKey, newAssignment, newSpare2);
-    setAssignmentData(updatedAssignment);
-    setSavedSpare2(updatedSpare2);
-    setPendingResult(null);
-
-    if (count > 0) {
-      setRecalcMessage(`이 날짜 이후 ${count}일 스케줄이 자동으로 업데이트되었습니다.`);
-      setTimeout(() => setRecalcMessage(null), 4000);
+    // 해당 날짜만 확정 저장 — 이후 날짜는 변경하지 않음
+    setAssignmentData(prev => ({ ...prev, [currentDateKey]: pendingResult }));
+    if (pendingResult.spare2.length > 0) {
+      setSavedSpare2(prev => ({ ...prev, [currentDateKey]: pendingResult.spare2 }));
     }
+    setPendingResult(null);
   }
 
   function generateWeek() {
