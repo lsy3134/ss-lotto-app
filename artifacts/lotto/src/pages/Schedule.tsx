@@ -3573,7 +3573,8 @@ export default function SchedulePage() {
                 {/* 2. 검색 영역 */}
                 <SectionLabel num="2" title="검색" />
                 <div style={{ padding: "2px 14px 4px" }}>
-                  {/* 2-1. 검색 결과 (그룹별) */}
+                  {/* 2-1. 검색 결과 (그룹별) — 검색어 있을 때만 표시 */}
+                  {modalSearch.trim() !== "" && <>
                   <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 0 4px" }}>
                     <span style={{ fontSize: "0.68rem", fontWeight: 700, color: "#9aa3b5" }}>2-1</span>
                     <span style={{ fontSize: "0.76rem", color: "#777" }}>
@@ -3621,6 +3622,7 @@ export default function SchedulePage() {
                       });
                     })()}
                   </div>
+                  </>}
 
                   {/* 2-2. 이름 검색 input */}
                   <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "2px 0 4px" }}>
