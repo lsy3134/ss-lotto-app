@@ -3597,7 +3597,7 @@ export default function SchedulePage() {
                               }}>{grp} {grpNames.length}명</span>
                               <div style={{ flex: 1, height: 1, background: gs.color + "33" }} />
                             </div>
-                            {renderItems(grpNames, false)}
+                            {renderItems(grpNames.slice(0, 2), false)}
                           </div>
                         );
                       });
