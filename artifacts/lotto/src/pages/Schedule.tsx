@@ -1299,7 +1299,7 @@ export default function SchedulePage() {
         const next = { ...cur };
         for (const hName of hdNames) {
           const matched = sortedCustomRoster.find(p =>
-            p.name === hName || (hName.length >= 2 && p.name.startsWith(hName.slice(0, 2)))
+            normalize(p.name) === normalize(hName) || (hName.length >= 2 && normalize(p.name).startsWith(normalize(hName).slice(0, 2)))
           )?.name ?? hName;
           // 이미 사용자가 다른 상태로 지정한 경우 덮어쓰지 않음
           if (!next[matched]) next[matched] = "휴무";
@@ -2837,7 +2837,7 @@ export default function SchedulePage() {
               >×</button>
             </div>
             {/* ── 빠른 선택: 현재 저장된 첫번호 ── */}
-            {queueStartName && sortedCustomRoster.some(p => p.name === queueStartName) && (
+            {queueStartName && sortedCustomRoster.some(p => normalize(p.name) === normalize(queueStartName)) && (
               <div style={{ padding: "8px 14px", borderBottom: "1px solid #eee" }}>
                 <div style={{ fontSize: 11, color: "#888", marginBottom: 6 }}>⚡ 빠른 선택 (이전 첫번호)</div>
                 <button
@@ -2860,7 +2860,7 @@ export default function SchedulePage() {
                   }}
                 >
                   {(() => {
-                    const person = sortedCustomRoster.find(p => p.name === queueStartName);
+                    const person = sortedCustomRoster.find(p => normalize(p.name) === normalize(queueStartName));
                     return <>
                       <span style={{
                         background: "#1565c0", borderRadius: 8, padding: "2px 8px",
@@ -2897,7 +2897,7 @@ export default function SchedulePage() {
             {/* 목록 */}
             <div ref={queueListRef} style={{ overflowY: "auto", flex: 1, paddingBottom: 16 }}>
               {sortedCustomRoster
-                .filter(p => !queuePickSearch || p.name.includes(queuePickSearch))
+                .filter(p => !queuePickSearch || normalize(p.name).includes(normalize(queuePickSearch)))
                 .map(p => (
                   <button
                     key={p.name}
@@ -2915,7 +2915,7 @@ export default function SchedulePage() {
                     style={{
                       display: "flex", width: "100%", padding: "12px 18px",
                       alignItems: "center", gap: 10, border: "none",
-                      background: p.name === queueStartName ? "#e3f2fd" : "transparent",
+                      background: normalize(p.name) === normalize(queueStartName ?? "") ? "#e3f2fd" : "transparent",
                       cursor: "pointer", textAlign: "left",
                       touchAction: "manipulation",
                     }}
@@ -2933,7 +2933,7 @@ export default function SchedulePage() {
                     }}>
                       {p.group}
                     </span>
-                    {p.name === queueStartName && (
+                    {normalize(p.name) === normalize(queueStartName ?? "") && (
                       <span style={{ color: "#1565c0", fontSize: 13, fontWeight: 700 }}>✓ 현재</span>
                     )}
                   </button>
@@ -3103,7 +3103,7 @@ export default function SchedulePage() {
                   {(() => {
                     const q = rosterEditorSearch.trim().toLowerCase();
                     const filtered = sortedCustomRoster.filter(p =>
-                      !q || p.name.includes(q) || p.조.toString().includes(q) || p.group.includes(q)
+                      !q || normalize(p.name).includes(normalize(q)) || p.조.toString().includes(q) || p.group.includes(q)
                     );
                     const JO_COLORS: Record<number, { bg: string; color: string }> = {
                       1: { bg: "#fce4ec", color: "#c62828" },
@@ -3308,11 +3308,11 @@ export default function SchedulePage() {
                     )}
                     <div style={{ flex: 1 }}>
                       <span style={{ fontWeight: 600, fontSize: "0.92rem" }}>{name}</span>
-                      {person && (
-                        <span style={{ marginLeft: "6px", fontSize: "0.65rem", color: GROUP_STYLE[person.group].color, fontWeight: 600 }}>
-                          {GROUP_STYLE[person.group].label}
+                      {(() => { const grp = person?.group ?? getGroup(name); const gs = GROUP_STYLE[grp]; return (
+                        <span style={{ marginLeft: "6px", fontSize: "0.65rem", color: gs.color, fontWeight: 600 }}>
+                          {gs.label}
                         </span>
-                      )}
+                      ); })()}
                     </div>
                     {vipType && (
                       <span style={{
@@ -3412,11 +3412,11 @@ export default function SchedulePage() {
                   </div>
                   <div style={{ flex: 1 }}>
                     <span style={{ fontWeight: 600, fontSize: "0.92rem" }}>{name}</span>
-                    {person && (
-                      <span style={{ marginLeft: "6px", fontSize: "0.65rem", color: GROUP_STYLE[person.group].color, fontWeight: 600 }}>
-                        {person.조}조 · {GROUP_STYLE[person.group].label}
+                    {(() => { const grp = person?.group ?? getGroup(name); const gs = GROUP_STYLE[grp]; return (
+                      <span style={{ marginLeft: "6px", fontSize: "0.65rem", color: gs.color, fontWeight: 600 }}>
+                        {person ? `${person.조}조 · ` : ""}{gs.label}
                       </span>
-                    )}
+                    ); })()}
                   </div>
                   {(isDifferent || isVipDiff) && (
                     <span style={{
