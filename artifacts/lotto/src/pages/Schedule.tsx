@@ -992,8 +992,6 @@ export default function SchedulePage() {
   }, [vipData]);
 
   const [vipPickerOpen, setVipPickerOpen] = useState(false);
-  const [vipMemberPickerOpen, setVipMemberPickerOpen] = useState(false);
-  const [vipMemberSearch, setVipMemberSearch] = useState("");
   // VIP 인원 선택 모달에서 하위 유형 선택 중인 사람 (이름 → 임시 선택 유형)
   const [vipSubPicking, setVipSubPicking] = useState<string | null>(null);
 
@@ -1143,8 +1141,8 @@ export default function SchedulePage() {
     });
   }
 
-  // 상태 선택 모달 (전체 순번표 표시)
-  const [modalStatus, setModalStatus] = useState<StatusType | null>(null);
+  // 통합 선택 모달 — StatusType | "VIP" 지원
+  const [modalStatus, setModalStatus] = useState<StatusType | "VIP" | null>(null);
   const [modalSearch, setModalSearch] = useState("");
 
   // 명단 보기 모달 (해당 상태인 사람만 표시)
@@ -1605,7 +1603,7 @@ export default function SchedulePage() {
     { st: "찾근",  label: "찾근",  color: "#2e7d32", bg: "#e8f5e9" },
   ];
 
-  function openStatusPicker(st: StatusType) {
+  function openStatusPicker(st: StatusType | "VIP") {
     if (names.length === 0) {
       const base = sortedCustomRoster.map((p) => p.name);
       setNames(rotateNames(base, queueStartName));
@@ -1613,6 +1611,7 @@ export default function SchedulePage() {
     }
     setModalStatus(st);
     setModalSearch("");
+    setVipSubPicking(null);
   }
 
   // OCR 핸들러: 이미지 업로드 → Tesseract OCR → 날짜별 이름 추출
@@ -2464,7 +2463,7 @@ export default function SchedulePage() {
                           VIP 담당 인원 <span style={{ fontWeight: 400, color: "#aaa" }}>(1부/2부/투근무 개별 지정)</span>
                         </label>
                         <button
-                          onClick={() => { setVipMemberSearch(""); setVipSubPicking(null); setVipMemberPickerOpen(true); }}
+                          onClick={() => openStatusPicker("VIP")}
                           style={{
                             padding: "4px 10px", borderRadius: "8px", border: "none",
                             background: "#ce93d8", color: "#fff",
@@ -2898,199 +2897,6 @@ export default function SchedulePage() {
           </div>
         </div>
       )}
-      {/* ── VIP 인원 선택 모달 ── */}
-      {vipMemberPickerOpen && (
-        <div style={{
-          position: "fixed", inset: 0, zIndex: 400,
-          background: "rgba(0,0,0,0.55)",
-          display: "flex", flexDirection: "column", justifyContent: "flex-end",
-        }}>
-          <div style={{
-            background: "#fff", borderRadius: "18px 18px 0 0",
-            maxHeight: "80vh", display: "flex", flexDirection: "column",
-            boxShadow: "0 -4px 24px rgba(0,0,0,0.18)",
-          }}>
-            {/* 헤더 */}
-            <div style={{
-              padding: "16px 18px 10px", borderBottom: "1px solid #f3e5f5",
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-            }}>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 16, color: "#7b1fa2" }}>👑 VIP 담당 인원 선택</div>
-                <div style={{ fontSize: 12, color: "#9c27b0", marginTop: 2 }}>
-                  이름 탭 → 유형 선택 (1부 / 2부 / 투근무) · {currentVipMembers.length}명 지정됨
-                </div>
-              </div>
-              <button
-                onClick={() => { setVipMemberPickerOpen(false); setVipSubPicking(null); }}
-                style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#888" }}
-              >×</button>
-            </div>
-
-            {/* 선택된 인원 미리보기 칩 */}
-            {currentVipMembers.length > 0 && (
-              <div style={{ padding: "8px 14px", display: "flex", flexWrap: "wrap", gap: 5, borderBottom: "1px solid #f3e5f5" }}>
-                {currentVipMembers.map(({ name, type }) => {
-                  const sc = STATUS_COLOR[type] ?? { bg: "#f3e5f5", color: "#7b1fa2" };
-                  const lbl = type === "VIP1부" ? "1부" : type === "VIP2부" ? "2부" : "투근무";
-                  return (
-                    <span key={name} style={{
-                      display: "inline-flex", alignItems: "center", gap: 4,
-                      padding: "4px 8px", borderRadius: 20,
-                      background: sc.bg, color: sc.color, border: `1px solid ${sc.color}44`,
-                      fontSize: "0.76rem", fontWeight: 700,
-                    }}>
-                      {name} <span style={{ opacity: 0.7, fontSize: "0.68rem" }}>({lbl})</span>
-                      <button
-                        onClick={() => clearStatus(name)}
-                        style={{ background: "none", border: "none", color: sc.color, cursor: "pointer", fontSize: "0.85rem", padding: 0 }}
-                      >×</button>
-                    </span>
-                  );
-                })}
-                <button
-                  onClick={() => currentVipMembers.forEach(({ name }) => clearStatus(name))}
-                  style={{
-                    padding: "4px 10px", borderRadius: 20, border: "none",
-                    background: "#ffebee", color: "#c62828",
-                    fontSize: "0.72rem", fontWeight: 700, cursor: "pointer",
-                  }}
-                >전체 해제</button>
-              </div>
-            )}
-
-            {/* 검색 */}
-            <div style={{ padding: "8px 14px" }}>
-              <input
-                value={vipMemberSearch}
-                onChange={e => setVipMemberSearch(e.target.value)}
-                placeholder="이름 검색..."
-                style={{
-                  width: "100%", padding: "9px 12px", borderRadius: 10,
-                  border: "1.5px solid #ce93d8", fontSize: 14, boxSizing: "border-box",
-                  outline: "none",
-                }}
-              />
-            </div>
-
-            {/* 인원 목록 — 인라인 유형 선택 */}
-            <div style={{ overflowY: "auto", flex: 1, paddingBottom: 16 }}>
-              {(() => {
-                const roster = (names.length > 0 ? names : sortedCustomRoster.map(p => p.name));
-                const filtered = vipMemberSearch
-                  ? roster.filter(name => name.includes(vipMemberSearch))
-                  : roster;
-                return filtered.map(name => {
-                  const person = customRosterMap[name];
-                  const curStatus = manualStatuses[name];
-                  const isVip = VIP_STATUSES.has(curStatus);
-                  const vipType = isVip ? curStatus as "VIP1부" | "VIP2부" | "VIP투근무" : null;
-                  const sc = vipType ? (STATUS_COLOR[vipType] ?? { bg: "#f3e5f5", color: "#7b1fa2" }) : null;
-                  const isExpanded = vipSubPicking === name;
-
-                  return (
-                    <div key={name} style={{
-                      borderBottom: "1px solid #fce4ec",
-                      background: isVip ? (sc?.bg ?? "#f3e5f5") + "55" : "transparent",
-                      borderLeft: isVip ? `3px solid ${sc?.color ?? "#7b1fa2"}` : "3px solid transparent",
-                    }}>
-                      {/* 인원 행 */}
-                      <div
-                        onClick={() => setVipSubPicking(isExpanded ? null : name)}
-                        style={{
-                          display: "flex", padding: "10px 16px",
-                          alignItems: "center", gap: 10, cursor: "pointer",
-                        }}
-                      >
-                        {person && (
-                          <span style={{
-                            background: isVip ? (sc?.color ?? "#7b1fa2") : "#e8eaf6",
-                            borderRadius: 8, padding: "2px 8px",
-                            fontSize: 11, color: isVip ? "#fff" : "#5c6bc0",
-                            fontWeight: 700, minWidth: 44,
-                          }}>
-                            {person.조}조 {person.no}번
-                          </span>
-                        )}
-                        <span style={{ fontWeight: 600, fontSize: 15, flex: 1 }}>{name}</span>
-                        {vipType && (
-                          <span style={{
-                            fontSize: 11, fontWeight: 700, color: sc?.color,
-                            background: sc?.bg, borderRadius: 6, padding: "2px 8px",
-                            border: `1px solid ${sc?.color}44`,
-                          }}>
-                            {vipType === "VIP1부" ? "1부" : vipType === "VIP2부" ? "2부" : "투근무"}
-                          </span>
-                        )}
-                        <span style={{ color: isExpanded ? "#7b1fa2" : "#bbb", fontSize: 18, fontWeight: 700 }}>
-                          {isExpanded ? "▲" : "▼"}
-                        </span>
-                      </div>
-
-                      {/* 유형 선택 버튼 (확장 시) */}
-                      {isExpanded && (
-                        <div style={{ padding: "6px 16px 12px", display: "flex", gap: 8 }}>
-                          {(["VIP1부", "VIP2부", "VIP투근무"] as const).map(st => {
-                            const btnSc = STATUS_COLOR[st];
-                            const active = curStatus === st;
-                            const lbl = st === "VIP1부" ? "1부" : st === "VIP2부" ? "2부" : "투근무";
-                            return (
-                              <button
-                                key={st}
-                                onClick={() => {
-                                  if (active) {
-                                    clearStatus(name);
-                                  } else {
-                                    // 기존 VIP 또는 다른 상태 우선 제거 후 새 VIP 설정
-                                    setManualStatuses(prev => ({ ...prev, [name]: st }));
-                                  }
-                                  setVipSubPicking(null);
-                                }}
-                                style={{
-                                  flex: 1, padding: "9px 4px", borderRadius: 10,
-                                  border: `2px solid ${active ? btnSc.color : btnSc.color + "55"}`,
-                                  background: active ? btnSc.color : btnSc.bg,
-                                  color: active ? "#fff" : btnSc.color,
-                                  fontWeight: 800, fontSize: "0.85rem", cursor: "pointer",
-                                }}
-                              >
-                                {lbl}
-                              </button>
-                            );
-                          })}
-                          {isVip && (
-                            <button
-                              onClick={() => { clearStatus(name); setVipSubPicking(null); }}
-                              style={{
-                                padding: "9px 10px", borderRadius: 10,
-                                border: "1px solid #ef9a9a", background: "#ffebee",
-                                color: "#c62828", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer",
-                              }}
-                            >해제</button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                });
-              })()}
-            </div>
-
-            {/* 확인 버튼 */}
-            <div style={{ padding: "12px 16px", borderTop: "1px solid #f3e5f5" }}>
-              <button
-                onClick={() => { setVipMemberPickerOpen(false); setVipSubPicking(null); }}
-                style={{
-                  width: "100%", padding: "13px", borderRadius: 12, border: "none",
-                  background: "#7b1fa2", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer",
-                }}
-              >
-                완료 ({currentVipMembers.length}명 지정)
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {/* ── 순번표 편집 모달 ── */}
       {rosterEditorOpen && (
         <div style={{
@@ -3373,226 +3179,360 @@ export default function SchedulePage() {
           </div>
         </div>
       )}
-      {/* ── 상태 선택 모달 (전역, 어느 화면에서나 열림) ── */}
-      {modalStatus && (
-        <div style={{
-          position: "fixed", inset: 0, zIndex: 200,
-          background: "rgba(0,0,0,0.45)",
-          display: "flex", flexDirection: "column", justifyContent: "flex-end",
-        }}
-          onClick={(e) => { if (e.target === e.currentTarget) setModalStatus(null); }}
-        >
+      {/* ── 통합 선택 모달 (조출/후출/찾근/VIP/기타 공통) ── */}
+      {modalStatus && (() => {
+        const isVip = modalStatus === "VIP";
+        const statusSc = isVip
+          ? { bg: "#f3e5f5", color: "#7b1fa2" }
+          : (STATUS_COLOR[modalStatus as string] ?? { bg: "#f5f5f5", color: "#333" });
+
+        // 현재 선택 목록
+        const selectedNames = isVip
+          ? currentVipMembers.map(m => m.name)
+          : names.filter(n => effectiveStatus(n) === modalStatus as StatusType);
+
+        const listNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
+        const query = modalSearch.trim().toLowerCase();
+        const filteredNames = listNames.filter(n =>
+          !query || n.toLowerCase().includes(query) ||
+          (customRosterMap[n]?.조?.toString() ?? "").includes(query)
+        );
+
+        const JO_COLORS: Record<number, { bg: string; color: string }> = {
+          1: { bg: "#fce4ec", color: "#c62828" },
+          2: { bg: "#e8f5e9", color: "#2e7d32" },
+          3: { bg: "#e3f2fd", color: "#1565c0" },
+          4: { bg: "#fff8e1", color: "#f57f17" },
+        };
+
+        return (
           <div style={{
-            background: "#fff", borderRadius: "18px 18px 0 0",
-            maxHeight: "88vh", display: "flex", flexDirection: "column",
-            overflow: "hidden",
-          }}>
-            {/* 헤더 */}
+            position: "fixed", inset: 0, zIndex: 200,
+            background: "rgba(0,0,0,0.45)",
+            display: "flex", flexDirection: "column", justifyContent: "flex-end",
+          }}
+            onClick={(e) => { if (e.target === e.currentTarget) { setModalStatus(null); setVipSubPicking(null); } }}
+          >
             <div style={{
-              display: "flex", alignItems: "center", padding: "14px 16px",
-              borderBottom: "1px solid #f0f0f0",
-              background: (STATUS_COLOR[modalStatus] ?? { bg: "#f5f5f5" }).bg,
+              background: "#fff", borderRadius: "18px 18px 0 0",
+              maxHeight: "90vh", display: "flex", flexDirection: "column",
+              overflow: "hidden",
             }}>
-              <span style={{ fontWeight: 800, fontSize: "1rem", color: (STATUS_COLOR[modalStatus] ?? { color: "#333" }).color }}>
-                {modalStatus} 배정
-              </span>
-              <span style={{ marginLeft: "8px", fontSize: "0.78rem", color: (STATUS_COLOR[modalStatus] ?? { color: "#fff" }).color + "cc" }}>
-                현재 {names.filter(n => effectiveStatus(n) === modalStatus).length}명 선택됨
-              </span>
-              <button onClick={() => setModalStatus(null)}
-                style={{
-                  marginLeft: "auto", background: "rgba(255,255,255,0.25)", border: "none",
-                  borderRadius: "50%", width: "30px", height: "30px",
-                  cursor: "pointer", fontSize: "1rem", fontWeight: 700,
-                  color: (STATUS_COLOR[modalStatus] ?? { color: "#333" }).color,
-                }}>✕</button>
-            </div>
-
-            {/* 검색창 */}
-            <div style={{ padding: "10px 14px", borderBottom: "1px solid #f0f0f0" }}>
-              <input
-                value={modalSearch}
-                onChange={(e) => setModalSearch(e.target.value)}
-                placeholder="🔍 이름 검색..."
-                autoFocus
-                style={{
-                  width: "100%", padding: "8px 12px", borderRadius: "10px",
-                  border: "1.5px solid #e0e0e0", fontSize: "0.9rem",
-                  outline: "none", boxSizing: "border-box",
-                }}
-              />
-            </div>
-
-            {/* 선택된 사람 칩 — 그룹별 묶음 */}
-            {(() => {
-              const selectedNames = names.filter(n => effectiveStatus(n) === modalStatus);
-              if (selectedNames.length === 0) return null;
-
-              const GROUP_ORDER: GroupType[] = ["하우스", "주중", "주말"];
-              const grouped: Record<GroupType, string[]> = { 하우스: [], 주중: [], 주말: [] };
-              selectedNames.forEach(n => {
-                const g: GroupType = (customRosterMap[n]?.group ?? NAME_GROUP[n]) ?? "하우스";
-                grouped[g].push(n);
-              });
-
-              return (
-                <div style={{ padding: "8px 14px 8px", borderBottom: "1px solid #f0f0f0", display: "flex", flexDirection: "column", gap: "8px" }}>
-                  {GROUP_ORDER.filter(g => grouped[g].length > 0).map(g => {
-                    const gs = GROUP_STYLE[g];
-                    return (
-                      <div key={g}>
-                        {/* 그룹 헤더 */}
-                        <div style={{
-                          display: "inline-flex", alignItems: "center", gap: "5px",
-                          marginBottom: "5px",
-                        }}>
-                          <span style={{
-                            width: "8px", height: "8px", borderRadius: "50%",
-                            background: gs.color, display: "inline-block", flexShrink: 0,
-                          }} />
-                          <span style={{ fontSize: "0.72rem", fontWeight: 800, color: gs.color }}>
-                            {gs.label}
-                          </span>
-                          <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#9aa3b5" }}>
-                            {grouped[g].length}명
-                          </span>
-                        </div>
-                        {/* 해당 그룹 chip 목록 */}
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
-                          {grouped[g].map(n => (
-                            <div key={n}
-                              onClick={() => toggleStatus(n, modalStatus)}
-                              style={{
-                                display: "inline-flex", alignItems: "center", gap: "5px",
-                                padding: "5px 10px", borderRadius: "999px",
-                                background: "#ffffff",
-                                border: `1.5px solid ${gs.color}55`,
-                                fontSize: "0.83rem", fontWeight: 700,
-                                cursor: "pointer",
-                              }}>
-                              <span style={{ color: "#1a2035" }}>{n}</span>
-                              <span style={{ color: "#9aa3b5", fontWeight: 800, fontSize: "0.85rem", lineHeight: 1 }}>×</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
+              {/* 헤더 */}
+              <div style={{
+                display: "flex", alignItems: "center", padding: "14px 16px 12px",
+                borderBottom: "1px solid #f0f0f0",
+                background: statusSc.bg,
+              }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 800, fontSize: "1rem", color: statusSc.color }}>
+                    {isVip ? "👑 VIP 배정" : `${modalStatus} 배정`}
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: statusSc.color + "aa", marginTop: "1px" }}>
+                    {isVip
+                      ? "이름 탭 → 1부 / 2부 / 투근무 선택"
+                      : "이름을 탭하면 선택/해제됩니다"}
+                  </div>
                 </div>
-              );
-            })()}
-
-            {/* 순번표 목록 */}
-            <div style={{ overflowY: "auto", flex: 1, padding: "6px 0 16px" }}>
-              {(() => {
-                const query = modalSearch.trim().toLowerCase();
-                const filtered = names.filter(n =>
-                  !query || n.toLowerCase().includes(query) ||
-                  (customRosterMap[n]?.조?.toString() ?? "").includes(query)
-                );
-                const JO_COLORS: Record<number, { bg: string; color: string }> = {
-                  1: { bg: "#fce4ec", color: "#c62828" },
-                  2: { bg: "#e8f5e9", color: "#2e7d32" },
-                  3: { bg: "#e3f2fd", color: "#1565c0" },
-                  4: { bg: "#fff8e1", color: "#f57f17" },
-                };
-                let lastJo: number | null = null;
-                const items: React.ReactNode[] = [];
-
-                filtered.forEach((name) => {
-                  const person = customRosterMap[name];
-                  const joNum = person?.조;
-                  const effS = effectiveStatus(name);
-                  const isSelected = effS === modalStatus;
-                  const isDifferent = effS !== null && effS !== modalStatus;
-
-                  if (!query && rosterLoaded && joNum !== undefined && joNum !== lastJo) {
-                    lastJo = joNum;
-                    const jc = JO_COLORS[joNum] ?? { bg: "#f5f5f5", color: "#555" };
-                    items.push(
-                      <div key={`h-${joNum}-${name}`} style={{ padding: "5px 14px 3px", display: "flex", alignItems: "center", gap: "8px" }}>
-                        <span style={{
-                          background: jc.bg, color: jc.color, fontWeight: 700,
-                          fontSize: "0.72rem", padding: "1px 10px", borderRadius: "20px",
-                          border: `1px solid ${jc.color}44`,
-                        }}>{joNum}조</span>
-                        <div style={{ flex: 1, height: "1px", background: jc.color + "33" }} />
-                      </div>
-                    );
-                  }
-
-                  const isDisabled = (() => {
-                    if (isSelected) return false;
-                    if (modalStatus === "조출") return !cho가능 || cho현재수 >= 4;
-                    if (modalStatus === "후출") return hu현재수 >= 4;
-                    return false;
-                  })();
-
-                  const sc = STATUS_COLOR[modalStatus] ?? { bg: "#eee", color: "#333" };
-                  items.push(
-                    <div key={name}
-                      onClick={() => !isDisabled && toggleStatus(name, modalStatus)}
-                      style={{
-                        display: "flex", alignItems: "center", gap: "10px",
-                        padding: "10px 14px",
-                        background: isSelected ? sc.bg + "33" : "transparent",
-                        borderLeft: isSelected ? `3px solid ${sc.color}` : "3px solid transparent",
-                        cursor: isDisabled ? "not-allowed" : "pointer",
-                        opacity: isDisabled ? 0.38 : 1,
-                      }}
-                    >
-                      <div style={{
-                        width: "22px", height: "22px", borderRadius: "6px", flexShrink: 0,
-                        border: `2px solid ${isSelected ? sc.color : "#ddd"}`,
-                        background: isSelected ? sc.bg : "#fff",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                      }}>
-                        {isSelected && <span style={{ fontSize: "0.9rem", color: sc.color, fontWeight: 900 }}>✓</span>}
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <span style={{ fontWeight: 600, fontSize: "0.92rem" }}>{name}</span>
-                        {person && (
-                          <span style={{ marginLeft: "6px", fontSize: "0.65rem", color: GROUP_STYLE[person.group].color, fontWeight: 600 }}>
-                            {person.조}조 · {GROUP_STYLE[person.group].label}
-                          </span>
-                        )}
-                      </div>
-                      {isDifferent && (
-                        <span style={{
-                          padding: "2px 8px", borderRadius: "12px", fontSize: "0.7rem", fontWeight: 700,
-                          background: (STATUS_COLOR[effS!] ?? { bg: "#eee" }).bg,
-                          color: (STATUS_COLOR[effS!] ?? { color: "#555" }).color,
-                        }}>{effS}</span>
-                      )}
-                      {isDisabled && !isSelected && (
-                        <span style={{ fontSize: "0.65rem", color: "#bbb" }}>불가</span>
-                      )}
-                    </div>
-                  );
-                });
-
-                if (items.length === 0) {
-                  return <div style={{ textAlign: "center", color: "#bbb", padding: "30px" }}>검색 결과 없음</div>;
-                }
-                return items;
-              })()}
-            </div>
-
-            {/* 완료 버튼 */}
-            <div style={{ padding: "10px 14px", borderTop: "1px solid #f0f0f0" }}>
-              <button onClick={() => setModalStatus(null)}
-                style={{
-                  width: "100%", padding: "13px", borderRadius: "12px", border: "none",
-                  background: (STATUS_COLOR[modalStatus] ?? { bg: "#1a1a2e" }).bg,
-                  color: (STATUS_COLOR[modalStatus] ?? { color: "#fff" }).color,
-                  fontWeight: 700, fontSize: "0.95rem", cursor: "pointer",
+                <div style={{
+                  display: "flex", alignItems: "center", gap: "8px",
                 }}>
-                완료 — {names.filter(n => effectiveStatus(n) === modalStatus).length}명 선택됨
-              </button>
+                  {selectedNames.length > 0 && (
+                    <span style={{
+                      padding: "3px 10px", borderRadius: "20px",
+                      background: statusSc.color + "22", color: statusSc.color,
+                      fontSize: "0.78rem", fontWeight: 800,
+                    }}>{selectedNames.length}명</span>
+                  )}
+                  <button onClick={() => { setModalStatus(null); setVipSubPicking(null); }}
+                    style={{
+                      background: "rgba(255,255,255,0.4)", border: "none",
+                      borderRadius: "50%", width: "30px", height: "30px",
+                      cursor: "pointer", fontSize: "1rem", fontWeight: 700,
+                      color: statusSc.color,
+                    }}>✕</button>
+                </div>
+              </div>
+
+              {/* 검색창 */}
+              <div style={{ padding: "10px 14px 8px" }}>
+                <input
+                  value={modalSearch}
+                  onChange={(e) => setModalSearch(e.target.value)}
+                  placeholder="🔍 이름 검색..."
+                  autoFocus
+                  style={{
+                    width: "100%", padding: "9px 14px", borderRadius: "12px",
+                    border: `1.5px solid ${statusSc.color}44`, fontSize: "0.9rem",
+                    outline: "none", boxSizing: "border-box",
+                    background: statusSc.bg + "55",
+                  }}
+                />
+              </div>
+
+              {/* ── 결과 목록 (scrollable) ── */}
+              <div style={{ overflowY: "auto", flex: 1 }}>
+                {filteredNames.length === 0 ? (
+                  <div style={{ textAlign: "center", color: "#bbb", padding: "30px" }}>검색 결과 없음</div>
+                ) : (() => {
+                  let lastJo: number | null = null;
+                  const items: React.ReactNode[] = [];
+
+                  filteredNames.forEach((name) => {
+                    const person = customRosterMap[name];
+                    const joNum = person?.조;
+                    const effS = effectiveStatus(name);
+
+                    // 조 구분선 (검색 없을 때만)
+                    if (!query && rosterLoaded && joNum !== undefined && joNum !== lastJo) {
+                      lastJo = joNum;
+                      const jc = JO_COLORS[joNum] ?? { bg: "#f5f5f5", color: "#555" };
+                      items.push(
+                        <div key={`h-${joNum}`} style={{ padding: "5px 14px 3px", display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span style={{
+                            background: jc.bg, color: jc.color, fontWeight: 700,
+                            fontSize: "0.72rem", padding: "1px 10px", borderRadius: "20px",
+                            border: `1px solid ${jc.color}44`,
+                          }}>{joNum}조</span>
+                          <div style={{ flex: 1, height: "1px", background: jc.color + "33" }} />
+                        </div>
+                      );
+                    }
+
+                    if (isVip) {
+                      // ── VIP 행: 탭 → 1부/2부/투근무 인라인 선택 ──
+                      const isVipSelected = VIP_STATUSES.has(effS);
+                      const vipType = isVipSelected ? effS as "VIP1부" | "VIP2부" | "VIP투근무" : null;
+                      const vipSc = vipType ? STATUS_COLOR[vipType] : null;
+                      const isExpanded = vipSubPicking === name;
+                      const nonVipStatus = !isVipSelected && effS !== null ? effS : null;
+
+                      items.push(
+                        <div key={name} style={{
+                          borderBottom: "1px solid #fce4ec",
+                          background: isVipSelected ? (vipSc?.bg ?? "#f3e5f5") + "44" : "transparent",
+                          borderLeft: isVipSelected ? `3px solid ${vipSc?.color ?? "#7b1fa2"}` : "3px solid transparent",
+                        }}>
+                          {/* 인원 행 */}
+                          <div
+                            onClick={() => setVipSubPicking(isExpanded ? null : name)}
+                            style={{
+                              display: "flex", padding: "10px 14px",
+                              alignItems: "center", gap: "10px", cursor: "pointer",
+                            }}
+                          >
+                            {person && (
+                              <span style={{
+                                background: isVipSelected ? (vipSc?.color ?? "#7b1fa2") : "#e8eaf6",
+                                borderRadius: 6, padding: "2px 7px",
+                                fontSize: "0.7rem", color: isVipSelected ? "#fff" : "#5c6bc0",
+                                fontWeight: 700, minWidth: 40, textAlign: "center",
+                              }}>
+                                {person.조}조 {person.no}번
+                              </span>
+                            )}
+                            <div style={{ flex: 1 }}>
+                              <span style={{ fontWeight: 600, fontSize: "0.92rem" }}>{name}</span>
+                              {person && (
+                                <span style={{ marginLeft: "6px", fontSize: "0.65rem", color: GROUP_STYLE[person.group].color, fontWeight: 600 }}>
+                                  {GROUP_STYLE[person.group].label}
+                                </span>
+                              )}
+                            </div>
+                            {vipType && (
+                              <span style={{
+                                fontSize: "0.72rem", fontWeight: 700,
+                                color: vipSc?.color, background: vipSc?.bg,
+                                borderRadius: 6, padding: "2px 7px",
+                                border: `1px solid ${vipSc?.color}44`,
+                              }}>
+                                {vipType === "VIP1부" ? "1부" : vipType === "VIP2부" ? "2부" : "투근무"}
+                              </span>
+                            )}
+                            {nonVipStatus && !isExpanded && (
+                              <span style={{
+                                fontSize: "0.7rem", fontWeight: 700,
+                                color: (STATUS_COLOR[nonVipStatus] ?? { color: "#888" }).color,
+                                background: (STATUS_COLOR[nonVipStatus] ?? { bg: "#eee" }).bg,
+                                borderRadius: 6, padding: "2px 7px",
+                              }}>{nonVipStatus}</span>
+                            )}
+                            <span style={{ color: isExpanded ? "#7b1fa2" : "#ccc", fontSize: "0.85rem", flexShrink: 0 }}>
+                              {isExpanded ? "▲" : "▼"}
+                            </span>
+                          </div>
+                          {/* 유형 선택 패널 */}
+                          {isExpanded && (
+                            <div style={{ padding: "6px 14px 12px", display: "flex", gap: "8px" }}>
+                              {(["VIP1부", "VIP2부", "VIP투근무"] as const).map(st => {
+                                const btnSc = STATUS_COLOR[st];
+                                const active = effS === st;
+                                const lbl = st === "VIP1부" ? "1부" : st === "VIP2부" ? "2부" : "투근무";
+                                return (
+                                  <button
+                                    key={st}
+                                    onClick={() => {
+                                      if (active) {
+                                        clearStatus(name);
+                                      } else {
+                                        setManualStatuses(prev => ({ ...prev, [name]: st }));
+                                      }
+                                      setVipSubPicking(null);
+                                    }}
+                                    style={{
+                                      flex: 1, padding: "9px 4px", borderRadius: 10,
+                                      border: `2px solid ${active ? btnSc.color : btnSc.color + "44"}`,
+                                      background: active ? btnSc.color : btnSc.bg,
+                                      color: active ? "#fff" : btnSc.color,
+                                      fontWeight: 800, fontSize: "0.85rem", cursor: "pointer",
+                                    }}
+                                  >
+                                    {lbl}
+                                  </button>
+                                );
+                              })}
+                              {isVipSelected && (
+                                <button
+                                  onClick={() => { clearStatus(name); setVipSubPicking(null); }}
+                                  style={{
+                                    padding: "9px 10px", borderRadius: 10,
+                                    border: "1px solid #ef9a9a", background: "#ffebee",
+                                    color: "#c62828", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer",
+                                  }}
+                                >해제</button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    } else {
+                      // ── 일반 상태 행 (조출/후출/찾근/병가 등) ──
+                      const st = modalStatus as StatusType;
+                      const isSelected = effS === st;
+                      const isDifferent = effS !== null && effS !== st && !VIP_STATUSES.has(effS);
+                      const isVipDiff = VIP_STATUSES.has(effS);
+
+                      const isDisabled = (() => {
+                        if (isSelected) return false;
+                        if (st === "조출") return !cho가능 || cho현재수 >= 4;
+                        if (st === "후출") return hu현재수 >= 4;
+                        return false;
+                      })();
+
+                      items.push(
+                        <div key={name}
+                          onClick={() => !isDisabled && toggleStatus(name, st)}
+                          style={{
+                            display: "flex", alignItems: "center", gap: "10px",
+                            padding: "10px 14px",
+                            background: isSelected ? statusSc.bg + "33" : "transparent",
+                            borderLeft: isSelected ? `3px solid ${statusSc.color}` : "3px solid transparent",
+                            cursor: isDisabled ? "not-allowed" : "pointer",
+                            opacity: isDisabled ? 0.38 : 1,
+                          }}
+                        >
+                          <div style={{
+                            width: "22px", height: "22px", borderRadius: "6px", flexShrink: 0,
+                            border: `2px solid ${isSelected ? statusSc.color : "#ddd"}`,
+                            background: isSelected ? statusSc.bg : "#fff",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                          }}>
+                            {isSelected && <span style={{ fontSize: "0.9rem", color: statusSc.color, fontWeight: 900 }}>✓</span>}
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <span style={{ fontWeight: 600, fontSize: "0.92rem" }}>{name}</span>
+                            {person && (
+                              <span style={{ marginLeft: "6px", fontSize: "0.65rem", color: GROUP_STYLE[person.group].color, fontWeight: 600 }}>
+                                {person.조}조 · {GROUP_STYLE[person.group].label}
+                              </span>
+                            )}
+                          </div>
+                          {(isDifferent || isVipDiff) && (
+                            <span style={{
+                              padding: "2px 8px", borderRadius: "12px", fontSize: "0.7rem", fontWeight: 700,
+                              background: (STATUS_COLOR[effS as string] ?? { bg: "#eee" }).bg,
+                              color: (STATUS_COLOR[effS as string] ?? { color: "#555" }).color,
+                            }}>
+                              {isVipDiff
+                                ? (effS === "VIP1부" ? "VIP 1부" : effS === "VIP2부" ? "VIP 2부" : "VIP 투근무")
+                                : effS}
+                            </span>
+                          )}
+                          {isDisabled && !isSelected && (
+                            <span style={{ fontSize: "0.65rem", color: "#bbb" }}>불가</span>
+                          )}
+                        </div>
+                      );
+                    }
+                  });
+                  return items;
+                })()}
+              </div>
+
+              {/* ── 선택된 인원 칩 영역 ── */}
+              {selectedNames.length > 0 && (
+                <div style={{
+                  borderTop: "1px solid #f0f0f0",
+                  padding: "8px 14px",
+                  display: "flex", flexWrap: "wrap", gap: "6px",
+                  maxHeight: "80px", overflowY: "auto",
+                  background: "#fafafa",
+                }}>
+                  {isVip ? (
+                    currentVipMembers.map(({ name, type }) => {
+                      const sc = STATUS_COLOR[type] ?? { bg: "#f3e5f5", color: "#7b1fa2" };
+                      const lbl = type === "VIP1부" ? "1부" : type === "VIP2부" ? "2부" : "투근무";
+                      return (
+                        <span key={name} style={{
+                          display: "inline-flex", alignItems: "center", gap: "4px",
+                          padding: "4px 10px", borderRadius: "20px",
+                          background: sc.bg, color: sc.color, border: `1px solid ${sc.color}44`,
+                          fontSize: "0.76rem", fontWeight: 700,
+                        }}>
+                          {name}<span style={{ opacity: 0.7, fontSize: "0.68rem" }}>({lbl})</span>
+                          <button onClick={() => clearStatus(name)}
+                            style={{ background: "none", border: "none", color: sc.color, cursor: "pointer", fontSize: "0.85rem", padding: 0, lineHeight: 1 }}>×</button>
+                        </span>
+                      );
+                    })
+                  ) : (
+                    selectedNames.map(n => {
+                      const g: GroupType = (customRosterMap[n]?.group ?? NAME_GROUP[n]) ?? "하우스";
+                      const gs = GROUP_STYLE[g];
+                      return (
+                        <div key={n}
+                          onClick={() => toggleStatus(n, modalStatus as StatusType)}
+                          style={{
+                            display: "inline-flex", alignItems: "center", gap: "5px",
+                            padding: "5px 10px", borderRadius: "999px", background: "#fff",
+                            border: `1.5px solid ${gs.color}55`,
+                            fontSize: "0.83rem", fontWeight: 700, cursor: "pointer",
+                          }}>
+                          <span style={{ color: "#1a2035" }}>{n}</span>
+                          <span style={{ color: "#9aa3b5", fontWeight: 800, fontSize: "0.85rem", lineHeight: 1 }}>×</span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+
+              {/* 완료 버튼 */}
+              <div style={{ padding: "10px 14px", borderTop: "1px solid #f0f0f0" }}>
+                <button onClick={() => { setModalStatus(null); setVipSubPicking(null); }}
+                  style={{
+                    width: "100%", padding: "13px", borderRadius: "12px", border: "none",
+                    background: statusSc.color,
+                    color: "#fff",
+                    fontWeight: 700, fontSize: "0.95rem", cursor: "pointer",
+                  }}>
+                  완료 — {selectedNames.length}명 선택됨
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
       {/* ── 명단 보기 모달 (당번/휴무/병가 해당자만 표시) ── */}
       {viewStatusModal && (() => {
         const st = viewStatusModal;
@@ -4517,13 +4457,13 @@ export default function SchedulePage() {
                       width: 34, height: 34, borderRadius: "50%", flexShrink: 0,
                       display: "flex", alignItems: "center", justifyContent: "center",
                       fontWeight: 800, fontSize: "0.85rem", color: "white",
-                      background: effS && effS !== "없음"
+                      background: effS
                         ? (STATUS_COLOR[effS]?.bg ?? "#e5e7eb")
                         : person?.group === "하우스" ? "#52de97"
                         : person?.group === "주중" ? "#4e89ae" : "#f8b400",
                       boxShadow: "0 1px 4px rgba(0,0,0,0.12)",
                     }}>
-                      <span style={{ color: effS && effS !== "없음" ? (STATUS_COLOR[effS]?.color ?? "#333") : "#fff" }}>
+                      <span style={{ color: effS ? (STATUS_COLOR[effS]?.color ?? "#333") : "#fff" }}>
                         {name.charAt(0)}
                       </span>
                     </div>
