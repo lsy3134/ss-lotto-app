@@ -1283,10 +1283,54 @@ export default function SchedulePage() {
       return saved ? (JSON.parse(saved) as PersonData[]) : ROSTER;
     } catch { return ROSTER; }
   });
-  // 저장
+  // 저장 (localStorage + 서버)
+  const rosterInitRef = useRef(true);
   useEffect(() => {
     localStorage.setItem("lotto_customRoster", JSON.stringify(customRoster));
+    // 초기 마운트 시 로드는 서버에서 받으므로 서버 저장 건너뜀
+    if (rosterInitRef.current) { rosterInitRef.current = false; return; }
+    // 순번표가 변경되면 서버에도 저장
+    fetch("/api/roster", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roster: customRoster }),
+    })
+      .then(r => r.json())
+      .then((res: { ok?: boolean; count?: number; updatedAt?: string }) => {
+        console.log("[RosterSync] 서버 저장 완료:", res);
+        if (res.updatedAt) localStorage.setItem("lotto_rosterUpdatedAt", res.updatedAt);
+      })
+      .catch(e => console.error("[RosterSync] 서버 저장 오류:", e));
   }, [customRoster]);
+  // 마운트 시 서버에서 순번표 동기화 (서버 데이터 항상 우선)
+  useEffect(() => {
+    fetch(`/api/roster?_=${Date.now()}`, { cache: "no-store" })
+      .then(r => r.json())
+      .then((data: { roster: PersonData[]; updatedAt: string | null }) => {
+        const serverRoster = Array.isArray(data.roster) ? data.roster : [];
+        if (serverRoster.length === 0) {
+          // 서버에 데이터가 없으면 로컬 데이터를 서버에 업로드 (최초 동기화)
+          const localRoster = (() => { try { return JSON.parse(localStorage.getItem("lotto_customRoster") ?? "[]") as PersonData[]; } catch { return []; } })();
+          if (localRoster.length > 0) {
+            console.log("[RosterSync] 서버 비어있음 → 로컬 데이터 업로드:", localRoster.length, "명");
+            fetch("/api/roster", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ roster: localRoster }),
+            }).catch(e => console.error("[RosterSync] 초기 업로드 오류:", e));
+          } else {
+            console.log("[RosterSync] 서버·로컬 모두 비어있음");
+          }
+          return;
+        }
+        console.log("[RosterSync] 서버 순번표 적용:", serverRoster.length, "명");
+        if (data.updatedAt) localStorage.setItem("lotto_rosterUpdatedAt", data.updatedAt);
+        rosterInitRef.current = true; // 서버 데이터 적용 시 서버 저장 트리거 방지
+        setCustomRoster(serverRoster);
+      })
+      .catch(e => console.error("[RosterSync] 서버 조회 오류:", e));
+  }, []);
+
   // 조 순 정렬
   const sortedCustomRoster = useMemo(() =>
     [...customRoster].sort((a, b) => a.조 !== b.조 ? a.조 - b.조 : a.no - b.no),
