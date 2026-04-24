@@ -915,7 +915,7 @@ export default function SchedulePage() {
   // ── 서버에서 휴무 데이터 자동 로드 (마운트 시 1회) ──
   // 서버 데이터를 로컬과 merge: 서버에 있는 월은 서버 우선, 없는 월은 로컬 유지
   useEffect(() => {
-    fetch("/api/holiday-map")
+    fetch(`/api/holiday-map?_=${Date.now()}`, { cache: "no-store" })
       .then(r => r.json())
       .then((data: { fileName: string; holidayMap: Record<string, string[]> }) => {
         if (data.fileName) {
