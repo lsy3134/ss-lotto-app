@@ -947,13 +947,18 @@ export default function SchedulePage() {
         setHolidayAppliedDates({});
         localStorage.setItem("lotto_holidayApplied", "{}");
 
-        // ── 기존 날짜별 휴무 상태 자동 초기화 (휴무 항목만 제거, 다른 상태 유지) ──
+        // ── 업로드 월의 휴무 상태만 초기화 (다른 월·다른 상태는 유지) ──
+        const uploadMonthStr = String(parseInt(viewMonth, 10)).padStart(2, "0");
         setDateStatuses(prev => {
           const next: typeof prev = {};
           for (const [dl, statuses] of Object.entries(prev)) {
+            const dlMonth = dl.slice(5, 7); // "2026-05-01" → "05"
+            const isUploadMonth = dlMonth === uploadMonthStr;
             const cleaned: Record<string, StatusType> = {};
             for (const [name, st] of Object.entries(statuses)) {
-              if (st !== "휴무") cleaned[name] = st;
+              // 업로드 월 날짜의 휴무만 제거, 다른 월·다른 상태 유지
+              if (isUploadMonth && st === "휴무") continue;
+              cleaned[name] = st;
             }
             if (Object.keys(cleaned).length > 0) next[dl] = cleaned;
           }
