@@ -450,7 +450,8 @@ function assignDouble(
   statuses: Record<string, StatusType>,
   shift1Size: number,
   shift2Size: number,
-  daegeunMap: Record<string, string> = {}  // 대근 유형 맵 (1부|2부|투라운드)
+  daegeunMap: Record<string, string> = {},  // 대근 유형 맵 (1부|2부|투라운드)
+  statusOrder: string[] = []                // 찾근/조출/후출 클릭 순서 (앞에 배치)
 ): DayResult {
   const twoRound: string[] = [];   // 찾근 (1부+2부 투라운드)
   const 조출List: string[] = [];   // 조출 (1부 앞 고정, 최대 4명)
@@ -464,7 +465,11 @@ function assignDouble(
   const excluded: string[] = [];
   const autoQueue: string[] = [];  // 일반 순번 대기열
 
-  for (const name of names) {
+  // 클릭 순서 지정된 이름 먼저, 나머지는 roster 순서 fallback
+  const orderSet = new Set(statusOrder);
+  const order = [...statusOrder.filter(n => names.includes(n)), ...names.filter(n => !orderSet.has(n))];
+
+  for (const name of order) {
     const s = statuses[name] ?? null;
     if (s === "VIP1부")   { vip1List.push(name); }
     else if (s === "VIP2부")    { vip2List.push(name); }
@@ -850,6 +855,18 @@ export default function SchedulePage() {
     localStorage.setItem(DS_KEY, JSON.stringify(dateStatuses));
   }, [dateStatuses, DS_KEY]);
 
+  // 날짜별 찾근/조출/후출 클릭 순서 (화면 표시 및 배치 순서 결정)
+  const DSO_KEY = `lotto_dateStatusOrders_${new Date().getFullYear()}`;
+  const [dateStatusOrders, setDateStatusOrders] = useState<Record<string, string[]>>(() => {
+    try {
+      const saved = localStorage.getItem(DSO_KEY);
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
+  useEffect(() => {
+    localStorage.setItem(DSO_KEY, JSON.stringify(dateStatusOrders));
+  }, [dateStatusOrders, DSO_KEY]);
+
   // 병가 지속 상태 (해제 전까지 모든 날짜에 자동 적용)
   const SL_KEY = `lotto_sickLeave_${new Date().getFullYear()}`;
   const [sickLeave, setSickLeave] = useState<Record<string, boolean>>(() => {
@@ -966,6 +983,7 @@ export default function SchedulePage() {
           setSavedSpare2(prev => trimKeys(prev) as typeof prev);
           setDateDaegeun(prev => trimKeys(prev) as typeof prev);
           setOverrideStartByDate(prev => trimKeys(prev) as typeof prev);
+          setDateStatusOrders(prev => trimKeys(prev) as typeof prev);
         }
 
         const totalPeople = Object.values(map).reduce((s, a) => s + a.length, 0);
@@ -1265,6 +1283,24 @@ export default function SchedulePage() {
       }
       return;
     }
+    // 찾근/조출/후출: 클릭 순서 추적 (dateStatusOrders 업데이트)
+    if ((btn === "찾근" || btn === "조출" || btn === "후출") && currentDateKey) {
+      const cur = effectiveStatus(name);
+      if (cur === btn) {
+        // 취소 → 순서 배열에서 제거
+        setDateStatusOrders(prev => ({
+          ...prev,
+          [currentDateKey]: (prev[currentDateKey] ?? []).filter(n => n !== name),
+        }));
+      } else {
+        // 추가 → 순서 배열 끝에 push (중복 방지)
+        setDateStatusOrders(prev => ({
+          ...prev,
+          [currentDateKey]: [...(prev[currentDateKey] ?? []).filter(n => n !== name), name],
+        }));
+      }
+    }
+
     // 병가 외 상태 토글 (기존 로직)
     setManualStatuses((prev) => {
       const cur = effectiveStatus(name);
@@ -1601,10 +1637,10 @@ export default function SchedulePage() {
       statuses[n] = null;
     });
     return mode === "2부제"
-      ? assignDouble(effectiveNames, statuses, shift1Size, shift2Size, currentDaegeun)
+      ? assignDouble(effectiveNames, statuses, shift1Size, shift2Size, currentDaegeun, dateStatusOrders[currentDateKey] ?? [])
       : assignSingle(effectiveNames, statuses, singleSize);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveNames, dateStatuses, currentDateKey, selectedDate, dayOfWeek, customRosterMap, currentDaegeun, mode, shift1Size, shift2Size, singleSize]);
+  }, [effectiveNames, dateStatuses, currentDateKey, selectedDate, dayOfWeek, customRosterMap, currentDaegeun, mode, shift1Size, shift2Size, singleSize, dateStatusOrders]);
 
   // 이름 → 배정 카테고리 맵 (live)
   const liveCategoryMap = useMemo<Record<string, "1부" | "1부스페어" | "2부" | "2부스페어" | "스페어" | "단부" | "찾근" | "제외">>(() => {
@@ -1772,7 +1808,7 @@ export default function SchedulePage() {
       const s1 = shift1Size, s2 = shift2Size, ss = singleSize;
 
       const result = mode === "2부제"
-        ? assignDouble(currentNames, statuses, s1, s2, dateDaegeun[day.dateLabel] ?? {})
+        ? assignDouble(currentNames, statuses, s1, s2, dateDaegeun[day.dateLabel] ?? {}, dateStatusOrders[day.dateLabel] ?? [])
         : assignSingle(currentNames, statuses, ss);
 
       updatedAssignment[day.dateLabel] = result;
@@ -1799,7 +1835,7 @@ export default function SchedulePage() {
       statuses[n] = null;
     });
     const result = mode === "2부제"
-      ? assignDouble(en, statuses, shift1Size, shift2Size, currentDaegeun)
+      ? assignDouble(en, statuses, shift1Size, shift2Size, currentDaegeun, dateStatusOrders[currentDateKey] ?? [])
       : assignSingle(en, statuses, singleSize);
     // 저장하지 않고 임시 결과만 보여줌 — 저장은 saveAssignment()에서
     setPendingResult(result);
@@ -1917,7 +1953,7 @@ export default function SchedulePage() {
       const s1 = shift1Size, s2 = shift2Size, ss = singleSize;
 
       const result = mode === "2부제"
-        ? assignDouble(currentNames, statuses, s1, s2, dateDaegeun[dateLabel] ?? {})
+        ? assignDouble(currentNames, statuses, s1, s2, dateDaegeun[dateLabel] ?? {}, dateStatusOrders[dateLabel] ?? [])
         : assignSingle(currentNames, statuses, ss);
 
       results.push({ day: dateLabel || day, result, skipped: false });
@@ -3260,6 +3296,15 @@ export default function SchedulePage() {
                 const ib = order.findIndex(h => normalize(h) === normalize(b));
                 return (ia === -1 ? 9999 : ia) - (ib === -1 ? 9999 : ib);
               });
+            })()
+          : (modalStatus === "찾근" || modalStatus === "조출" || modalStatus === "후출")
+          ? (() => {
+              const order = dateStatusOrders[currentDateKey] ?? [];
+              const orderSet = new Set(order);
+              return [
+                ...order.filter(n => _filtered.includes(n)),
+                ..._filtered.filter(n => !orderSet.has(n)),
+              ];
             })()
           : _filtered;
 
