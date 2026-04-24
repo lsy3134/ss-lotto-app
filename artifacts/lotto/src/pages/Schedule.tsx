@@ -1351,9 +1351,14 @@ export default function SchedulePage() {
         const cur = prev[day.dateLabel] ?? {};
         const next = { ...cur };
         for (const hName of hdNames) {
-          const matched = sortedCustomRoster.find(p =>
-            normalize(p.name) === normalize(hName) || (hName.length >= 2 && normalize(p.name).startsWith(normalize(hName).slice(0, 2)))
-          )?.name ?? hName;
+          const normH = normalize(hName.trim());
+          // 1순위: 정확히 일치
+          const exactMatch = sortedCustomRoster.find(p => normalize(p.name) === normH);
+          // 2순위: 3글자 이상일 때만 앞 2글자 fuzzy (2글자 이름은 exact만 사용)
+          const fuzzyMatch = !exactMatch && normH.length >= 3
+            ? sortedCustomRoster.find(p => normalize(p.name).startsWith(normH.slice(0, 2)))
+            : null;
+          const matched = (exactMatch ?? fuzzyMatch)?.name ?? hName.trim();
           // 이미 사용자가 다른 상태로 지정한 경우 덮어쓰지 않음
           if (!next[matched]) next[matched] = "휴무";
         }
