@@ -499,23 +499,29 @@ function assignDouble(
     : autoQueue.slice(avail1 + 1);
 
   // ── 2부 배치 ────────────────────────────────────────
-  // 순서: VIP/고정 → 대근 → 일반순번(remaining→1부순환보충) → 후출 → 전날스페어 → 찾근
+  // 순서: VIP → spare1(1부스페어) → 대근 → 일반순번 → 후출 → 순환보충(찾근+일반1부순번, 1부순서)
   const shift1Regular = autoQueue.slice(0, avail1);
   // vip2List + vipBothList 는 일반 순번과 별개로 2부 앞에 고정
   const vip2Fixed = [...vip2List, ...vipBothList];
-  const avail2Normal = Math.max(0, shift2Size - vip2Fixed.length - 대근2부List.length - 후출List.length - spare1.length - twoRound.length);
-  const normalFor2 = remaining.slice(0, avail2Normal);
-  const spare2fromRemaining = remaining.slice(avail2Normal); // remaining에서 2부 못 들어간 사람
 
-  // 인원 부족 시 1부 앞번호부터 순환 보충 (extra2부)
-  const extra2부Count = Math.max(0, avail2Normal - normalFor2.length);
-  const extra2부 = shift1Regular.slice(0, extra2부Count);
+  // 순환보충 후보: 찾근 + 일반1부순번 (조출·VIP·대근1부 제외), 1부 순서 그대로
+  // → 찾근과 순환보충을 분리하지 않고 1부 흐름 그대로 2부에 재투입
+  const circularQueue = [...twoRound, ...shift1Regular];
 
-  // ★ 2부 스페어: remaining 잔여 + 1부 배정에서 순환 투입 안 된 사람
-  const spare2fromShift1 = extra2부Count > 0 ? shift1Regular.slice(extra2부Count) : [];
+  // 2부에서 normalFor2 + 순환보충이 채워야 할 총 자리 수
+  const totalNeed2 = Math.max(0, shift2Size - vip2Fixed.length - spare1.length - 대근2부List.length - 후출List.length);
+  const normalFor2 = remaining.slice(0, totalNeed2);
+  const spare2fromRemaining = remaining.slice(totalNeed2);
+
+  // 인원 부족 시 circularQueue(찾근+일반순번) 앞번호부터 순환 보충
+  const extra2부Count = Math.max(0, totalNeed2 - normalFor2.length);
+  const extra2부 = circularQueue.slice(0, extra2부Count);
+
+  // ★ 2부 스페어: remaining 잔여 + 순환보충에서 못 들어간 사람
+  const spare2fromShift1 = circularQueue.slice(extra2부Count);
   let spare2 = [...spare2fromRemaining, ...spare2fromShift1];
 
-  // 2부 순서: VIP → spare1(1부스페어) → 대근 → 일반순번 → 후출 → 순환보충(전날스페어2포함) → 찾근
+  // 2부 순서: VIP → spare1(1부스페어) → 대근 → 일반순번 → 후출 → 순환보충(찾근포함, 1부순서)
   const shift2: string[] = [
     ...vip2Fixed,
     ...spare1,
@@ -523,7 +529,6 @@ function assignDouble(
     ...normalFor2,
     ...후출List,
     ...extra2부,
-    ...twoRound,
   ];
 
   // ── 다음날 예상 순번 ──────────────────────────────────
