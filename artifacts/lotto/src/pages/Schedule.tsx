@@ -499,50 +499,32 @@ function assignDouble(
     : autoQueue.slice(avail1 + 1);
 
   // ── 2부 배치 ────────────────────────────────────────
-  // 규정:
-  //   - 1부스페어(spare1)가 2부 제일 앞(첫번째)
-  //   - 대근-2부: spare1 바로 뒤에 고정 (1부 미참여, 2부만 출근)
-  //   - 찾근자(twoRound): 2부의 약 1/4 지점에 삽입
-  //   - 후출자: 2부 뒤에서 3번째 위치
-  //   - 2부스페어: 2부에 들어가지 못한 나머지 → 다음날 첫번호
+  // 순서: VIP/고정 → 대근 → 일반순번(remaining→1부순환보충) → 후출 → 전날스페어 → 찾근
   const shift1Regular = autoQueue.slice(0, avail1);
   // vip2List + vipBothList 는 일반 순번과 별개로 2부 앞에 고정
   const vip2Fixed = [...vip2List, ...vipBothList];
-  const avail2Normal = Math.max(0, shift2Size - spare1.length - vip2Fixed.length - 대근2부List.length - twoRound.length - 후출List.length);
+  const avail2Normal = Math.max(0, shift2Size - vip2Fixed.length - 대근2부List.length - 후출List.length - spare1.length - twoRound.length);
   const normalFor2 = remaining.slice(0, avail2Normal);
   const spare2fromRemaining = remaining.slice(avail2Normal); // remaining에서 2부 못 들어간 사람
 
-  // 1부 돌고 온 사람 중 2부에 투라운드로 들어갈 인원 계산
-  const extra2부Count = Math.max(0, shift2Size - spare1.length - vip2Fixed.length - 대근2부List.length - twoRound.length - normalFor2.length - 후출List.length);
+  // 인원 부족 시 1부 앞번호부터 순환 보충 (extra2부)
+  const extra2부Count = Math.max(0, avail2Normal - normalFor2.length);
   const extra2부 = shift1Regular.slice(0, extra2부Count);
 
-  // ★ 2부 스페어: remaining 잔여 + 1부 배정에서 투라운드 못 한 사람
-  //   (extra2부Count > 0 일 때만: 실제로 투라운드가 발생한 경우에만 투라운드 탈락자가 spare)
+  // ★ 2부 스페어: remaining 잔여 + 1부 배정에서 순환 투입 안 된 사람
   const spare2fromShift1 = extra2부Count > 0 ? shift1Regular.slice(extra2부Count) : [];
   let spare2 = [...spare2fromRemaining, ...spare2fromShift1];
 
-  // twoRound 삽입 위치: 2부의 약 1/4 지점 (VIP고정 + spare1 + 대근2부List 뒤 기준)
-  const twoRoundInsertAt = Math.max(0, Math.floor(shift2Size / 4) - spare1.length - vip2Fixed.length - 대근2부List.length);
-  const normalBefore = normalFor2.slice(0, twoRoundInsertAt);
-  const normalAfter  = normalFor2.slice(twoRoundInsertAt);
-
-  const afterTwoRound = [...normalAfter, ...extra2부];
-  let shift2: string[];
-  if (후출List.length > 0 && afterTwoRound.length >= 2) {
-    const insertAt = Math.max(0, afterTwoRound.length - 2);
-    shift2 = [
-      ...vip2Fixed,
-      ...spare1,
-      ...대근2부List,
-      ...normalBefore,
-      ...twoRound,
-      ...afterTwoRound.slice(0, insertAt),
-      ...후출List,
-      ...afterTwoRound.slice(insertAt),
-    ];
-  } else {
-    shift2 = [...vip2Fixed, ...spare1, ...대근2부List, ...normalBefore, ...twoRound, ...afterTwoRound, ...후출List];
-  }
+  // 2부 순서: VIP → 대근 → 일반순번(순환포함) → 후출 → 전날스페어 → 찾근
+  const shift2: string[] = [
+    ...vip2Fixed,
+    ...대근2부List,
+    ...normalFor2,
+    ...extra2부,
+    ...후출List,
+    ...spare1,
+    ...twoRound,
+  ];
 
   // ── 다음날 예상 순번 ──────────────────────────────────
   let nextDayQueue: string[];
