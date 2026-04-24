@@ -515,14 +515,14 @@ function assignDouble(
   const spare2fromShift1 = extra2부Count > 0 ? shift1Regular.slice(extra2부Count) : [];
   let spare2 = [...spare2fromRemaining, ...spare2fromShift1];
 
-  // 2부 순서: VIP → 대근 → 일반순번(순환포함) → 후출 → 전날스페어 → 찾근
+  // 2부 순서: VIP → spare1(1부스페어) → 대근 → 일반순번 → 후출 → 순환보충(전날스페어2포함) → 찾근
   const shift2: string[] = [
     ...vip2Fixed,
+    ...spare1,
     ...대근2부List,
     ...normalFor2,
-    ...extra2부,
     ...후출List,
-    ...spare1,
+    ...extra2부,
     ...twoRound,
   ];
 
