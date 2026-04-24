@@ -52,8 +52,11 @@ const GROUP_DOT: Record<GroupType, string> = {
   주말:   "#f59e0b",
 };
 
-// 이름 비교/조회용 normalize (공백 제거) — 저장 시 절대 사용 금지, 조회 시에만 사용
-const normalize = (name: string) => name.replace(/\s+/g, "");
+// 이름 정규화 (공백 완전 제거) — 저장/조회/비교 모든 곳에 일관 적용
+const normalize = (name: string) => name.replace(/\s+/g, "").trim();
+// roster 배열 전체 이름 정규화
+const normalizeRoster = <T extends { name: string }>(roster: T[]): T[] =>
+  roster.map(p => ({ ...p, name: normalize(p.name) }));
 
 // 이름 → 그룹 조회 맵
 const NAME_GROUP: Record<string, GroupType> = Object.fromEntries(
@@ -861,7 +864,18 @@ export default function SchedulePage() {
         localStorage.removeItem(oldKey);
       }
       const saved = localStorage.getItem(DS_KEY);
-      return saved ? JSON.parse(saved) : {};
+      const raw: Record<string, Record<string, StatusType>> = saved ? JSON.parse(saved) : {};
+      // 이름 키의 공백 제거 정규화 (기존 저장 데이터 보정)
+      const normalized: typeof raw = {};
+      for (const [dateKey, statuses] of Object.entries(raw)) {
+        const fixedStatuses: Record<string, StatusType> = {};
+        for (const [name, st] of Object.entries(statuses)) {
+          const normName = normalize(name);
+          if (!fixedStatuses[normName]) fixedStatuses[normName] = st as StatusType;
+        }
+        normalized[dateKey] = fixedStatuses;
+      }
+      return normalized;
     } catch { return {}; }
   });
   useEffect(() => {
@@ -1280,8 +1294,9 @@ export default function SchedulePage() {
   const [customRoster, setCustomRoster] = useState<PersonData[]>(() => {
     try {
       const saved = localStorage.getItem("lotto_customRoster");
-      return saved ? (JSON.parse(saved) as PersonData[]) : ROSTER;
-    } catch { return ROSTER; }
+      const raw = saved ? (JSON.parse(saved) as PersonData[]) : ROSTER;
+      return normalizeRoster(raw);
+    } catch { return normalizeRoster(ROSTER); }
   });
   // 저장 (localStorage + 서버)
   const rosterInitRef = useRef(true);
@@ -1307,12 +1322,13 @@ export default function SchedulePage() {
     fetch(`/api/roster?_=${Date.now()}`, { cache: "no-store" })
       .then(r => r.json())
       .then((data: { roster: PersonData[]; updatedAt: string | null }) => {
-        const serverRoster = Array.isArray(data.roster) ? data.roster : [];
+        const serverRoster = Array.isArray(data.roster) ? normalizeRoster(data.roster as PersonData[]) : [];
         if (serverRoster.length === 0) {
           // 서버에 데이터가 없으면 로컬 데이터를 서버에 업로드 (최초 동기화)
-          const localRoster = (() => { try { return JSON.parse(localStorage.getItem("lotto_customRoster") ?? "[]") as PersonData[]; } catch { return []; } })();
+          const localRoster = (() => { try { return normalizeRoster(JSON.parse(localStorage.getItem("lotto_customRoster") ?? "[]") as PersonData[]); } catch { return []; } })();
           if (localRoster.length > 0) {
             console.log("[RosterSync] 서버 비어있음 → 로컬 데이터 업로드:", localRoster.length, "명");
+            console.log("[RosterSync] 업로드 이름 샘플:", localRoster.slice(0, 5).map(p => p.name));
             fetch("/api/roster", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -1324,6 +1340,7 @@ export default function SchedulePage() {
           return;
         }
         console.log("[RosterSync] 서버 순번표 적용:", serverRoster.length, "명");
+        console.log("[RosterSync] 이름 샘플(정규화 후):", serverRoster.slice(0, 5).map(p => p.name));
         if (data.updatedAt) localStorage.setItem("lotto_rosterUpdatedAt", data.updatedAt);
         rosterInitRef.current = true; // 서버 데이터 적용 시 서버 저장 트리거 방지
         setCustomRoster(serverRoster);
@@ -1704,11 +1721,11 @@ export default function SchedulePage() {
   }
   function savePerson() {
     if (!rosterForm) return;
-    const trimName = rosterForm.name.trim();
+    const trimName = normalize(rosterForm.name); // 공백 제거 정규화 적용
     if (!trimName) { alert("이름을 입력하세요."); return; }
     if (rosterForm.mode === "add") {
       // 같은 이름 중복 체크
-      if (customRoster.some(x => x.name === trimName)) {
+      if (customRoster.some(x => normalize(x.name) === trimName)) {
         alert("이미 같은 이름이 있습니다."); return;
       }
       // 해당 조에서 가장 큰 no + 1
@@ -1721,11 +1738,12 @@ export default function SchedulePage() {
       setCustomRoster(prev => [...prev, newPerson]);
     } else {
       // 수정 모드 (이름 변경 중복 체크)
-      if (trimName !== rosterForm.orig?.name && customRoster.some(x => x.name === trimName)) {
+      const origNorm = normalize(rosterForm.orig?.name ?? "");
+      if (trimName !== origNorm && customRoster.some(x => normalize(x.name) === trimName)) {
         alert("이미 같은 이름이 있습니다."); return;
       }
       setCustomRoster(prev => prev.map(x =>
-        x.name === rosterForm.orig?.name
+        normalize(x.name) === origNorm
           ? { ...x, name: trimName, 조: rosterForm.조, group: rosterForm.group }
           : x
       ));
@@ -1759,8 +1777,9 @@ export default function SchedulePage() {
           return;
         }
         if (!confirm(`백업 파일에서 ${data.length}명을 불러옵니다. 현재 순번표를 덮어쓸까요?`)) return;
-        setCustomRoster(data);
-        alert(`✅ ${data.length}명 복원 완료`);
+        const normalizedData = normalizeRoster(data);
+        setCustomRoster(normalizedData);
+        alert(`✅ ${data.length}명 복원 완료 (이름 공백 정규화 적용)`);
       } catch {
         alert("파일 파싱 오류 — JSON 형식을 확인해 주세요.");
       }
