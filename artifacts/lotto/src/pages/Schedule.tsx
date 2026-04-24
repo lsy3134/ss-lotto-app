@@ -2744,18 +2744,16 @@ export default function SchedulePage() {
             <button onClick={loadRoster} style={{ ...S.primaryBtn, background: "#1565c0", flex: 1, marginBottom: 0 }}>
               📋 순번표 불러오기 ({customRoster.length}명)
             </button>
-            {isAdmin && (
-              <button
-                onClick={() => { setRosterEditorSearch(""); setRosterForm(null); setRosterEditorOpen(true); }}
-                style={{
-                  padding: "12px 14px", borderRadius: "12px",
-                  border: "1.5px solid #1565c0", background: "#fff",
-                  color: "#1565c0", fontWeight: 700, fontSize: "0.85rem",
-                  cursor: "pointer", whiteSpace: "nowrap",
-                }}>
-                ✏ 편집
-              </button>
-            )}
+            <button
+              onClick={() => { setRosterEditorSearch(""); setRosterForm(null); setRosterEditorOpen(true); }}
+              style={{
+                padding: "12px 14px", borderRadius: "12px",
+                border: "1.5px solid #1565c0", background: "#fff",
+                color: "#1565c0", fontWeight: 700, fontSize: "0.85rem",
+                cursor: "pointer", whiteSpace: "nowrap",
+              }}>
+              ✏ 편집
+            </button>
           </div>
 
           {/* 첫번호 / 다음날 첫 순번 표시 */}
