@@ -5,6 +5,9 @@ import { eq } from "drizzle-orm";
 const router: IRouter = Router();
 
 router.get("/holiday-map", async (_req, res) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
   try {
     const rows = await db.select().from(holidayStoreTable).where(eq(holidayStoreTable.id, 1));
     if (rows.length === 0) {
