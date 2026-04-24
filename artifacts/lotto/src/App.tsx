@@ -1,8 +1,12 @@
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { type CSSProperties, createContext, useContext, useEffect, useRef, useState } from "react";
 import { Switch, Route, Link, Router as WouterRouter, useLocation } from "wouter";
 import * as XLSX from "xlsx";
 import SchedulePage from "./pages/Schedule";
-import { type AuthUser, authenticate, clearUser, getStoredUser } from "./auth";
+import {
+  type AuthUser,
+  authenticate, clearUser, getStoredUser,
+  checkName, getUserList, addUser, removeUser,
+} from "./auth";
 
 const BASE_URL = import.meta.env.BASE_URL;
 const base = BASE_URL.replace(/\/$/, "");
@@ -44,32 +48,71 @@ export const AuthContext = createContext<{
 export function useAuth() { return useContext(AuthContext); }
 
 // ───────────────────────────────────────────
-// 로그인 화면
+// 로그인 화면 (2단계: 이름 → 비밀번호)
 // ───────────────────────────────────────────
 function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
+  const [step, setStep] = useState<"name" | "password">("name");
   const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [shake, setShake] = useState(false);
 
-  function handleLogin() {
-    const user = authenticate(name);
+  function triggerShake(msg: string) {
+    setError(msg);
+    setShake(true);
+    setTimeout(() => setShake(false), 450);
+  }
+
+  function handleNameNext() {
+    const result = checkName(name);
+    if (result === "unknown") {
+      triggerShake("등록되지 않은 사용자입니다.");
+    } else if (result === "admin") {
+      setError("");
+      setStep("password");
+    } else {
+      // 일반 사용자 — 바로 로그인
+      const user = authenticate(name);
+      if (user) onLogin(user);
+      else triggerShake("접근 권한이 없습니다.");
+    }
+  }
+
+  function handlePasswordSubmit() {
+    const user = authenticate(name, password);
     if (user) {
       onLogin(user);
     } else {
-      setError("접근 권한이 없습니다.");
-      setShake(true);
-      setTimeout(() => setShake(false), 500);
+      triggerShake("비밀번호가 올바르지 않습니다.");
+      setPassword("");
     }
   }
+
+  const inputStyle = (hasError: boolean): CSSProperties => ({
+    width: "100%", boxSizing: "border-box",
+    padding: "14px 16px", borderRadius: 14,
+    border: `1.5px solid ${hasError ? C.red : C.border}`,
+    fontSize: "1rem", outline: "none",
+    color: C.textPrimary, background: "#f8fafc",
+    marginBottom: 8, fontFamily: "inherit",
+  });
+
+  const btnStyle: CSSProperties = {
+    width: "100%", padding: "14px 0", marginTop: 4,
+    borderRadius: 14, border: "none",
+    background: "linear-gradient(135deg, #7c6ef7 0%, #5b4de8 100%)",
+    color: "white", fontWeight: 700, fontSize: "1rem",
+    cursor: "pointer",
+    boxShadow: "0 4px 16px rgba(124,110,247,0.35)",
+    fontFamily: "inherit",
+  };
 
   return (
     <div style={{
       backgroundColor: C.bgPage,
       minHeight: "100dvh",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
+      display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center",
       padding: "24px",
     }}>
       <img
@@ -83,53 +126,66 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
         }}
       />
       <div style={{
-        background: "white",
-        borderRadius: 24,
-        padding: "32px 28px",
-        width: "100%",
-        maxWidth: 360,
+        background: "white", borderRadius: 24,
+        padding: "32px 28px", width: "100%", maxWidth: 360,
         boxShadow: "0 8px 32px rgba(100,110,180,0.13)",
-        animation: shake ? "shake 0.4s ease" : "none",
+        animation: shake ? "shake 0.45s ease" : "none",
       }}>
-        <h2 style={{ margin: "0 0 6px", fontSize: "1.3rem", fontWeight: 800, color: C.textPrimary, textAlign: "center" }}>
+        <h2 style={{ margin: "0 0 4px", fontSize: "1.3rem", fontWeight: 800, color: C.textPrimary, textAlign: "center" }}>
           SS앱
         </h2>
-        <p style={{ margin: "0 0 24px", fontSize: "0.85rem", color: C.textSecondary, textAlign: "center" }}>
-          이름을 입력해 주세요
-        </p>
-        <input
-          autoFocus
-          value={name}
-          onChange={e => { setName(e.target.value); setError(""); }}
-          onKeyDown={e => e.key === "Enter" && handleLogin()}
-          placeholder="이름 입력"
-          style={{
-            width: "100%", boxSizing: "border-box",
-            padding: "14px 16px", borderRadius: 14,
-            border: `1.5px solid ${error ? C.red : C.border}`,
-            fontSize: "1rem", outline: "none",
-            color: C.textPrimary, background: "#f8fafc",
-            marginBottom: 8,
-          }}
-        />
-        {error && (
-          <p style={{ margin: "0 0 12px", fontSize: "0.82rem", color: C.red, textAlign: "center" }}>
-            {error}
-          </p>
+
+        {step === "name" ? (
+          <>
+            <p style={{ margin: "0 0 22px", fontSize: "0.85rem", color: C.textSecondary, textAlign: "center" }}>
+              이름을 입력해 주세요
+            </p>
+            <input
+              autoFocus
+              value={name}
+              onChange={e => { setName(e.target.value); setError(""); }}
+              onKeyDown={e => e.key === "Enter" && handleNameNext()}
+              placeholder="이름"
+              style={inputStyle(!!error)}
+            />
+            {error && (
+              <p style={{ margin: "0 0 10px", fontSize: "0.82rem", color: C.red, textAlign: "center" }}>{error}</p>
+            )}
+            <button onClick={handleNameNext} style={btnStyle}>다음</button>
+          </>
+        ) : (
+          <>
+            <p style={{ margin: "0 0 4px", fontSize: "0.85rem", color: C.textSecondary, textAlign: "center" }}>
+              관리자 확인
+            </p>
+            <p style={{ margin: "0 0 18px", fontSize: "0.95rem", fontWeight: 700, color: C.purple, textAlign: "center" }}>
+              {name}
+            </p>
+            <input
+              autoFocus
+              type="password"
+              value={password}
+              onChange={e => { setPassword(e.target.value); setError(""); }}
+              onKeyDown={e => e.key === "Enter" && handlePasswordSubmit()}
+              placeholder="비밀번호"
+              style={inputStyle(!!error)}
+            />
+            {error && (
+              <p style={{ margin: "0 0 10px", fontSize: "0.82rem", color: C.red, textAlign: "center" }}>{error}</p>
+            )}
+            <button onClick={handlePasswordSubmit} style={btnStyle}>로그인</button>
+            <button
+              onClick={() => { setStep("name"); setPassword(""); setError(""); }}
+              style={{
+                width: "100%", marginTop: 10, padding: "10px 0",
+                borderRadius: 14, border: `1px solid ${C.border}`,
+                background: "white", color: C.textSecondary,
+                fontWeight: 600, fontSize: "0.9rem", cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >← 돌아가기</button>
+          </>
         )}
-        <button
-          onClick={handleLogin}
-          style={{
-            width: "100%", padding: "14px 0", marginTop: 4,
-            borderRadius: 14, border: "none",
-            background: "linear-gradient(135deg, #7c6ef7 0%, #5b4de8 100%)",
-            color: "white", fontWeight: 700, fontSize: "1rem",
-            cursor: "pointer",
-            boxShadow: "0 4px 16px rgba(124,110,247,0.35)",
-          }}
-        >
-          입장하기
-        </button>
       </div>
 
       <style>{`
@@ -145,6 +201,166 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
           50%       { transform: translateY(-8px); }
         }
       `}</style>
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────
+// 사용자 관리 페이지 (admin 전용)
+// ───────────────────────────────────────────
+function UserManagementPage() {
+  const { user } = useAuth();
+  const [, setLocation] = useLocation();
+  const [users, setUsers] = useState<string[]>(() => getUserList());
+  const [newName, setNewName] = useState("");
+  const [addError, setAddError] = useState("");
+  const [addOk, setAddOk] = useState(false);
+
+  if (user?.role !== "admin") {
+    setLocation(`${base}/`);
+    return null;
+  }
+
+  function handleAdd() {
+    const result = addUser(newName);
+    if (result.ok) {
+      setUsers(getUserList());
+      setNewName("");
+      setAddError("");
+      setAddOk(true);
+      setTimeout(() => setAddOk(false), 2000);
+    } else {
+      setAddError(result.reason ?? "오류가 발생했습니다.");
+    }
+  }
+
+  function handleRemove(name: string) {
+    removeUser(name);
+    setUsers(getUserList());
+  }
+
+  return (
+    <div style={{ backgroundColor: C.bgPage, minHeight: "100dvh", padding: "0 0 100px" }}>
+      {/* 헤더 */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 10,
+        padding: "16px 18px 12px",
+        borderBottom: `1px solid ${C.border}`,
+        background: "#fff",
+      }}>
+        <button
+          onClick={() => setLocation(`${base}/`)}
+          style={{
+            padding: "8px 14px", background: "#f0f0f0",
+            border: "none", borderRadius: 10, cursor: "pointer",
+            fontSize: "0.9rem", color: "#555", fontWeight: 600,
+          }}
+        >← 홈</button>
+        <div style={{ flex: 1, textAlign: "center", fontWeight: 800, fontSize: "1.05rem", color: C.textPrimary }}>
+          사용자 관리
+        </div>
+        <div style={{ width: 60 }} />
+      </div>
+
+      <div style={{ padding: "20px 18px", display: "flex", flexDirection: "column", gap: 16 }}>
+        {/* 사용자 추가 */}
+        <div style={{
+          background: "white", borderRadius: 18,
+          padding: "20px", border: `1px solid ${C.border}`,
+          boxShadow: "0 2px 10px rgba(100,110,180,0.07)",
+        }}>
+          <div style={{ fontWeight: 700, fontSize: "0.9rem", color: C.textPrimary, marginBottom: 14 }}>
+            일반 사용자 추가
+          </div>
+          <input
+            value={newName}
+            onChange={e => { setNewName(e.target.value); setAddError(""); setAddOk(false); }}
+            onKeyDown={e => e.key === "Enter" && handleAdd()}
+            placeholder="이름 입력"
+            style={{
+              width: "100%", boxSizing: "border-box",
+              padding: "12px 14px", borderRadius: 12,
+              border: `1.5px solid ${addError ? C.red : C.border}`,
+              fontSize: "1rem", outline: "none",
+              color: C.textPrimary, background: "#f8fafc",
+              marginBottom: 8, fontFamily: "inherit",
+            }}
+          />
+          {addError && (
+            <p style={{ margin: "0 0 8px", fontSize: "0.82rem", color: C.red }}>{addError}</p>
+          )}
+          {addOk && (
+            <p style={{ margin: "0 0 8px", fontSize: "0.82rem", color: C.green }}>✅ 추가되었습니다.</p>
+          )}
+          <button
+            onClick={handleAdd}
+            style={{
+              width: "100%", padding: "12px 0", borderRadius: 12, border: "none",
+              background: "linear-gradient(135deg, #7c6ef7 0%, #5b4de8 100%)",
+              color: "white", fontWeight: 700, fontSize: "0.95rem",
+              cursor: "pointer", fontFamily: "inherit",
+            }}
+          >+ 추가</button>
+        </div>
+
+        {/* 사용자 목록 */}
+        <div style={{
+          background: "white", borderRadius: 18,
+          padding: "20px", border: `1px solid ${C.border}`,
+          boxShadow: "0 2px 10px rgba(100,110,180,0.07)",
+        }}>
+          <div style={{ fontWeight: 700, fontSize: "0.9rem", color: C.textPrimary, marginBottom: 14 }}>
+            등록된 일반 사용자 ({users.length}명)
+          </div>
+          {users.length === 0 ? (
+            <p style={{ color: C.textMuted, fontSize: "0.85rem", textAlign: "center", margin: "16px 0" }}>
+              등록된 사용자가 없습니다.
+            </p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {users.map(u => (
+                <div key={u} style={{
+                  display: "flex", alignItems: "center",
+                  padding: "10px 14px", borderRadius: 12,
+                  background: "#f8fafc", border: `1px solid ${C.border}`,
+                }}>
+                  <span style={{ flex: 1, fontWeight: 600, fontSize: "0.95rem", color: C.textPrimary }}>{u}</span>
+                  <span style={{
+                    fontSize: "0.72rem", padding: "2px 8px", borderRadius: 10,
+                    background: C.blueLight, color: C.blue,
+                    border: `1px solid #c0d4f7`, fontWeight: 600, marginRight: 10,
+                  }}>일반</span>
+                  <button
+                    onClick={() => handleRemove(u)}
+                    style={{
+                      padding: "4px 10px", borderRadius: 8,
+                      border: `1px solid ${C.red}44`, background: C.redLight,
+                      color: C.red, fontWeight: 700, fontSize: "0.8rem",
+                      cursor: "pointer", fontFamily: "inherit",
+                    }}
+                  >삭제</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 관리자 계정 안내 */}
+        <div style={{
+          background: C.purpleLight, borderRadius: 14,
+          padding: "14px 16px", border: `1px solid #c5befa`,
+        }}>
+          <div style={{ fontWeight: 700, fontSize: "0.82rem", color: C.purple, marginBottom: 8 }}>
+            👑 관리자 계정 (고정, 변경 불가)
+          </div>
+          {["이수예", "유미선"].map(n => (
+            <div key={n} style={{
+              fontSize: "0.88rem", color: C.textPrimary, fontWeight: 600,
+              padding: "4px 0", borderBottom: `1px solid ${C.border}33`,
+            }}>{n}</div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -353,8 +569,41 @@ function HomePage() {
         </Link>
       )}
 
+      {/* 사용자 관리 카드 — admin 전용 */}
+      {user?.role === "admin" && (
+        <Link href={`${base}/users`} style={{ textDecoration: "none", marginTop: 10, display: "block" }}>
+          <div style={{
+            backgroundColor: C.purpleLight,
+            borderRadius: "20px",
+            padding: "16px 20px",
+            display: "flex",
+            alignItems: "center",
+            cursor: "pointer",
+            border: `1px solid #c5befa`,
+            transition: "transform 0.15s, box-shadow 0.15s",
+            boxShadow: `0 2px 10px rgba(124,110,247,0.08)`,
+          }}
+            onMouseEnter={e => {
+              (e.currentTarget as HTMLDivElement).style.transform = "translateY(-2px)";
+              (e.currentTarget as HTMLDivElement).style.boxShadow = `0 8px 20px rgba(124,110,247,0.18)`;
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLDivElement).style.transform = "translateY(0)";
+              (e.currentTarget as HTMLDivElement).style.boxShadow = `0 2px 10px rgba(124,110,247,0.08)`;
+            }}
+          >
+            <span style={{ fontSize: "2rem", marginRight: "16px" }}>👥</span>
+            <div style={{ flex: 1, textAlign: "left" }}>
+              <div style={{ fontWeight: 800, fontSize: "0.95rem", marginBottom: "2px", color: C.purple }}>사용자 관리</div>
+              <div style={{ color: C.textSecondary, fontSize: "0.78rem" }}>일반 사용자 추가 / 삭제</div>
+            </div>
+            <div style={{ fontSize: "1.5rem", color: C.purple, opacity: 0.5 }}>›</div>
+          </div>
+        </Link>
+      )}
+
       {/* 하단 */}
-      <div style={{ marginTop: "56px", textAlign: "center", opacity: 0.35 }}>
+      <div style={{ marginTop: "48px", textAlign: "center", opacity: 0.35 }}>
         <img
           src={`${BASE_URL}char_smile.png`}
           alt=""
@@ -810,6 +1059,7 @@ export default function App() {
           <Route path="/" component={HomePage} />
           <Route path="/schedule" component={SchedulePage} />
           <Route path="/lotto" component={LottoPage} />
+          <Route path="/users" component={UserManagementPage} />
           <Route component={HomePage} />
         </Switch>
         <BottomTabBar />
