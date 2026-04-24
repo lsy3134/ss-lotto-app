@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import * as XLSX from "xlsx";
 import { ROSTER, isAutoOff, type GroupType, type PersonData } from "../data/roster";
 import { createWorker } from "tesseract.js";
+import { useAuth } from "../App";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -746,6 +747,8 @@ async function runCalendarOCR(file: File): Promise<Record<string, string[]>> {
 // ── 메인 컴포넌트 ─────────────────────────────────
 export default function SchedulePage() {
   const [, setLocation] = useLocation();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const { excelDays, loading: xlLoading, error: xlError, loadFromFile, uploadedName } = useExcelData();
 
   // ── 날짜별 팀수 설정 (lotto_teamSettingsV2: { [dateLabel]: { mode, totalSize, shift1Size, singleSize, locked } }) ──
@@ -2128,7 +2131,13 @@ export default function SchedulePage() {
         <button onClick={() => setLocation(`${BASE}/`)} style={S.backBtn}>←</button>
         <img src={`${BASE}/char_dino.png`} alt="" style={{ width: 30, height: 30, objectFit: "contain" }} />
         <span style={S.headerTitle}>캐디 근무표</span>
-        {names.length > 0 && (
+        {!isAdmin && (
+          <span style={{
+            fontSize: "0.7rem", padding: "3px 8px", borderRadius: 10,
+            background: "#e8f4fd", color: "#1565c0", fontWeight: 700, border: "1px solid #90caf9",
+          }}>조회 전용</span>
+        )}
+        {isAdmin && names.length > 0 && (
           <button
             onClick={() => {
               setNames([]); setRosterLoaded(false); setDayResult(null); setPendingResult(null); setWeekly([]);
@@ -2137,7 +2146,7 @@ export default function SchedulePage() {
             style={S.smallBtn}
             className="text-[14px]">↩ 초기화</button>
         )}
-        {names.length === 0 && customRoster.length > 0 && (
+        {isAdmin && names.length === 0 && customRoster.length > 0 && (
           <button
             onClick={() => applyRoster(queueStartName)}
             style={{
@@ -2184,25 +2193,27 @@ export default function SchedulePage() {
               {xlLoading && <span style={{ color: "#aaa", fontWeight: 400, marginLeft: "6px" }}>불러오는 중…</span>}
               {xlError && <span style={{ color: "#e53935", fontWeight: 400, marginLeft: "6px" }}>{xlError}</span>}
             </label>
-            <label style={{
-              padding: "4px 10px", borderRadius: "8px", fontSize: "0.72rem", fontWeight: 700,
-              background: holidayFileName ? "#e8f5e9" : "#fff3e0",
-              color: holidayFileName ? "#2e7d32" : "#e65100",
-              border: holidayFileName ? "1px solid #81c784" : "1px solid #ffb74d",
-              cursor: "pointer", whiteSpace: "nowrap",
-            }}>
-              📂 {holidayFileName ? "휴무 교체" : "휴무 업로드"}
-              <input
-                type="file"
-                accept=".xlsx,.xls"
-                style={{ display: "none" }}
-                onChange={e => {
-                  const f = e.target.files?.[0];
-                  if (f) loadHolidayFile(f);
-                  e.target.value = "";
-                }}
-              />
-            </label>
+            {isAdmin && (
+              <label style={{
+                padding: "4px 10px", borderRadius: "8px", fontSize: "0.72rem", fontWeight: 700,
+                background: holidayFileName ? "#e8f5e9" : "#fff3e0",
+                color: holidayFileName ? "#2e7d32" : "#e65100",
+                border: holidayFileName ? "1px solid #81c784" : "1px solid #ffb74d",
+                cursor: "pointer", whiteSpace: "nowrap",
+              }}>
+                📂 {holidayFileName ? "휴무 교체" : "휴무 업로드"}
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  style={{ display: "none" }}
+                  onChange={e => {
+                    const f = e.target.files?.[0];
+                    if (f) loadHolidayFile(f);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            )}
           </div>
 
           {/* 휴무 파일 정보 */}
@@ -2419,7 +2430,7 @@ export default function SchedulePage() {
                   const activeDaegeun = daegeunCandidates.filter(n => currentDaegeun[n]);
                   return (
                     <button
-                      onClick={() => { setBatchDaegeunOpen(true); setBatchDaegeunSearch(""); }}
+                      onClick={isAdmin ? () => { setBatchDaegeunOpen(true); setBatchDaegeunSearch(""); } : undefined}
                       style={{
                         display: "flex", flexDirection: "column",
                         alignItems: "center", justifyContent: "center",
@@ -2427,7 +2438,7 @@ export default function SchedulePage() {
                         borderRadius: "8px",
                         border: `1px solid ${activeDaegeun.length > 0 ? "#f59e0b" : "#f59e0b33"}`,
                         background: activeDaegeun.length > 0 ? "#fef3c7" : "#f59e0b15",
-                        cursor: "pointer",
+                        cursor: isAdmin ? "pointer" : "default",
                         width: "100%",
                         boxSizing: "border-box",
                         fontFamily: "inherit",
@@ -2449,7 +2460,7 @@ export default function SchedulePage() {
                   const active = sickCnt > 0;
                   return (
                     <button
-                      onClick={() => openStatusPicker("병가")}
+                      onClick={isAdmin ? () => openStatusPicker("병가") : undefined}
                       style={{
                         display: "flex", flexDirection: "column",
                         alignItems: "center", justifyContent: "center",
@@ -2457,7 +2468,7 @@ export default function SchedulePage() {
                         borderRadius: "8px",
                         border: `1px solid ${active ? "#c62828" : "#c6282833"}`,
                         background: active ? "#ffebee" : "#c6282815",
-                        cursor: "pointer",
+                        cursor: isAdmin ? "pointer" : "default",
                         width: "100%",
                         boxSizing: "border-box",
                         fontFamily: "inherit",
@@ -2486,14 +2497,14 @@ export default function SchedulePage() {
                   const active = cnt > 0;
                   return (
                     <button key={st}
-                      onClick={() => openStatusPicker(st)}
+                      onClick={isAdmin ? () => openStatusPicker(st) : undefined}
                       style={{
                         display: "flex", flexDirection: "column",
                         alignItems: "center", justifyContent: "center",
                         gap: "2px", padding: "10px 4px",
                         borderRadius: "12px", border: `2px solid ${active ? color : color + "44"}`,
                         background: active ? bg : "#fafafa",
-                        cursor: "pointer", position: "relative",
+                        cursor: isAdmin ? "pointer" : "default", position: "relative",
                         WebkitTapHighlightColor: "transparent",
                       }}>
                       <span style={{ fontSize: "0.85rem", fontWeight: 800, color }}>
@@ -2537,6 +2548,7 @@ export default function SchedulePage() {
                       · {currentVipMembers.map(m => m.name).join(", ")}
                     </span>
                   )}
+                  {isAdmin && (
                   <button
                     onClick={() => setVipPickerOpen(v => !v)}
                     style={{
@@ -2549,6 +2561,7 @@ export default function SchedulePage() {
                     }}>
                     {vipPickerOpen ? "닫기" : (currentVip.count > 0 || currentVipMembers.length > 0 ? "수정" : "+ 추가")}
                   </button>
+                  )}
                 </div>
 
                 {/* VIP 인원 칩 (항상 표시) */}
@@ -2660,6 +2673,7 @@ export default function SchedulePage() {
                 <span style={{ fontWeight: 800, fontSize: "0.85rem", color: "#1565c0" }}>
                   ✅ 팀수 저장됨 ({mode})
                 </span>
+                {isAdmin && (
                 <button
                   onClick={unlockTeamSettings}
                   style={{
@@ -2669,6 +2683,7 @@ export default function SchedulePage() {
                   }}>
                   ✏ 수정
                 </button>
+                )}
               </div>
               {mode === "2부제" ? (
                 <div style={S.calcBox}>
@@ -2686,8 +2701,8 @@ export default function SchedulePage() {
                 </div>
               )}
             </div>)
-          ) : (
-            /* ── 팀수 입력 폼 ── */
+          ) : isAdmin ? (
+            /* ── 팀수 입력 폼 (admin only) ── */
             (<div style={{ marginBottom: "4px", marginTop: "14px" }}>
               {mode === "2부제" ? (
                 <>
@@ -2732,23 +2747,25 @@ export default function SchedulePage() {
                 💾 저장하기
               </button>
             </div>)
-          )}
+          ) : null}
 
           {/* 순번표 불러오기 + 편집 */}
           <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
             <button onClick={loadRoster} style={{ ...S.primaryBtn, background: "#1565c0", flex: 1, marginBottom: 0 }}>
               📋 순번표 불러오기 ({customRoster.length}명)
             </button>
-            <button
-              onClick={() => { setRosterEditorSearch(""); setRosterForm(null); setRosterEditorOpen(true); }}
-              style={{
-                padding: "12px 14px", borderRadius: "12px",
-                border: "1.5px solid #1565c0", background: "#fff",
-                color: "#1565c0", fontWeight: 700, fontSize: "0.85rem",
-                cursor: "pointer", whiteSpace: "nowrap",
-              }}>
-              ✏ 편집
-            </button>
+            {isAdmin && (
+              <button
+                onClick={() => { setRosterEditorSearch(""); setRosterForm(null); setRosterEditorOpen(true); }}
+                style={{
+                  padding: "12px 14px", borderRadius: "12px",
+                  border: "1.5px solid #1565c0", background: "#fff",
+                  color: "#1565c0", fontWeight: 700, fontSize: "0.85rem",
+                  cursor: "pointer", whiteSpace: "nowrap",
+                }}>
+                ✏ 편집
+              </button>
+            )}
           </div>
 
           {/* 첫번호 / 다음날 첫 순번 표시 */}

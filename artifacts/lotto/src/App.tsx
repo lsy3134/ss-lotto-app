@@ -316,40 +316,42 @@ function HomePage() {
         </div>
       </Link>
 
-      {/* 로또 카드 */}
-      <Link href={`${base}/lotto`} style={{ textDecoration: "none" }}>
-        <div style={{
-          backgroundColor: C.yellowLight,
-          borderRadius: "20px",
-          padding: "22px 20px",
-          display: "flex",
-          alignItems: "center",
-          cursor: "pointer",
-          border: `1px solid #f0d080`,
-          transition: "transform 0.15s, box-shadow 0.15s",
-          boxShadow: `0 2px 12px rgba(240,180,41,0.10)`,
-        }}
-          onMouseEnter={e => {
-            (e.currentTarget as HTMLDivElement).style.transform = "translateY(-2px)";
-            (e.currentTarget as HTMLDivElement).style.boxShadow = `0 8px 24px rgba(240,180,41,0.22)`;
+      {/* 로또 카드 — admin 전용 */}
+      {user?.role === "admin" && (
+        <Link href={`${base}/lotto`} style={{ textDecoration: "none" }}>
+          <div style={{
+            backgroundColor: C.yellowLight,
+            borderRadius: "20px",
+            padding: "22px 20px",
+            display: "flex",
+            alignItems: "center",
+            cursor: "pointer",
+            border: `1px solid #f0d080`,
+            transition: "transform 0.15s, box-shadow 0.15s",
+            boxShadow: `0 2px 12px rgba(240,180,41,0.10)`,
           }}
-          onMouseLeave={e => {
-            (e.currentTarget as HTMLDivElement).style.transform = "translateY(0)";
-            (e.currentTarget as HTMLDivElement).style.boxShadow = `0 2px 12px rgba(240,180,41,0.10)`;
-          }}
-        >
-          <img
-            src={`${BASE_URL}char_dragon.png`}
-            alt="로또"
-            style={{ width: "60px", height: "60px", objectFit: "cover", borderRadius: "14px", marginRight: "18px", flexShrink: 0 }}
-          />
-          <div style={{ flex: 1, textAlign: "left" }}>
-            <div style={{ fontWeight: 800, fontSize: "1.1rem", marginBottom: "4px", color: "#a07000" }}>나만의 로또 생성</div>
-            <div style={{ color: C.textSecondary, fontSize: "0.83rem" }}>오늘의 행운 번호 추출</div>
+            onMouseEnter={e => {
+              (e.currentTarget as HTMLDivElement).style.transform = "translateY(-2px)";
+              (e.currentTarget as HTMLDivElement).style.boxShadow = `0 8px 24px rgba(240,180,41,0.22)`;
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLDivElement).style.transform = "translateY(0)";
+              (e.currentTarget as HTMLDivElement).style.boxShadow = `0 2px 12px rgba(240,180,41,0.10)`;
+            }}
+          >
+            <img
+              src={`${BASE_URL}char_dragon.png`}
+              alt="로또"
+              style={{ width: "60px", height: "60px", objectFit: "cover", borderRadius: "14px", marginRight: "18px", flexShrink: 0 }}
+            />
+            <div style={{ flex: 1, textAlign: "left" }}>
+              <div style={{ fontWeight: 800, fontSize: "1.1rem", marginBottom: "4px", color: "#a07000" }}>나만의 로또 생성</div>
+              <div style={{ color: C.textSecondary, fontSize: "0.83rem" }}>오늘의 행운 번호 추출</div>
+            </div>
+            <div style={{ fontSize: "1.5rem", color: C.yellow, opacity: 0.8 }}>›</div>
           </div>
-          <div style={{ fontSize: "1.5rem", color: C.yellow, opacity: 0.8 }}>›</div>
-        </div>
-      </Link>
+        </Link>
+      )}
 
       {/* 하단 */}
       <div style={{ marginTop: "56px", textAlign: "center", opacity: 0.35 }}>
@@ -370,6 +372,8 @@ function HomePage() {
 // ───────────────────────────────────────────
 function LottoPage() {
   const [, setLocation] = useLocation();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const allDraws = useRef<number[][]>([]);
   const pastWinners = useRef<Set<string>>(new Set());
   const [hotText, setHotText] = useState("");
@@ -378,9 +382,10 @@ function LottoPage() {
   const [input, setInput] = useState("");
 
   useEffect(() => {
+    if (!isAdmin) { setLocation(`${base}/`); return; }
     async function init() { await loadExcel(); loadLatest(); }
     init();
-  }, []);
+  }, [isAdmin]);
 
   async function loadExcel() {
     try {
@@ -712,12 +717,15 @@ function LottoPage() {
 // ───────────────────────────────────────────
 function BottomTabBar() {
   const [location, navigate] = useLocation();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
 
-  const tabs = [
-    { path: `${base}/`,         icon: "🏠", label: "홈"    },
-    { path: `${base}/schedule`, icon: "📋", label: "근무표" },
-    { path: `${base}/lotto`,    icon: "🎰", label: "로또"  },
+  const allTabs = [
+    { path: `${base}/`,         icon: "🏠", label: "홈",   adminOnly: false },
+    { path: `${base}/schedule`, icon: "📋", label: "근무표", adminOnly: false },
+    { path: `${base}/lotto`,    icon: "🎰", label: "로또",  adminOnly: true  },
   ];
+  const tabs = allTabs.filter(t => !t.adminOnly || isAdmin);
 
   return (
     <nav style={{
