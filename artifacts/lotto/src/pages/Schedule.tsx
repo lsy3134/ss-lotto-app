@@ -1256,6 +1256,20 @@ export default function SchedulePage() {
   );
   // lookup helper — 조회 시 항상 normalize 경유
   const getRosterPerson = (name: string) => customRosterMap[normalize(name)];
+
+  // ── displayDays: viewDays에 holidayMap 기반 가용인원 자동 계산 오버레이 ──
+  // 엑셀 데이터(가용인원 > 0)가 없는 달은 순번표 인원 - 당일 휴무자 수로 계산
+  const displayDays = useMemo(() => {
+    return viewDays.map(d => {
+      if (d.가용인원 > 0) return d; // 엑셀 데이터 있으면 그대로 사용
+      const dayKey = d.dateLabel.slice(0, 5); // "MM.DD"
+      const holidayNames = holidayMap[dayKey] ?? [];
+      const totalRoster = customRoster.length;
+      if (totalRoster === 0 || holidayNames.length === 0) return d;
+      const calc가용 = Math.max(0, totalRoster - holidayNames.length);
+      return { ...d, 가용인원: calc가용 };
+    });
+  }, [viewDays, holidayMap, customRoster]);
   const getGroup = (name: string): GroupType =>
     customRosterMap[normalize(name)]?.group
     ?? NAME_GROUP_NORMALIZED[normalize(name)]
@@ -2287,7 +2301,7 @@ export default function SchedulePage() {
 
             {/* ── 날짜 그리드 ── */}
             <div style={S.dateGrid}>
-              {viewDays.map((d, idx) => {
+              {displayDays.map((d, idx) => {
                 const isSelected = selectedDate?.dateLabel === d.dateLabel;
                 const isWeekend = d.dayIdx === 5 || d.dayIdx === 6;
                 const hasTeams = d.예약팀수 > 0;
