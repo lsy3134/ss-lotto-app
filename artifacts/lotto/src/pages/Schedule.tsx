@@ -930,18 +930,27 @@ export default function SchedulePage() {
           );
           return;
         }
-        // ── 기존 holidayMap 완전 교체 (이전 월 데이터 제거) ──
-        setHolidayMap(map);
+        // ── 업로드한 월만 교체, 다른 월 데이터는 유지 ──
+        const uploadedMonths = new Set(Object.keys(map).map(k => k.slice(0, 2)));
+        setHolidayMap(prev => {
+          const next = { ...prev };
+          for (const key of Object.keys(next)) {
+            if (uploadedMonths.has(key.slice(0, 2))) delete next[key];
+          }
+          const merged = { ...next, ...map };
+
+          // ── 서버에 저장 (모든 기기에서 공유) ──
+          fetch("/api/holiday-map", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ fileName: file.name, holidayMap: merged }),
+          }).catch(() => {});
+
+          localStorage.setItem("lotto_holidayMap", JSON.stringify(merged));
+          return merged;
+        });
         setHolidayFileName(file.name);
         localStorage.setItem("lotto_holidayFileName", file.name);
-        localStorage.setItem("lotto_holidayMap", JSON.stringify(map));
-
-        // ── 서버에 저장 (모든 기기에서 공유) ──
-        fetch("/api/holiday-map", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fileName: file.name, holidayMap: map }),
-        }).catch(() => {});
 
         // ── "자동 적용 완료" 기록 초기화 → 모든 날짜에 새 엑셀로 다시 적용 가능 ──
         setHolidayAppliedDates({});
