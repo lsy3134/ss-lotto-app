@@ -10,6 +10,8 @@ import {
 
 const BASE_URL = import.meta.env.BASE_URL;
 const base = BASE_URL.replace(/\/$/, "");
+const APP_VERSION = "v1.0.13";
+const SW_VERSION  = "ssapp-v13";
 
 const C = {
   bgPage:       "#eef1f8",
@@ -602,16 +604,119 @@ function HomePage() {
         </Link>
       )}
 
-      {/* 하단 */}
-      <div style={{ marginTop: "48px", textAlign: "center", opacity: 0.35 }}>
+      {/* 하단 + 디버그 패널 */}
+      <DebugPanel />
+    </div>
+  );
+}
+
+function DebugPanel() {
+  const [tapCount, setTapCount] = useState(0);
+  const [show, setShow] = useState(false);
+  const [info, setInfo] = useState<Record<string, string>>({});
+  const [serverStatus, setServerStatus] = useState<"idle"|"loading"|"done"|"error">("idle");
+
+  function handleTap() {
+    const next = tapCount + 1;
+    setTapCount(next);
+    if (next >= 3) { setShow(true); loadDebugInfo(); }
+  }
+
+  function loadDebugInfo() {
+    const localHM = (() => {
+      try { return JSON.parse(localStorage.getItem("lotto_holidayMap") ?? "{}"); } catch { return {}; }
+    })();
+    const localKeys = Object.keys(localHM).map(k => k.slice(0, 2)).filter((v, i, a) => a.indexOf(v) === i).sort();
+    setInfo({
+      appVersion: APP_VERSION,
+      swVersion: SW_VERSION,
+      url: window.location.href,
+      localUpdatedAt: localStorage.getItem("lotto_holidayMapUpdatedAt") ?? "(없음)",
+      localHolidayMonths: localKeys.length ? localKeys.join(", ") : "(없음)",
+      localFileName: localStorage.getItem("lotto_holidayFileName") ?? "(없음)",
+    });
+    setServerStatus("loading");
+    fetch(`/api/holiday-map?_=${Date.now()}`, { cache: "no-store" })
+      .then(r => r.json())
+      .then((data: { fileName: string; holidayMap: Record<string, string[]>; updatedAt: string | null }) => {
+        const serverKeys = Object.keys(data.holidayMap ?? {}).map(k => k.slice(0, 2)).filter((v, i, a) => a.indexOf(v) === i).sort();
+        setInfo(prev => ({
+          ...prev,
+          serverFileName: data.fileName || "(없음)",
+          serverUpdatedAt: data.updatedAt ?? "(없음)",
+          serverHolidayMonths: serverKeys.length ? serverKeys.join(", ") : "(없음)",
+          serverKeyCount: String(Object.keys(data.holidayMap ?? {}).length),
+        }));
+        setServerStatus("done");
+      })
+      .catch(e => {
+        setInfo(prev => ({ ...prev, serverError: String(e) }));
+        setServerStatus("error");
+      });
+  }
+
+  const rows: [string, string][] = [
+    ["앱 버전",           info.appVersion ?? ""],
+    ["SW 버전",           info.swVersion ?? ""],
+    ["접속 URL",          info.url ?? ""],
+    ["─ 로컬 ─",          ""],
+    ["로컬 파일명",        info.localFileName ?? ""],
+    ["로컬 updatedAt",    info.localUpdatedAt ?? ""],
+    ["로컬 월 목록",       info.localHolidayMonths ?? ""],
+    ["─ 서버 ─",          serverStatus === "loading" ? "로딩 중…" : ""],
+    ["서버 파일명",        info.serverFileName ?? ""],
+    ["서버 updatedAt",    info.serverUpdatedAt ?? ""],
+    ["서버 월 목록",       info.serverHolidayMonths ?? ""],
+    ["서버 날짜 수",       info.serverKeyCount ?? ""],
+    ["서버 오류",          info.serverError ?? ""],
+  ];
+
+  return (
+    <>
+      <div style={{ marginTop: "48px", textAlign: "center" }}>
         <img
           src={`${BASE_URL}char_smile.png`}
           alt=""
-          style={{ width: "36px", height: "36px", objectFit: "cover", borderRadius: "50%", marginBottom: "8px", display: "block", margin: "0 auto 8px" }}
+          style={{ width: "36px", height: "36px", objectFit: "cover", borderRadius: "50%", display: "block", margin: "0 auto 8px", opacity: 0.35 }}
         />
-        <p style={{ fontSize: "0.72rem", margin: 0 }}>SS앱 — Caddie's Cloud Helper v1.0</p>
+        <p
+          onClick={handleTap}
+          style={{ fontSize: "0.72rem", margin: 0, opacity: 0.35, cursor: "default", userSelect: "none" }}
+        >
+          SS앱 — {APP_VERSION} {tapCount > 0 && tapCount < 3 ? `(${3 - tapCount}번 더)` : ""}
+        </p>
       </div>
-    </div>
+
+      {show && (
+        <div style={{
+          marginTop: 20, borderRadius: 14, border: "1.5px solid #1565c0",
+          background: "#f0f4ff", padding: "14px 16px", fontSize: "0.72rem",
+          fontFamily: "monospace", color: "#1a237e",
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <strong style={{ fontSize: "0.8rem" }}>🔍 디버그 정보</strong>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={loadDebugInfo} style={{ fontSize: "0.7rem", padding: "3px 10px", border: "1px solid #1565c0", borderRadius: 8, background: "#fff", color: "#1565c0", cursor: "pointer", fontWeight: 700 }}>새로고침</button>
+              <button onClick={() => { setShow(false); setTapCount(0); }} style={{ fontSize: "0.7rem", padding: "3px 10px", border: "1px solid #ccc", borderRadius: 8, background: "#fff", color: "#666", cursor: "pointer" }}>닫기</button>
+            </div>
+          </div>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <tbody>
+              {rows.filter(([, v]) => v !== undefined).map(([label, value]) =>
+                label.startsWith("─") ? (
+                  <tr key={label}><td colSpan={2} style={{ paddingTop: 8, paddingBottom: 2, fontWeight: 800, color: "#1565c0", fontSize: "0.7rem" }}>{label}</td></tr>
+                ) : (
+                  <tr key={label}>
+                    <td style={{ paddingRight: 8, paddingBottom: 3, color: "#555", whiteSpace: "nowrap", verticalAlign: "top" }}>{label}</td>
+                    <td style={{ wordBreak: "break-all", paddingBottom: 3, fontWeight: value ? 700 : 400, color: value ? "#1a237e" : "#aaa" }}>{value || "(없음)"}</td>
+                  </tr>
+                )
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
   );
 }
 

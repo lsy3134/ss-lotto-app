@@ -916,17 +916,32 @@ export default function SchedulePage() {
   // updatedAt 비교: 서버가 더 최신이면 localStorage 전체 덮어쓰기
   // 동일하거나 서버에 없는 달은 로컬 유지 (merge)
   useEffect(() => {
+    const localHMRaw = localStorage.getItem("lotto_holidayMap");
+    const localHM: Record<string, string[]> = (() => { try { return JSON.parse(localHMRaw ?? "{}"); } catch { return {}; } })();
+    const localMonths = [...new Set(Object.keys(localHM).map(k => k.slice(0, 2)))].sort();
+    const localTs = localStorage.getItem("lotto_holidayMapUpdatedAt");
+    console.log("[HolidaySync] 시작");
+    console.log("[HolidaySync] 로컬 월 목록:", localMonths);
+    console.log("[HolidaySync] 로컬 updatedAt:", localTs ?? "(없음)");
+    console.log("[HolidaySync] 접속 URL:", window.location.href);
+
     fetch(`/api/holiday-map?_=${Date.now()}`, { cache: "no-store" })
-      .then(r => r.json())
+      .then(r => { console.log("[HolidaySync] API 응답 status:", r.status); return r.json(); })
       .then((data: { fileName: string; holidayMap: Record<string, string[]>; updatedAt: string | null }) => {
-        if (!data.fileName) return;
+        const serverMonthKeys = [...new Set(Object.keys(data.holidayMap ?? {}).map(k => k.slice(0, 2)))].sort();
+        console.log("[HolidaySync] 서버 파일명:", data.fileName);
+        console.log("[HolidaySync] 서버 updatedAt:", data.updatedAt ?? "(없음)");
+        console.log("[HolidaySync] 서버 월 목록:", serverMonthKeys);
+        console.log("[HolidaySync] 서버 날짜 수:", Object.keys(data.holidayMap ?? {}).length);
+
+        if (!data.fileName) { console.log("[HolidaySync] 서버 데이터 없음 — 종료"); return; }
 
         const LOCAL_TS_KEY = "lotto_holidayMapUpdatedAt";
-        const localTs = localStorage.getItem(LOCAL_TS_KEY);
         const serverTs = data.updatedAt;
 
         // 서버 updatedAt이 로컬보다 최신이면 서버 데이터로 완전 덮어쓰기
         const serverIsNewer = !localTs || (serverTs && serverTs > localTs);
+        console.log("[HolidaySync] 서버 최신 여부:", serverIsNewer);
 
         setHolidayFileName(data.fileName);
         setHolidayMap(prev => {
@@ -943,14 +958,20 @@ export default function SchedulePage() {
             // 로컬이 최신 또는 동일: merge만 (로컬 우선)
             merged = { ...data.holidayMap, ...prev };
           }
+          const mergedMonths = [...new Set(Object.keys(merged).map(k => k.slice(0, 2)))].sort();
+          console.log("[HolidaySync] 병합 완료 → 저장 월 목록:", mergedMonths);
           localStorage.setItem(HM_KEY, JSON.stringify(merged));
           return merged;
         });
 
         localStorage.setItem("lotto_holidayFileName", data.fileName);
-        if (serverTs) localStorage.setItem(LOCAL_TS_KEY, serverTs);
+        if (serverTs) {
+          localStorage.setItem(LOCAL_TS_KEY, serverTs);
+          console.log("[HolidaySync] updatedAt 저장:", serverTs);
+        }
+        console.log("[HolidaySync] 완료");
       })
-      .catch(() => {});
+      .catch(e => { console.error("[HolidaySync] 오류:", e); });
   }, []);
 
   function loadHolidayFile(file: File) {
