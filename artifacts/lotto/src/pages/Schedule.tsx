@@ -943,6 +943,31 @@ export default function SchedulePage() {
           return next;
         });
 
+        // ── 최근 2개월만 유지: 업로드 월 기준 M-1 이전 데이터 삭제 ──
+        // 예) 6월 업로드 → cutoff = 2026-05-01 → 5월·6월 유지, 4월 이전 삭제
+        {
+          const uploadYr = viewYear; // already number
+          const uploadMo = parseInt(viewMonth, 10); // 1~12
+          const keepFromMo = uploadMo - 1; // 이 달부터 유지 (M-1)
+          const cutoffYr = keepFromMo <= 0 ? uploadYr - 1 : uploadYr;
+          const cutoffMoNorm = keepFromMo <= 0 ? keepFromMo + 12 : keepFromMo;
+          const cutoff = `${cutoffYr}-${String(cutoffMoNorm).padStart(2, "0")}-01`;
+
+          const trimKeys = <T extends Record<string, unknown>>(obj: T): T => {
+            const next = { ...obj };
+            for (const k of Object.keys(next)) {
+              if (k < cutoff) delete next[k];
+            }
+            return next;
+          };
+
+          setDateStatuses(prev => trimKeys(prev) as typeof prev);
+          setAssignmentData(prev => trimKeys(prev) as typeof prev);
+          setSavedSpare2(prev => trimKeys(prev) as typeof prev);
+          setDateDaegeun(prev => trimKeys(prev) as typeof prev);
+          setOverrideStartByDate(prev => trimKeys(prev) as typeof prev);
+        }
+
         const totalPeople = Object.values(map).reduce((s, a) => s + a.length, 0);
         alert(`✅ 휴무 엑셀 업로드 완료!\n${dateCount}개 날짜 · 총 ${totalPeople}건\n기존 휴무 데이터는 자동 초기화됐습니다.`);
       } catch (err) {
