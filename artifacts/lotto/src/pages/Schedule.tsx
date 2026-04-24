@@ -3248,9 +3248,20 @@ export default function SchedulePage() {
           : (STATUS_COLOR[modalStatus as string] ?? { bg: "#f5f5f5", color: "#333" });
 
         // 현재 선택 목록
-        const selectedNames = isVip
+        const _filtered = isVip
           ? currentVipMembers.map(m => m.name)
           : names.filter(n => effectiveStatus(n) === modalStatus as StatusType);
+        const selectedNames = (modalStatus === "휴무" && !isVip)
+          ? (() => {
+              const dk = selectedDate?.dateLabel.slice(0, 5) ?? "";
+              const order = holidayMap[dk] ?? [];
+              return [..._filtered].sort((a, b) => {
+                const ia = order.findIndex(h => normalize(h) === normalize(a));
+                const ib = order.findIndex(h => normalize(h) === normalize(b));
+                return (ia === -1 ? 9999 : ia) - (ib === -1 ? 9999 : ib);
+              });
+            })()
+          : _filtered;
 
         const listNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
         const query = modalSearch.trim().toLowerCase();
@@ -3677,7 +3688,18 @@ export default function SchedulePage() {
       {viewStatusModal && (() => {
         const st = viewStatusModal;
         const sc = STATUS_COLOR[st] ?? { bg: "#eee", color: "#333" };
-        const people = names.filter(n => effectiveStatus(n) === st);
+        const _people = names.filter(n => effectiveStatus(n) === st);
+        const people = st === "휴무"
+          ? (() => {
+              const dk = selectedDate?.dateLabel.slice(0, 5) ?? "";
+              const order = holidayMap[dk] ?? [];
+              return [..._people].sort((a, b) => {
+                const ia = order.findIndex(h => normalize(h) === normalize(a));
+                const ib = order.findIndex(h => normalize(h) === normalize(b));
+                return (ia === -1 ? 9999 : ia) - (ib === -1 ? 9999 : ib);
+              });
+            })()
+          : _people;
         return (
           <div style={{
             position: "fixed", inset: 0, zIndex: 200,
