@@ -900,15 +900,26 @@ export default function SchedulePage() {
   }, [holidayAppliedDates]);
 
   // ── 서버에서 휴무 데이터 자동 로드 (마운트 시 1회) ──
+  // 서버 데이터를 로컬과 merge: 서버에 있는 월은 서버 우선, 없는 월은 로컬 유지
   useEffect(() => {
     fetch("/api/holiday-map")
       .then(r => r.json())
       .then((data: { fileName: string; holidayMap: Record<string, string[]> }) => {
         if (data.fileName) {
           setHolidayFileName(data.fileName);
-          setHolidayMap(data.holidayMap);
+          setHolidayMap(prev => {
+            // 서버에 있는 월 key 추출 ("MM" 형식)
+            const serverMonths = new Set(Object.keys(data.holidayMap).map(k => k.slice(0, 2)));
+            // 로컬에서 서버에 없는 달만 유지, 서버에 있는 달은 서버 데이터 사용
+            const next = { ...prev };
+            for (const k of Object.keys(next)) {
+              if (serverMonths.has(k.slice(0, 2))) delete next[k];
+            }
+            const merged = { ...next, ...data.holidayMap };
+            localStorage.setItem(HM_KEY, JSON.stringify(merged));
+            return merged;
+          });
           localStorage.setItem("lotto_holidayFileName", data.fileName);
-          localStorage.setItem(HM_KEY, JSON.stringify(data.holidayMap));
         }
       })
       .catch(() => {});
