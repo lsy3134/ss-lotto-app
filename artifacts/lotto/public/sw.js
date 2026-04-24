@@ -1,5 +1,5 @@
 // ── SS앱 Service Worker ──────────────────────────────
-const CACHE_NAME = "ssapp-v12";
+const CACHE_NAME = "ssapp-v13";
 const OFFLINE_URL = "./";
 
 // 설치 시 캐시할 핵심 리소스
@@ -17,18 +17,20 @@ self.addEventListener("install", (event) => {
   self.skipWaiting();
 });
 
-// ── Activate: 오래된 캐시 삭제 ──────────────────────────────
+// ── Activate: 모든 기존 캐시 강제 삭제 후 핵심 리소스 재캐싱 ─────
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
-        keys
-          .filter((k) => k !== CACHE_NAME)
-          .map((k) => caches.delete(k))
+    caches.keys()
+      .then((keys) =>
+        // 현재 버전 포함 모든 캐시 삭제 → 구버전 파일 완전 제거
+        Promise.all(keys.map((k) => caches.delete(k)))
       )
-    )
+      .then(() =>
+        // 삭제 후 핵심 리소스만 새로 캐싱
+        caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS))
+      )
+      .then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 // ── Fetch: 캐시 전략 분기 ────────────────────────────────────

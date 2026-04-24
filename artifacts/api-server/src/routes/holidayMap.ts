@@ -11,10 +11,14 @@ router.get("/holiday-map", async (_req, res) => {
   try {
     const rows = await db.select().from(holidayStoreTable).where(eq(holidayStoreTable.id, 1));
     if (rows.length === 0) {
-      res.json({ fileName: "", holidayMap: {} });
+      res.json({ fileName: "", holidayMap: {}, updatedAt: null });
       return;
     }
-    res.json({ fileName: rows[0].fileName, holidayMap: rows[0].holidayMap });
+    res.json({
+      fileName: rows[0].fileName,
+      holidayMap: rows[0].holidayMap,
+      updatedAt: rows[0].updatedAt ? rows[0].updatedAt.toISOString() : null,
+    });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }

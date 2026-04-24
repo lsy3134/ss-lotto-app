@@ -913,27 +913,42 @@ export default function SchedulePage() {
   }, [holidayAppliedDates]);
 
   // ── 서버에서 휴무 데이터 자동 로드 (마운트 시 1회) ──
-  // 서버 데이터를 로컬과 merge: 서버에 있는 월은 서버 우선, 없는 월은 로컬 유지
+  // updatedAt 비교: 서버가 더 최신이면 localStorage 전체 덮어쓰기
+  // 동일하거나 서버에 없는 달은 로컬 유지 (merge)
   useEffect(() => {
     fetch(`/api/holiday-map?_=${Date.now()}`, { cache: "no-store" })
       .then(r => r.json())
-      .then((data: { fileName: string; holidayMap: Record<string, string[]> }) => {
-        if (data.fileName) {
-          setHolidayFileName(data.fileName);
-          setHolidayMap(prev => {
-            // 서버에 있는 월 key 추출 ("MM" 형식)
+      .then((data: { fileName: string; holidayMap: Record<string, string[]>; updatedAt: string | null }) => {
+        if (!data.fileName) return;
+
+        const LOCAL_TS_KEY = "lotto_holidayMapUpdatedAt";
+        const localTs = localStorage.getItem(LOCAL_TS_KEY);
+        const serverTs = data.updatedAt;
+
+        // 서버 updatedAt이 로컬보다 최신이면 서버 데이터로 완전 덮어쓰기
+        const serverIsNewer = !localTs || (serverTs && serverTs > localTs);
+
+        setHolidayFileName(data.fileName);
+        setHolidayMap(prev => {
+          let merged: Record<string, string[]>;
+          if (serverIsNewer) {
+            // 서버 데이터 우선: 서버에 있는 달은 서버 데이터로 교체, 없는 달은 로컬 유지
             const serverMonths = new Set(Object.keys(data.holidayMap).map(k => k.slice(0, 2)));
-            // 로컬에서 서버에 없는 달만 유지, 서버에 있는 달은 서버 데이터 사용
             const next = { ...prev };
             for (const k of Object.keys(next)) {
               if (serverMonths.has(k.slice(0, 2))) delete next[k];
             }
-            const merged = { ...next, ...data.holidayMap };
-            localStorage.setItem(HM_KEY, JSON.stringify(merged));
-            return merged;
-          });
-          localStorage.setItem("lotto_holidayFileName", data.fileName);
-        }
+            merged = { ...next, ...data.holidayMap };
+          } else {
+            // 로컬이 최신 또는 동일: merge만 (로컬 우선)
+            merged = { ...data.holidayMap, ...prev };
+          }
+          localStorage.setItem(HM_KEY, JSON.stringify(merged));
+          return merged;
+        });
+
+        localStorage.setItem("lotto_holidayFileName", data.fileName);
+        if (serverTs) localStorage.setItem(LOCAL_TS_KEY, serverTs);
       })
       .catch(() => {});
   }, []);
@@ -963,12 +978,24 @@ export default function SchedulePage() {
           }
           const merged = { ...next, ...map };
 
-          // ── 서버에 저장 (모든 기기에서 공유) ──
+          // ── 서버에 저장 (모든 기기에서 공유) + 서버 updatedAt 로컬 저장 ──
           fetch("/api/holiday-map", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ fileName: file.name, holidayMap: merged }),
-          }).catch(() => {});
+          })
+            .then(r => r.json())
+            .then(() => {
+              // 업로드 직후 서버 최신 타임스탬프 가져와서 로컬에 기록
+              return fetch(`/api/holiday-map?_=${Date.now()}`, { cache: "no-store" })
+                .then(r => r.json())
+                .then((fresh: { updatedAt: string | null }) => {
+                  if (fresh.updatedAt) {
+                    localStorage.setItem("lotto_holidayMapUpdatedAt", fresh.updatedAt);
+                  }
+                });
+            })
+            .catch(() => {});
 
           localStorage.setItem("lotto_holidayMap", JSON.stringify(merged));
           return merged;
