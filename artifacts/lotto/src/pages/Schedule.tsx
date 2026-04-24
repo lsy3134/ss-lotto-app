@@ -198,14 +198,24 @@ function isKoreanName(v: unknown): boolean {
   return false;
 }
 
-// 셀에서 이름 목록 추출 — 쉼표/공백 구분 포함
+// 셀에서 이름 목록 추출 — 쉼표/줄바꿈/공백 구분 포함
 function extractNames(v: unknown): string[] {
   if (!v) return [];
   const s = String(v).trim();
   if (!s) return [];
-  // 쉼표/줄바꿈/슬래시로 분리
-  const parts = s.split(/[,，、\/\n\r]+/).map(p => p.trim()).filter(p => isKoreanName(p));
-  if (parts.length > 0) return parts;
+  // 1차: 쉼표/줄바꿈/슬래시로 분리
+  const commaParts = s.split(/[,，、\/\n\r]+/).map(p => p.trim()).filter(Boolean);
+  const names: string[] = [];
+  for (const part of commaParts) {
+    if (isKoreanName(part)) {
+      names.push(part);
+    } else {
+      // 2차: 공백으로 추가 분리 (공백 구분 이름 처리)
+      const spaceParts = part.split(/\s+/).map(p => p.trim()).filter(p => isKoreanName(p));
+      names.push(...spaceParts);
+    }
+  }
+  if (names.length > 0) return names;
   // 단일 이름
   if (isKoreanName(s)) return [s];
   return [];
@@ -1370,15 +1380,26 @@ export default function SchedulePage() {
       setDateStatuses(prev => {
         const cur = prev[day.dateLabel] ?? {};
         const next = { ...cur };
+        // 한글 문자만 남기는 엄격 정규화 (숨겨진 공백·특수문자 제거)
+        const koOnly = (s: string) => s.replace(/[^\uAC00-\uD7A3]/g, "");
         for (const hName of hdNames) {
-          const normH = normalize(hName.trim());
-          // 1순위: 정확히 일치
-          const exactMatch = sortedCustomRoster.find(p => normalize(p.name) === normH);
+          const normH = koOnly(hName);
+          if (!normH) continue;
+          // 1순위: 한글만 추출 후 정확히 일치
+          const exactMatch = sortedCustomRoster.find(p => koOnly(p.name) === normH);
           // 2순위: 3글자 이상일 때만 앞 2글자 fuzzy (2글자 이름은 exact만 사용)
           const fuzzyMatch = !exactMatch && normH.length >= 3
-            ? sortedCustomRoster.find(p => normalize(p.name).startsWith(normH.slice(0, 2)))
+            ? sortedCustomRoster.find(p => koOnly(p.name).startsWith(normH.slice(0, 2)))
             : null;
-          const matched = (exactMatch ?? fuzzyMatch)?.name ?? hName.trim();
+          const matchedPerson = exactMatch ?? fuzzyMatch;
+          if (!matchedPerson) {
+            console.warn("휴무 매칭 실패:", JSON.stringify(hName), `→ koOnly: "${normH}"`);
+            // 매칭 실패 시 trim된 이름으로 저장 (수동 확인 가능하도록)
+            const raw = hName.trim();
+            if (raw && !next[raw]) next[raw] = "휴무";
+            continue;
+          }
+          const matched = matchedPerson.name;
           // 이미 사용자가 다른 상태로 지정한 경우 덮어쓰지 않음
           if (!next[matched]) next[matched] = "휴무";
         }
