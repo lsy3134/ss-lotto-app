@@ -978,7 +978,8 @@ export default function SchedulePage() {
         localStorage.setItem("lotto_holidayApplied", "{}");
 
         // ── 업로드 월의 휴무 상태만 초기화 (다른 월·다른 상태는 유지) ──
-        const uploadMonthStr = String(parseInt(viewMonth, 10)).padStart(2, "0");
+        // viewMonth 대신 실제 업로드된 파일의 월을 기준으로 초기화
+        const uploadMonthStr = [...uploadedMonths][0] ?? String(parseInt(viewMonth, 10)).padStart(2, "0");
         setDateStatuses(prev => {
           const next: typeof prev = {};
           for (const [dl, statuses] of Object.entries(prev)) {
@@ -1022,7 +1023,8 @@ export default function SchedulePage() {
         }
 
         const totalPeople = Object.values(map).reduce((s, a) => s + a.length, 0);
-        alert(`✅ 휴무 엑셀 업로드 완료!\n${dateCount}개 날짜 · 총 ${totalPeople}건\n기존 휴무 데이터는 자동 초기화됐습니다.`);
+        const uploadedMonthList = [...uploadedMonths].sort().join("·");
+        alert(`✅ 휴무 엑셀 업로드 완료!\n${dateCount}개 날짜 · 총 ${totalPeople}건\n${uploadedMonthList}월 데이터 갱신 (다른 월 유지)`);
       } catch (err) {
         alert("엑셀 파일 읽기 실패: " + String(err));
       }
