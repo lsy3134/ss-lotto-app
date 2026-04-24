@@ -27,15 +27,22 @@ router.get("/holiday-map", async (_req, res) => {
 router.post("/holiday-map", async (req, res) => {
   try {
     const { fileName, holidayMap } = req.body as { fileName: string; holidayMap: Record<string, string[]> };
+    const keys = Object.keys(holidayMap ?? {});
+    const months = [...new Set(keys.map(k => k.slice(0, 2)))].sort();
+    console.log(`[HolidayMap POST] 파일명: ${fileName}`);
+    console.log(`[HolidayMap POST] 날짜 수: ${keys.length}, 월 목록: ${months.join(", ")}`);
+    const now = new Date();
     await db
       .insert(holidayStoreTable)
       .values({ id: 1, fileName, holidayMap })
       .onConflictDoUpdate({
         target: holidayStoreTable.id,
-        set: { fileName, holidayMap, updatedAt: new Date() },
+        set: { fileName, holidayMap, updatedAt: now },
       });
-    res.json({ ok: true });
+    console.log(`[HolidayMap POST] DB 저장 완료: updatedAt=${now.toISOString()}`);
+    res.json({ ok: true, months, keyCount: keys.length, updatedAt: now.toISOString() });
   } catch (err) {
+    console.error(`[HolidayMap POST] 오류:`, err);
     res.status(500).json({ error: String(err) });
   }
 });

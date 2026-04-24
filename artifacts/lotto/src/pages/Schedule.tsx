@@ -1000,23 +1000,25 @@ export default function SchedulePage() {
           const merged = { ...next, ...map };
 
           // ── 서버에 저장 (모든 기기에서 공유) + 서버 updatedAt 로컬 저장 ──
+          console.log("[HolidayUpload] POST 시작:", file.name, "월 목록:", [...uploadedMonths].sort());
           fetch("/api/holiday-map", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ fileName: file.name, holidayMap: merged }),
           })
             .then(r => r.json())
-            .then(() => {
-              // 업로드 직후 서버 최신 타임스탬프 가져와서 로컬에 기록
-              return fetch(`/api/holiday-map?_=${Date.now()}`, { cache: "no-store" })
-                .then(r => r.json())
-                .then((fresh: { updatedAt: string | null }) => {
-                  if (fresh.updatedAt) {
-                    localStorage.setItem("lotto_holidayMapUpdatedAt", fresh.updatedAt);
-                  }
-                });
+            .then((result: { ok?: boolean; months?: string[]; keyCount?: number; updatedAt?: string; error?: string }) => {
+              if (result.error) {
+                console.error("[HolidayUpload] 서버 오류:", result.error);
+              } else {
+                console.log("[HolidayUpload] 저장 성공 →", result);
+                if (result.updatedAt) {
+                  localStorage.setItem("lotto_holidayMapUpdatedAt", result.updatedAt);
+                  console.log("[HolidayUpload] updatedAt 로컬 저장:", result.updatedAt);
+                }
+              }
             })
-            .catch(() => {});
+            .catch(e => { console.error("[HolidayUpload] fetch 실패:", e); });
 
           localStorage.setItem("lotto_holidayMap", JSON.stringify(merged));
           return merged;
