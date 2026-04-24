@@ -1409,6 +1409,24 @@ export default function SchedulePage() {
       });
       // 이 날짜를 "자동 적용 완료"로 표시 → 다음에 다시 와도 덮어쓰기 안 함
       setHolidayAppliedDates(prev => ({ ...prev, [day.dateLabel]: true }));
+
+      // ── 디버그: roster에 없는 이름이 holidayMap에 있으면 로그 ──
+      const rosterNameSet = new Set(sortedCustomRoster.map(p => p.name.replace(/\s+/g, "")));
+      for (const hName of hdNames) {
+        const ko = hName.replace(/[^\uAC00-\uD7A3]/g, "");
+        if (ko && !rosterNameSet.has(ko)) {
+          console.log(`dateStatuses에는 있음(휴무), roster에는 없음: "${hName}" (ko: "${ko}")`);
+        }
+      }
+    }
+
+    // ── 디버그: 현재 날짜 dateStatuses 중 roster에 없는 이름 ──
+    const rosterNamesNorm = new Set(sortedCustomRoster.map(p => p.name.replace(/\s+/g, "")));
+    const curStatuses = dateStatuses[day.dateLabel] ?? {};
+    for (const [name, st] of Object.entries(curStatuses)) {
+      if (!rosterNamesNorm.has(name.replace(/\s+/g, ""))) {
+        console.log(`[${day.dateLabel}] dateStatuses에는 있음(${st}), roster에는 없음: "${name}"`);
+      }
     }
 
     // 날짜 이동 시 미저장 임시 결과 항상 초기화
