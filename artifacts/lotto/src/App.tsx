@@ -695,8 +695,15 @@ function DebugPanel() {
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             <strong style={{ fontSize: "0.8rem" }}>🔍 디버그 정보</strong>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
               <button onClick={loadDebugInfo} style={{ fontSize: "0.7rem", padding: "3px 10px", border: "1px solid #1565c0", borderRadius: 8, background: "#fff", color: "#1565c0", cursor: "pointer", fontWeight: 700 }}>새로고침</button>
+              <button onClick={() => {
+                localStorage.removeItem("lotto_holidayMapUpdatedAt");
+                localStorage.removeItem("lotto_holidayMap");
+                localStorage.removeItem("lotto_holidayFileName");
+                alert("로컬 캐시를 삭제했습니다. 근무표 페이지를 열면 서버 데이터가 자동으로 적용됩니다.");
+                loadDebugInfo();
+              }} style={{ fontSize: "0.7rem", padding: "3px 10px", border: "1px solid #d32f2f", borderRadius: 8, background: "#fff", color: "#d32f2f", cursor: "pointer", fontWeight: 700 }}>캐시 초기화</button>
               <button onClick={() => { setShow(false); setTapCount(0); }} style={{ fontSize: "0.7rem", padding: "3px 10px", border: "1px solid #ccc", borderRadius: 8, background: "#fff", color: "#666", cursor: "pointer" }}>닫기</button>
             </div>
           </div>

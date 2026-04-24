@@ -939,27 +939,20 @@ export default function SchedulePage() {
         const LOCAL_TS_KEY = "lotto_holidayMapUpdatedAt";
         const serverTs = data.updatedAt;
 
-        // 서버 updatedAt이 로컬보다 최신이면 서버 데이터로 완전 덮어쓰기
-        const serverIsNewer = !localTs || (serverTs && serverTs > localTs);
-        console.log("[HolidaySync] 서버 최신 여부:", serverIsNewer);
-
+        // 서버에 데이터가 있으면 항상 서버 데이터를 우선 적용 (서버가 진실의 원천)
+        // 서버에 있는 달은 무조건 서버 데이터로 교체, 없는 달은 로컬 유지
+        console.log("[HolidaySync] 서버 데이터 적용 시작");
         setHolidayFileName(data.fileName);
         setHolidayMap(prev => {
-          let merged: Record<string, string[]>;
-          if (serverIsNewer) {
-            // 서버 데이터 우선: 서버에 있는 달은 서버 데이터로 교체, 없는 달은 로컬 유지
-            const serverMonths = new Set(Object.keys(data.holidayMap).map(k => k.slice(0, 2)));
-            const next = { ...prev };
-            for (const k of Object.keys(next)) {
-              if (serverMonths.has(k.slice(0, 2))) delete next[k];
-            }
-            merged = { ...next, ...data.holidayMap };
-          } else {
-            // 로컬이 최신 또는 동일: merge만 (로컬 우선)
-            merged = { ...data.holidayMap, ...prev };
+          const serverMonths = new Set(Object.keys(data.holidayMap).map(k => k.slice(0, 2)));
+          const next = { ...prev };
+          for (const k of Object.keys(next)) {
+            if (serverMonths.has(k.slice(0, 2))) delete next[k];
           }
+          const merged = { ...next, ...data.holidayMap };
           const mergedMonths = [...new Set(Object.keys(merged).map(k => k.slice(0, 2)))].sort();
-          console.log("[HolidaySync] 병합 완료 → 저장 월 목록:", mergedMonths);
+          console.log("[HolidaySync] 적용 완료 → 저장 월 목록:", mergedMonths);
+          console.log("[HolidaySync] 05.01 인원:", (merged["05.01"] ?? []).length, "명");
           localStorage.setItem(HM_KEY, JSON.stringify(merged));
           return merged;
         });
