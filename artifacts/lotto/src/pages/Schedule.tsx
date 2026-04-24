@@ -1304,6 +1304,9 @@ export default function SchedulePage() {
     localStorage.setItem("lotto_customRoster", JSON.stringify(customRoster));
     // 초기 마운트 시 로드는 서버에서 받으므로 서버 저장 건너뜀
     if (rosterInitRef.current) { rosterInitRef.current = false; return; }
+    // 변경 즉시 로컬 타임스탬프 업데이트 (서버 저장 성공 여부 무관하게 로컬 우선 보장)
+    const optimisticNow = new Date().toISOString();
+    localStorage.setItem("lotto_rosterUpdatedAt", optimisticNow);
     // 순번표가 변경되면 서버에도 저장
     fetch("/api/roster", {
       method: "POST",
@@ -1317,32 +1320,74 @@ export default function SchedulePage() {
       })
       .catch(e => console.error("[RosterSync] 서버 저장 오류:", e));
   }, [customRoster]);
-  // 마운트 시 서버에서 순번표 동기화 (서버 데이터 항상 우선)
+  // 이 기기 데이터로 서버 강제 덮어쓰기
+  function forceUploadToServer() {
+    if (!confirm("현재 이 기기의 순번표를 서버에 강제 저장합니다.\n다른 기기의 데이터는 덮어씌워집니다. 계속할까요?")) return;
+    const now = new Date().toISOString();
+    fetch("/api/roster", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roster: customRoster }),
+    })
+      .then(r => r.json())
+      .then((res: { ok?: boolean; updatedAt?: string }) => {
+        if (res.updatedAt) localStorage.setItem("lotto_rosterUpdatedAt", res.updatedAt);
+        else localStorage.setItem("lotto_rosterUpdatedAt", now);
+        alert(`✅ 서버 덮어쓰기 완료 (${customRoster.length}명)`);
+        console.log("[RosterSync] 강제 서버 덮어쓰기 완료:", res);
+      })
+      .catch(e => { console.error("[RosterSync] 강제 덮어쓰기 오류:", e); alert("⚠️ 서버 저장 실패"); });
+  }
+
+  // 마운트 시 서버 동기화 — 타임스탬프 비교: 더 최신 쪽 데이터 사용
   useEffect(() => {
     fetch(`/api/roster?_=${Date.now()}`, { cache: "no-store" })
       .then(r => r.json())
       .then((data: { roster: PersonData[]; updatedAt: string | null }) => {
         const serverRoster = Array.isArray(data.roster) ? normalizeRoster(data.roster as PersonData[]) : [];
+        const serverTime = data.updatedAt ? new Date(data.updatedAt).getTime() : 0;
+        const localTimeStr = localStorage.getItem("lotto_rosterUpdatedAt");
+        const localTime = localTimeStr ? new Date(localTimeStr).getTime() : 0;
+
         if (serverRoster.length === 0) {
-          // 서버에 데이터가 없으면 로컬 데이터를 서버에 업로드 (최초 동기화)
+          // 서버가 비어있으면 로컬 데이터 올리기
           const localRoster = (() => { try { return normalizeRoster(JSON.parse(localStorage.getItem("lotto_customRoster") ?? "[]") as PersonData[]); } catch { return []; } })();
           if (localRoster.length > 0) {
-            console.log("[RosterSync] 서버 비어있음 → 로컬 데이터 업로드:", localRoster.length, "명");
-            console.log("[RosterSync] 업로드 이름 샘플:", localRoster.slice(0, 5).map(p => p.name));
+            console.log("[RosterSync] 서버 비어있음 → 로컬 업로드:", localRoster.length, "명");
             fetch("/api/roster", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ roster: localRoster }),
+            }).then(r => r.json()).then((res: { updatedAt?: string }) => {
+              if (res.updatedAt) localStorage.setItem("lotto_rosterUpdatedAt", res.updatedAt);
             }).catch(e => console.error("[RosterSync] 초기 업로드 오류:", e));
           } else {
             console.log("[RosterSync] 서버·로컬 모두 비어있음");
           }
           return;
         }
-        console.log("[RosterSync] 서버 순번표 적용:", serverRoster.length, "명");
-        console.log("[RosterSync] 이름 샘플(정규화 후):", serverRoster.slice(0, 5).map(p => p.name));
+
+        if (localTime > serverTime) {
+          // 로컬이 더 최신 → 로컬 유지 + 서버에 업로드 (다른 기기와 동기화)
+          console.log("[RosterSync] 로컬이 더 최신 → 로컬 유지 + 서버 업데이트");
+          console.log("[RosterSync] local:", new Date(localTime).toISOString(), "server:", new Date(serverTime).toISOString());
+          const localRoster = (() => { try { return normalizeRoster(JSON.parse(localStorage.getItem("lotto_customRoster") ?? "[]") as PersonData[]); } catch { return []; } })();
+          if (localRoster.length > 0) {
+            fetch("/api/roster", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ roster: localRoster }),
+            }).then(r => r.json()).then((res: { updatedAt?: string }) => {
+              if (res.updatedAt) localStorage.setItem("lotto_rosterUpdatedAt", res.updatedAt);
+            }).catch(e => console.error("[RosterSync] 로컬→서버 업로드 오류:", e));
+          }
+          return;
+        }
+
+        // 서버가 더 최신이거나 로컬 타임스탬프 없음 → 서버 데이터 적용
+        console.log("[RosterSync] 서버 데이터 적용:", serverRoster.length, "명", "serverTime:", data.updatedAt);
         if (data.updatedAt) localStorage.setItem("lotto_rosterUpdatedAt", data.updatedAt);
-        rosterInitRef.current = true; // 서버 데이터 적용 시 서버 저장 트리거 방지
+        rosterInitRef.current = true;
         setCustomRoster(serverRoster);
       })
       .catch(e => console.error("[RosterSync] 서버 조회 오류:", e));
@@ -3236,6 +3281,11 @@ export default function SchedulePage() {
                 border: "none", background: "#1565c0", color: "#fff",
                 fontSize: "0.75rem", fontWeight: 700, cursor: "pointer",
               }}>📂 복원</button>
+              <button onClick={forceUploadToServer} style={{
+                padding: "5px 10px", borderRadius: "8px",
+                border: "none", background: "#b71c1c", color: "#fff",
+                fontSize: "0.75rem", fontWeight: 700, cursor: "pointer",
+              }}>☁️ 서버 덮어쓰기</button>
 
               <button onClick={() => { setRosterEditorOpen(false); setRosterForm(null); }}
                 style={{

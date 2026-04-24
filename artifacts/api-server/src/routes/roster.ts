@@ -23,6 +23,17 @@ router.get("/roster", async (_req, res) => {
   }
 });
 
+router.post("/roster/reset", async (_req, res) => {
+  try {
+    await db.delete(rosterStoreTable).where(eq(rosterStoreTable.id, 1));
+    console.log(`[Roster RESET] 서버 순번표 초기화 완료`);
+    res.json({ ok: true, message: "서버 순번표가 초기화되었습니다." });
+  } catch (err) {
+    console.error(`[Roster RESET] 오류:`, err);
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 router.post("/roster", async (req, res) => {
   try {
     const { roster } = req.body as { roster: unknown[] };
