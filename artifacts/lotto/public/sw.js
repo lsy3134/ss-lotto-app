@@ -1,5 +1,5 @@
 // ── SS앱 Service Worker ──────────────────────────────
-const CACHE_NAME = "ssapp-v10";
+const CACHE_NAME = "ssapp-v11";
 const OFFLINE_URL = "./";
 
 // 설치 시 캐시할 핵심 리소스
@@ -36,13 +36,13 @@ self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // API 요청 → Network-first (실패 시 캐시 fallback)
+  // API 요청 → Network-only (절대 캐시하지 않음)
   if (
     request.method !== "GET" ||
     url.pathname.includes("/api/") ||
     url.hostname !== self.location.hostname
   ) {
-    event.respondWith(networkFirst(request));
+    event.respondWith(networkOnly(request));
     return;
   }
 
@@ -75,17 +75,15 @@ async function cacheFirst(request) {
   }
 }
 
-async function networkFirst(request) {
+// API 전용: 캐시 저장 없이 항상 네트워크 직접 호출
+async function networkOnly(request) {
   try {
-    const response = await fetch(request);
-    if (response.ok) {
-      const cache = await caches.open(CACHE_NAME);
-      cache.put(request, response.clone());
-    }
-    return response;
+    return await fetch(request);
   } catch {
-    const cached = await caches.match(request);
-    return cached || new Response("Offline", { status: 503 });
+    return new Response(JSON.stringify({ error: "Offline" }), {
+      status: 503,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 }
 
