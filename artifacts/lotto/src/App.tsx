@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { Switch, Route, Link, Router as WouterRouter, useLocation } from "wouter";
 import * as XLSX from "xlsx";
 import SchedulePage from "./pages/Schedule";
+import { type AuthUser, authenticate, clearUser, getStoredUser } from "./auth";
 
 const BASE_URL = import.meta.env.BASE_URL;
 const base = BASE_URL.replace(/\/$/, "");
@@ -31,6 +32,122 @@ const C = {
 };
 
 interface Game { type: string; nums: number[]; }
+
+// ───────────────────────────────────────────
+// 인증 컨텍스트 (앱 전역)
+// ───────────────────────────────────────────
+export const AuthContext = createContext<{
+  user: AuthUser | null;
+  logout: () => void;
+}>({ user: null, logout: () => {} });
+
+export function useAuth() { return useContext(AuthContext); }
+
+// ───────────────────────────────────────────
+// 로그인 화면
+// ───────────────────────────────────────────
+function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+  const [shake, setShake] = useState(false);
+
+  function handleLogin() {
+    const user = authenticate(name);
+    if (user) {
+      onLogin(user);
+    } else {
+      setError("접근 권한이 없습니다.");
+      setShake(true);
+      setTimeout(() => setShake(false), 500);
+    }
+  }
+
+  return (
+    <div style={{
+      backgroundColor: C.bgPage,
+      minHeight: "100dvh",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "24px",
+    }}>
+      <img
+        src={`${BASE_URL}char_cloud.png`}
+        alt=""
+        style={{
+          width: 100, height: 100, borderRadius: "50%",
+          objectFit: "cover", marginBottom: 24,
+          boxShadow: `0 0 24px ${C.purple}44`,
+          animation: "floatBob 3s ease-in-out infinite",
+        }}
+      />
+      <div style={{
+        background: "white",
+        borderRadius: 24,
+        padding: "32px 28px",
+        width: "100%",
+        maxWidth: 360,
+        boxShadow: "0 8px 32px rgba(100,110,180,0.13)",
+        animation: shake ? "shake 0.4s ease" : "none",
+      }}>
+        <h2 style={{ margin: "0 0 6px", fontSize: "1.3rem", fontWeight: 800, color: C.textPrimary, textAlign: "center" }}>
+          SS앱
+        </h2>
+        <p style={{ margin: "0 0 24px", fontSize: "0.85rem", color: C.textSecondary, textAlign: "center" }}>
+          이름을 입력해 주세요
+        </p>
+        <input
+          autoFocus
+          value={name}
+          onChange={e => { setName(e.target.value); setError(""); }}
+          onKeyDown={e => e.key === "Enter" && handleLogin()}
+          placeholder="이름 입력"
+          style={{
+            width: "100%", boxSizing: "border-box",
+            padding: "14px 16px", borderRadius: 14,
+            border: `1.5px solid ${error ? C.red : C.border}`,
+            fontSize: "1rem", outline: "none",
+            color: C.textPrimary, background: "#f8fafc",
+            marginBottom: 8,
+          }}
+        />
+        {error && (
+          <p style={{ margin: "0 0 12px", fontSize: "0.82rem", color: C.red, textAlign: "center" }}>
+            {error}
+          </p>
+        )}
+        <button
+          onClick={handleLogin}
+          style={{
+            width: "100%", padding: "14px 0", marginTop: 4,
+            borderRadius: 14, border: "none",
+            background: "linear-gradient(135deg, #7c6ef7 0%, #5b4de8 100%)",
+            color: "white", fontWeight: 700, fontSize: "1rem",
+            cursor: "pointer",
+            boxShadow: "0 4px 16px rgba(124,110,247,0.35)",
+          }}
+        >
+          입장하기
+        </button>
+      </div>
+
+      <style>{`
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          20%       { transform: translateX(-8px); }
+          40%       { transform: translateX(8px); }
+          60%       { transform: translateX(-6px); }
+          80%       { transform: translateX(6px); }
+        }
+        @keyframes floatBob {
+          0%, 100% { transform: translateY(0); }
+          50%       { transform: translateY(-8px); }
+        }
+      `}</style>
+    </div>
+  );
+}
 
 // ───────────────────────────────────────────
 // 인트로 화면
@@ -118,6 +235,7 @@ function IntroView({ onEnter }: { onEnter: () => void }) {
 // 홈 / 서비스 선택 화면
 // ───────────────────────────────────────────
 function HomePage() {
+  const { user, logout } = useAuth();
   const [showIntro, setShowIntro] = useState(() => {
     return !sessionStorage.getItem("ss_entered");
   });
@@ -137,7 +255,28 @@ function HomePage() {
       color: C.textPrimary,
     }}>
       <header style={{ marginBottom: "36px" }}>
-        <h2 style={{ fontSize: "1.5rem", margin: "0 0 6px", fontWeight: 800, color: C.textPrimary }}>서비스 선택</h2>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+          <h2 style={{ fontSize: "1.5rem", margin: 0, fontWeight: 800, color: C.textPrimary }}>서비스 선택</h2>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{
+              fontSize: "0.75rem", color: C.textSecondary,
+              background: user?.role === "admin" ? C.purpleLight : C.blueLight,
+              border: `1px solid ${user?.role === "admin" ? "#c5befa" : "#c0d4f7"}`,
+              borderRadius: 20, padding: "3px 10px", fontWeight: 600,
+            }}>
+              {user?.name} {user?.role === "admin" ? "👑" : ""}
+            </span>
+            <button
+              onClick={logout}
+              style={{
+                fontSize: "0.72rem", padding: "4px 10px",
+                border: `1px solid ${C.border}`, borderRadius: 20,
+                background: "white", color: C.textSecondary,
+                cursor: "pointer", fontWeight: 600,
+              }}
+            >로그아웃</button>
+          </div>
+        </div>
         <p style={{ margin: 0, color: C.textSecondary, fontSize: "0.9rem" }}>필요한 업무를 골라주세요.</p>
       </header>
 
@@ -637,18 +776,36 @@ function BottomTabBar() {
 }
 
 // ───────────────────────────────────────────
-// 라우터
+// 라우터 (인증 게이트 포함)
 // ───────────────────────────────────────────
 export default function App() {
+  const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
+
+  function handleLogin(u: AuthUser) {
+    setUser(u);
+  }
+
+  function handleLogout() {
+    clearUser();
+    setUser(null);
+  }
+
+  // 인증 안 된 경우 로그인 화면
+  if (!user) {
+    return <LoginScreen onLogin={handleLogin} />;
+  }
+
   return (
-    <WouterRouter base={base}>
-      <Switch>
-        <Route path="/" component={HomePage} />
-        <Route path="/schedule" component={SchedulePage} />
-        <Route path="/lotto" component={LottoPage} />
-        <Route component={HomePage} />
-      </Switch>
-      <BottomTabBar />
-    </WouterRouter>
+    <AuthContext.Provider value={{ user, logout: handleLogout }}>
+      <WouterRouter base={base}>
+        <Switch>
+          <Route path="/" component={HomePage} />
+          <Route path="/schedule" component={SchedulePage} />
+          <Route path="/lotto" component={LottoPage} />
+          <Route component={HomePage} />
+        </Switch>
+        <BottomTabBar />
+      </WouterRouter>
+    </AuthContext.Provider>
   );
 }
