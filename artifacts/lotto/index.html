@@ -176,16 +176,61 @@
         cursor: pointer;
       }
 
+      /* ── SW 업데이트 배너 ── */
+      #sw-update-banner {
+        display: none;
+        position: fixed;
+        top: calc(12px + var(--sat));
+        left: 50%;
+        transform: translateX(-50%);
+        background: linear-gradient(135deg, #1565c0, #1a237e);
+        color: white;
+        padding: 12px 20px;
+        border-radius: 14px;
+        font-family: 'Inter', sans-serif;
+        font-size: 0.88rem;
+        font-weight: 700;
+        box-shadow: 0 6px 24px rgba(21,101,192,0.5);
+        z-index: 99999;
+        align-items: center;
+        gap: 12px;
+        white-space: nowrap;
+        animation: slideDown 0.4s ease;
+        cursor: pointer;
+      }
+      #sw-update-banner.visible { display: flex; }
+      #sw-update-banner button {
+        background: #f8b400;
+        border: none;
+        color: #1a237e;
+        padding: 7px 14px;
+        border-radius: 8px;
+        font-weight: 800;
+        font-size: 0.82rem;
+        cursor: pointer;
+      }
+      @keyframes slideDown {
+        from { transform: translateX(-50%) translateY(-100%); opacity: 0; }
+        to   { transform: translateX(-50%) translateY(0);    opacity: 1; }
+      }
+
       @media print {
         body * { visibility: hidden; }
         #print-area, #print-area * { visibility: visible; }
         #print-area { position: absolute; left: 0; top: 0; width: 100%; }
         button { display: none !important; }
         #pwa-install-banner { display: none !important; }
+        #sw-update-banner { display: none !important; }
       }
     </style>
   </head>
   <body>
+    <!-- SW 업데이트 배너 -->
+    <div id="sw-update-banner" aria-label="앱 업데이트 배너">
+      <span>🔄 새 버전이 있습니다</span>
+      <button id="sw-update-btn">지금 업데이트</button>
+    </div>
+
     <!-- 안드로이드 PWA 설치 배너 -->
     <div id="pwa-install-banner" aria-label="앱 설치 배너">
       <span>📲 SS앱 홈 화면에 추가</span>
@@ -221,18 +266,65 @@
       (function () {
         'use strict';
 
-        // ── Service Worker 등록 ──────────────────────────────
+        // ── Service Worker 등록 + 업데이트 감지 ─────────────
         if ('serviceWorker' in navigator) {
+          var updateBanner = document.getElementById('sw-update-banner');
+          var updateBtn    = document.getElementById('sw-update-btn');
+
+          // 새 SW가 컨트롤을 가져가면 자동으로 페이지 새로고침
+          var reloading = false;
+          navigator.serviceWorker.addEventListener('controllerchange', function () {
+            if (!reloading) {
+              reloading = true;
+              window.location.reload();
+            }
+          });
+
           window.addEventListener('load', function () {
             navigator.serviceWorker
               .register('./sw.js', { scope: './' })
               .then(function (reg) {
                 console.log('[SW] registered, scope:', reg.scope);
+
+                // 새 SW 설치 감지 → 배너 표시
+                function onUpdateFound() {
+                  var newWorker = reg.installing;
+                  if (!newWorker) return;
+                  newWorker.addEventListener('statechange', function () {
+                    // installed 상태 + 기존 SW가 이미 있으면 업데이트 상황
+                    if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                      if (updateBanner) updateBanner.classList.add('visible');
+                    }
+                  });
+                }
+
+                reg.addEventListener('updatefound', onUpdateFound);
+
+                // 이미 waiting 중인 SW가 있을 경우 즉시 배너
+                if (reg.waiting && navigator.serviceWorker.controller) {
+                  if (updateBanner) updateBanner.classList.add('visible');
+                }
+
+                // 주기적으로 업데이트 확인 (5분마다)
+                setInterval(function () { reg.update(); }, 5 * 60 * 1000);
               })
               .catch(function (err) {
                 console.warn('[SW] registration failed:', err);
               });
           });
+
+          // 배너 버튼 클릭 → waiting SW에 skipWaiting 요청
+          if (updateBtn) {
+            updateBtn.addEventListener('click', function () {
+              navigator.serviceWorker.getRegistration('./').then(function (reg) {
+                if (reg && reg.waiting) {
+                  reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+                } else {
+                  window.location.reload();
+                }
+              });
+            });
+          }
         }
 
         // ── 공통: 이미 standalone(홈 화면 앱)이면 아무것도 안 함 ──

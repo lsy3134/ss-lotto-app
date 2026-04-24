@@ -1,5 +1,5 @@
 // ── SS앱 Service Worker ──────────────────────────────
-const CACHE_NAME = "ssapp-v11";
+const CACHE_NAME = "ssapp-v12";
 const OFFLINE_URL = "./";
 
 // 설치 시 캐시할 핵심 리소스
@@ -86,6 +86,13 @@ async function networkOnly(request) {
     });
   }
 }
+
+// ── 페이지에서 SKIP_WAITING 메시지 수신 시 즉시 활성화 ───────
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
+});
 
 // ── Push 알림 준비 ───────────────────────────────────────────
 self.addEventListener("push", (event) => {
