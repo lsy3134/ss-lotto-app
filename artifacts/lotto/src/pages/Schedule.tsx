@@ -2131,13 +2131,7 @@ export default function SchedulePage() {
         <button onClick={() => setLocation(`${BASE}/`)} style={S.backBtn}>←</button>
         <img src={`${BASE}/char_dino.png`} alt="" style={{ width: 30, height: 30, objectFit: "contain" }} />
         <span style={S.headerTitle}>캐디 근무표</span>
-        {!isAdmin && (
-          <span style={{
-            fontSize: "0.7rem", padding: "3px 8px", borderRadius: 10,
-            background: "#e8f4fd", color: "#1565c0", fontWeight: 700, border: "1px solid #90caf9",
-          }}>조회 전용</span>
-        )}
-        {isAdmin && names.length > 0 && (
+        {names.length > 0 && (
           <button
             onClick={() => {
               setNames([]); setRosterLoaded(false); setDayResult(null); setPendingResult(null); setWeekly([]);
@@ -2146,7 +2140,7 @@ export default function SchedulePage() {
             style={S.smallBtn}
             className="text-[14px]">↩ 초기화</button>
         )}
-        {isAdmin && names.length === 0 && customRoster.length > 0 && (
+        {names.length === 0 && customRoster.length > 0 && (
           <button
             onClick={() => applyRoster(queueStartName)}
             style={{
@@ -2430,7 +2424,7 @@ export default function SchedulePage() {
                   const activeDaegeun = daegeunCandidates.filter(n => currentDaegeun[n]);
                   return (
                     <button
-                      onClick={isAdmin ? () => { setBatchDaegeunOpen(true); setBatchDaegeunSearch(""); } : undefined}
+                      onClick={() => { setBatchDaegeunOpen(true); setBatchDaegeunSearch(""); }}
                       style={{
                         display: "flex", flexDirection: "column",
                         alignItems: "center", justifyContent: "center",
@@ -2438,7 +2432,7 @@ export default function SchedulePage() {
                         borderRadius: "8px",
                         border: `1px solid ${activeDaegeun.length > 0 ? "#f59e0b" : "#f59e0b33"}`,
                         background: activeDaegeun.length > 0 ? "#fef3c7" : "#f59e0b15",
-                        cursor: isAdmin ? "pointer" : "default",
+                        cursor: "pointer",
                         width: "100%",
                         boxSizing: "border-box",
                         fontFamily: "inherit",
@@ -2460,7 +2454,7 @@ export default function SchedulePage() {
                   const active = sickCnt > 0;
                   return (
                     <button
-                      onClick={isAdmin ? () => openStatusPicker("병가") : undefined}
+                      onClick={() => openStatusPicker("병가")}
                       style={{
                         display: "flex", flexDirection: "column",
                         alignItems: "center", justifyContent: "center",
@@ -2468,7 +2462,7 @@ export default function SchedulePage() {
                         borderRadius: "8px",
                         border: `1px solid ${active ? "#c62828" : "#c6282833"}`,
                         background: active ? "#ffebee" : "#c6282815",
-                        cursor: isAdmin ? "pointer" : "default",
+                        cursor: "pointer",
                         width: "100%",
                         boxSizing: "border-box",
                         fontFamily: "inherit",
@@ -2497,14 +2491,14 @@ export default function SchedulePage() {
                   const active = cnt > 0;
                   return (
                     <button key={st}
-                      onClick={isAdmin ? () => openStatusPicker(st) : undefined}
+                      onClick={() => openStatusPicker(st)}
                       style={{
                         display: "flex", flexDirection: "column",
                         alignItems: "center", justifyContent: "center",
                         gap: "2px", padding: "10px 4px",
                         borderRadius: "12px", border: `2px solid ${active ? color : color + "44"}`,
                         background: active ? bg : "#fafafa",
-                        cursor: isAdmin ? "pointer" : "default", position: "relative",
+                        cursor: "pointer", position: "relative",
                         WebkitTapHighlightColor: "transparent",
                       }}>
                       <span style={{ fontSize: "0.85rem", fontWeight: 800, color }}>
@@ -2548,7 +2542,6 @@ export default function SchedulePage() {
                       · {currentVipMembers.map(m => m.name).join(", ")}
                     </span>
                   )}
-                  {isAdmin && (
                   <button
                     onClick={() => setVipPickerOpen(v => !v)}
                     style={{
@@ -2561,7 +2554,6 @@ export default function SchedulePage() {
                     }}>
                     {vipPickerOpen ? "닫기" : (currentVip.count > 0 || currentVipMembers.length > 0 ? "수정" : "+ 추가")}
                   </button>
-                  )}
                 </div>
 
                 {/* VIP 인원 칩 (항상 표시) */}
@@ -2673,7 +2665,6 @@ export default function SchedulePage() {
                 <span style={{ fontWeight: 800, fontSize: "0.85rem", color: "#1565c0" }}>
                   ✅ 팀수 저장됨 ({mode})
                 </span>
-                {isAdmin && (
                 <button
                   onClick={unlockTeamSettings}
                   style={{
@@ -2683,7 +2674,6 @@ export default function SchedulePage() {
                   }}>
                   ✏ 수정
                 </button>
-                )}
               </div>
               {mode === "2부제" ? (
                 <div style={S.calcBox}>
@@ -2701,8 +2691,8 @@ export default function SchedulePage() {
                 </div>
               )}
             </div>)
-          ) : isAdmin ? (
-            /* ── 팀수 입력 폼 (admin only) ── */
+          ) : (
+            /* ── 팀수 입력 폼 ── */
             (<div style={{ marginBottom: "4px", marginTop: "14px" }}>
               {mode === "2부제" ? (
                 <>
@@ -2747,7 +2737,7 @@ export default function SchedulePage() {
                 💾 저장하기
               </button>
             </div>)
-          ) : null}
+          )}
 
           {/* 순번표 불러오기 + 편집 */}
           <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
