@@ -1259,14 +1259,20 @@ export default function SchedulePage() {
 
   // ── displayDays: viewDays에 holidayMap 기반 가용인원 자동 계산 오버레이 ──
   // 엑셀 데이터(가용인원 > 0)가 없는 달은 순번표 인원 - 당일 휴무자 수로 계산
+  // 조건: 해당 월에 holidayMap 데이터가 하나라도 있어야 계산 (데이터 없는 월은 0 유지)
   const displayDays = useMemo(() => {
+    const totalRoster = customRoster.length;
     return viewDays.map(d => {
       if (d.가용인원 > 0) return d; // 엑셀 데이터 있으면 그대로 사용
+      if (totalRoster === 0) return d; // 순번표가 없으면 계산 불가
+      // 해당 월의 holidayMap 데이터가 있는지 확인 ("05" prefix)
+      const monthPrefix = d.dateLabel.slice(0, 2); // "MM"
+      const hasMonthData = Object.keys(holidayMap).some(k => k.startsWith(monthPrefix + "."));
+      if (!hasMonthData) return d; // 해당 월 휴무 데이터 자체가 없으면 스킵
+      // 당일 휴무자 수 차감 (휴무 없는 날은 totalRoster 그대로)
       const dayKey = d.dateLabel.slice(0, 5); // "MM.DD"
-      const holidayNames = holidayMap[dayKey] ?? [];
-      const totalRoster = customRoster.length;
-      if (totalRoster === 0 || holidayNames.length === 0) return d;
-      const calc가용 = Math.max(0, totalRoster - holidayNames.length);
+      const holidayCount = (holidayMap[dayKey] ?? []).length;
+      const calc가용 = Math.max(0, totalRoster - holidayCount);
       return { ...d, 가용인원: calc가용 };
     });
   }, [viewDays, holidayMap, customRoster]);
