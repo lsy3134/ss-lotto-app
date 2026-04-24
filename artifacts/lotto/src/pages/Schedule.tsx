@@ -1582,6 +1582,7 @@ export default function SchedulePage() {
     const dayIdx = selectedDate?.dayIdx ?? dayOfWeek;
     const statuses: Record<string, StatusType> = {};
     effectiveNames.forEach((n) => {
+      if (sickLeave[n]) { statuses[n] = "병가"; return; }
       if (n in savedDay) { statuses[n] = savedDay[n]; return; }
       const person = getRosterPerson(n);
       if (person && isAutoOff(person.group, dayIdx)) { statuses[n] = "휴무"; return; }
@@ -1749,6 +1750,7 @@ export default function SchedulePage() {
       const savedDay = dateStatuses[day.dateLabel] ?? {};
       const statuses: Record<string, StatusType> = {};
       currentNames.forEach((n) => {
+        if (sickLeave[n]) { statuses[n] = "병가"; return; }
         if (n in savedDay) { statuses[n] = savedDay[n]; return; }
         const person = getRosterPerson(n);
         if (person && isAutoOff(person.group, day.dayIdx)) { statuses[n] = "휴무"; return; }
@@ -1778,6 +1780,7 @@ export default function SchedulePage() {
     const dayIdx = selectedDate?.dayIdx ?? dayOfWeek;
     const statuses: Record<string, StatusType> = {};
     en.forEach((n) => {
+      if (sickLeave[n]) { statuses[n] = "병가"; return; }
       if (n in savedDay) { statuses[n] = savedDay[n]; return; }
       const person = getRosterPerson(n);
       if (person && isAutoOff(person.group, dayIdx)) { statuses[n] = "휴무"; return; }
@@ -1892,6 +1895,7 @@ export default function SchedulePage() {
       const savedDay = dateStatuses[dateLabel] ?? {};
       const statuses: Record<string, StatusType> = {};
       currentNames.forEach((n) => {
+        if (sickLeave[n]) { statuses[n] = "병가"; return; }
         if (n in savedDay) { statuses[n] = savedDay[n]; return; }
         const person = getRosterPerson(n);
         if (person && isAutoOff(person.group, dayIdx)) { statuses[n] = "휴무"; return; }
