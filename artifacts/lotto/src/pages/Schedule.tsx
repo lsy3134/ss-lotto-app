@@ -506,7 +506,7 @@ function assignDouble(
 
   // 순환보충 후보: 찾근 + 일반1부순번 (조출·VIP·대근1부 제외), 1부 순서 그대로
   // → 찾근과 순환보충을 분리하지 않고 1부 흐름 그대로 2부에 재투입
-  const circularQueue = [...twoRound, ...shift1Regular];
+  const circularQueue = [...shift1Regular.slice(0, 2), ...twoRound, ...shift1Regular.slice(2)];
 
   // 2부에서 normalFor2 + 순환보충이 채워야 할 총 자리 수
   const totalNeed2 = Math.max(0, shift2Size - vip2Fixed.length - spare1.length - 대근2부List.length - 후출List.length);
