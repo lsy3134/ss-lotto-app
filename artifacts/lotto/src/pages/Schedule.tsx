@@ -1842,15 +1842,23 @@ export default function SchedulePage() {
   // 현재 날짜 이전 마지막 저장된 날의 spare2[0] 기준으로 names를 rotate
   // (Day1: firstStarter 기준, Day2+: 전날 spare2[0] 체인 기준)
   // getStartNameForDate: override → spare2 체인 → queueStartName 순 우선
+  // excelDays 의존 제거 → 날짜 계산으로 하루씩 거슬러 올라감 (달 바뀌어도 동작)
   function getStartNameForDate(dateLabel: string): string | null {
     if (!dateLabel) return queueStartName;
     // 1. 수동 override 최우선
     if (overrideStartByDate[dateLabel]) return overrideStartByDate[dateLabel];
-    // 2. 이전 날짜 중 최근 저장된 dayResult의 spare2[0]
-    const idx = excelDays.findIndex(d => d.dateLabel === dateLabel);
-    if (idx > 0) {
-      for (let i = idx - 1; i >= 0; i--) {
-        const dl = excelDays[i].dateLabel;
+    // 2. dateLabel 파싱 후 하루씩 거슬러 올라가며 spare2 탐색
+    const match = dateLabel.match(/^(\d{2})\.(\d{2})/);
+    if (match) {
+      const mm = parseInt(match[1], 10);
+      const dd = parseInt(match[2], 10);
+      let cur = new Date(viewYear, mm - 1, dd);
+      for (let i = 0; i < 400; i++) {
+        cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() - 1);
+        const curMM = String(cur.getMonth() + 1).padStart(2, "0");
+        const curDD = String(cur.getDate()).padStart(2, "0");
+        const dayIdx = (cur.getDay() + 6) % 7;
+        const dl = `${curMM}.${curDD} (${KR_DAY[dayIdx]})`;
         const spare2 = savedSpare2[dl] ?? assignmentData[dl]?.spare2;
         if (spare2 && spare2.length > 0) return spare2[0];
       }
@@ -1865,7 +1873,7 @@ export default function SchedulePage() {
     if (!startName) return names;
     return rotateNames([...names], startName);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [names, currentDateKey, overrideStartByDate, excelDays, savedSpare2, assignmentData, queueStartName]);
+  }, [names, currentDateKey, overrideStartByDate, viewYear, savedSpare2, assignmentData, queueStartName]);
 
   // ── 실시간 배정 미리보기 ──────────────────────────
   // generateWeek/recalculateFrom과 동일한 패턴: dateStatuses → isAutoOff 순으로 적용
