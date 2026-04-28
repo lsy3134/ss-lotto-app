@@ -866,13 +866,17 @@ export default function SchedulePage() {
       }
       const saved = localStorage.getItem(DS_KEY);
       const raw: Record<string, Record<string, StatusType>> = saved ? JSON.parse(saved) : {};
-      // 이름 키의 공백 제거 정규화 (기존 저장 데이터 보정)
+      // 이름 키의 공백 제거 정규화 + null → "휴무해제" 마이그레이션
+      // (resolveStatus 개편 후 null은 "no-op"으로 처리되므로 명시적 휴무해제로 변환)
       const normalized: typeof raw = {};
       for (const [dateKey, statuses] of Object.entries(raw)) {
         const fixedStatuses: Record<string, StatusType> = {};
         for (const [name, st] of Object.entries(statuses)) {
           const normName = normalize(name);
-          if (!fixedStatuses[normName]) fixedStatuses[normName] = st as StatusType;
+          if (!fixedStatuses[normName]) {
+            // null → "휴무해제" 마이그레이션
+            fixedStatuses[normName] = (st === null ? "휴무해제" : st) as StatusType;
+          }
         }
         normalized[dateKey] = fixedStatuses;
       }
@@ -1548,11 +1552,21 @@ export default function SchedulePage() {
     setManualStatuses((prev) => {
       const cur = effectiveStatus(name);
       if (cur === btn && name in prev) {
+        // 수동 override가 있는 경우: 삭제
+        // 단, 엑셀 휴무인 사람은 삭제하면 holidayMap이 다시 "휴무"로 복구되므로
+        // "휴무해제"로 명시적 해제
+        const dk5 = currentDateKey.slice(0, 5);
+        const inHolidayMap = new Set((holidayMap[dk5] ?? []).map(n => normalize(n))).has(normalize(name));
+        if (btn === "휴무" && inHolidayMap) {
+          return { ...prev, [name]: "휴무해제" };
+        }
         const next = { ...prev };
         delete next[name];
         return next;
       } else if (cur === btn && !(name in prev)) {
-        return { ...prev, [name]: null };
+        // 수동 override 없이 "휴무"인 경우 (holidayMap/autoOff 기반)
+        // → "휴무해제"로 명시적 해제 (null은 resolveStatus에서 무시됨)
+        return { ...prev, [name]: "휴무해제" };
       } else {
         return { ...prev, [name]: btn };
       }
