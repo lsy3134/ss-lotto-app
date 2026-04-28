@@ -2161,10 +2161,11 @@ export default function SchedulePage() {
     const startIdx = selIdx >= 0 ? selIdx : -1;
     const startDayIdx = selectedDate?.dayIdx ?? 0; // 요일 레이블 offset
 
-    // ── 시작 순번: override → spare2 체인 → queueStartName 순 결정 ──
+    // ── 시작 순번: 항상 새로운 세션 ──
+    // override(수동 지정)만 참조, spare2 체인(이전 배정 연결) 무시
     const startDateLabel = excelDays[startIdx]?.dateLabel ?? "";
-    const startName = getStartNameForDate(startDateLabel);
-    let currentNames = startName ? rotateNames([...names], startName) : [...names];
+    const freshStart = overrideStartByDate[startDateLabel] ?? queueStartName;
+    let currentNames = freshStart ? rotateNames([...names], freshStart) : [...names];
 
     const results: { day: string; result: DayResult; skipped?: boolean }[] = [];
     const newAssignments: Record<string, DayResult> = {};
@@ -2218,13 +2219,14 @@ export default function SchedulePage() {
       }
     }
 
-    // ↑ 힌트 표시 범위: 일주일 배정 범위 전체
-    const weekDates = results.map(r => r.day).filter(Boolean).sort();
-    if (weekDates.length > 0) {
-      persistAssignedRange({
-        start: weekDates[0].slice(0, 5),
-        end: weekDates[weekDates.length - 1].slice(0, 5),
-      });
+    // ↑ 힌트 표시 범위: 주간 배정 마지막 날 다음날 1일만
+    const weekEndIdx = startIdx + 6;
+    const afterWeekIdx = weekEndIdx + 1;
+    if (afterWeekIdx < excelDays.length) {
+      const afterDk = excelDays[afterWeekIdx].dateLabel;
+      persistAssignedRange({ start: afterDk.slice(0, 5), end: afterDk.slice(0, 5) });
+    } else {
+      persistAssignedRange(null);
     }
   }
 
@@ -2475,7 +2477,15 @@ export default function SchedulePage() {
                 const nextFirstHint =
                   (d.dateLabel === currentDateKey ? pendingResult?.spare2?.[0] : undefined)
                   ?? getStartNameForDate(d.dateLabel);
-                const hasAssigned = Boolean(assignmentData[d.dateLabel]);
+                // 배정 표시: 7일 이내 날짜만 ✓완료 뱃지 & 초록 배경 표시
+                const hasAssigned = (() => {
+                  if (!assignmentData[d.dateLabel]) return false;
+                  const m = d.dateLabel.match(/^(\d{2})\.(\d{2})/);
+                  if (!m) return false;
+                  const assignDate = new Date(viewYear, +m[1] - 1, +m[2]);
+                  const today = new Date(); today.setHours(0, 0, 0, 0);
+                  return (today.getTime() - assignDate.getTime()) / 86400000 <= 7;
+                })();
                 // 힌트 실제 표시 여부 (minHeight 계산용)
                 const isOverrideHint = !!(overrideStartByDate[d.dateLabel]);
                 const dk5hint = d.dateLabel.slice(0, 5);
