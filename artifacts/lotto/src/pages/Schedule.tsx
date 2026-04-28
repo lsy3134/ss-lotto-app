@@ -2562,18 +2562,34 @@ export default function SchedulePage() {
               <div style={{ ...S.excelStatRow, alignItems: "stretch" }}>
                 <StatBadge label="총 인원" value={customRoster.length} color="#1565c0" />
                 {(() => {
-                  // 가용인원 = 총인원 - 휴무(holidayMap 기준, 1회만 차감)
+                  // 최종 휴무 = 엑셀(holidayMap) 기준 + 앱 수정 반영
+                  // 우선순위: 앱 수동 override > 엑셀 이름 > 주중/주말 자동휴무
                   const dayKey = selectedDate.dateLabel.slice(0, 5);
-                  const holidayCount = (holidayMap[dayKey] ?? []).length;
-                  const availableCount = Math.max(0, customRoster.length - holidayCount);
+                  const mapNames = new Set((holidayMap[dayKey] ?? []).map(n => normalize(n)));
+                  const baseNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
+                  const finalHoliday = baseNames.filter(name => {
+                    const override = manualStatuses[name];
+                    if (override !== undefined) return override === "휴무"; // 앱 override 최우선
+                    if (mapNames.has(normalize(name))) return true;          // 엑셀에 있으면 휴무
+                    const person = getRosterPerson(name);                    // 주중/주말 자동 휴무
+                    return !!(person && isAutoOff(person.group, dayOfWeek));
+                  }).length;
+                  const availableCount = Math.max(0, customRoster.length - finalHoliday);
                   return <StatBadge label="가용인원" value={availableCount} color="#7c3aed" />;
                 })()}
                 {(() => {
                   // 투인원 = 가용인원 - 당번 - 병가
                   const dayKey = selectedDate.dateLabel.slice(0, 5);
-                  const holidayCount = (holidayMap[dayKey] ?? []).length;
-                  const availableCount = Math.max(0, customRoster.length - holidayCount);
+                  const mapNames = new Set((holidayMap[dayKey] ?? []).map(n => normalize(n)));
                   const baseNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
+                  const finalHoliday = baseNames.filter(name => {
+                    const override = manualStatuses[name];
+                    if (override !== undefined) return override === "휴무";
+                    if (mapNames.has(normalize(name))) return true;
+                    const person = getRosterPerson(name);
+                    return !!(person && isAutoOff(person.group, dayOfWeek));
+                  }).length;
+                  const availableCount = Math.max(0, customRoster.length - finalHoliday);
                   const danBeon  = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "당번").length;
                   const byungGa  = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "병가").length;
                   const totalTeams = mode === "2부제" ? totalSize : singleSize;
