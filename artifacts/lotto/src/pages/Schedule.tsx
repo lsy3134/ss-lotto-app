@@ -1158,6 +1158,25 @@ export default function SchedulePage() {
     localStorage.setItem(ASSIGNMENT_KEY, JSON.stringify(assignmentData));
   }, [assignmentData, ASSIGNMENT_KEY]);
 
+  // ── 배정 시각 기록 (달력 ✓완료 표시 7일 유지용) ────────────────────────────
+  // 달력 날짜가 아닌 "배정을 실행한 시각"을 기준으로 7일 필터링
+  const ASSIGN_TS_KEY = "lotto_assignmentTimestamps";
+  const [assignmentTimestamps, setAssignmentTimestamps] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem("lotto_assignmentTimestamps");
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
+  function recordAssignmentTimestamps(dateLabels: string[]) {
+    const now = Date.now();
+    setAssignmentTimestamps(prev => {
+      const next = { ...prev };
+      dateLabels.forEach(dl => { next[dl] = now; });
+      localStorage.setItem(ASSIGN_TS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
   // ── 첫 순번 표시 범위 (배정 완료 시 설정) ──────────────────────────────────
   // "↑ 이름" 힌트를 달력에 표시할 날짜 범위 (MM.DD 형식)
   const ASSIGNED_RANGE_KEY = "lotto_assignedRange";
@@ -2122,6 +2141,8 @@ export default function SchedulePage() {
       // ↑ 힌트 표시 범위: 배정 완료 다음 날 1일만
       persistAssignedRange({ start: nextDateKey.slice(0, 5), end: nextDateKey.slice(0, 5) });
     }
+    // ✓완료 표시용 배정 시각 기록
+    recordAssignmentTimestamps([currentDateKey]);
   }
 
   function saveAndRecalculate() {
@@ -2160,6 +2181,8 @@ export default function SchedulePage() {
       const nextDk = excelDays[curIdx2 + 1].dateLabel;
       persistAssignedRange({ start: nextDk.slice(0, 5), end: nextDk.slice(0, 5) });
     }
+    // ✓완료 표시용 배정 시각 기록
+    recordAssignmentTimestamps([currentDateKey]);
 
     if (count > 0) {
       setRecalcMessage(`이 날짜 이후 ${count}일 스케줄이 업데이트되었습니다.`);
@@ -2242,6 +2265,9 @@ export default function SchedulePage() {
     } else {
       persistAssignedRange(null);
     }
+    // ✓완료 표시용 배정 시각 기록 (새로 배정된 날짜만)
+    const newDateLabels = Object.keys(newAssignments);
+    if (newDateLabels.length > 0) recordAssignmentTimestamps(newDateLabels);
   }
 
   // 활성 인원 대기열(제외·찾근 제외)에서의 순번 인덱스
@@ -2491,14 +2517,13 @@ export default function SchedulePage() {
                 const nextFirstHint =
                   (d.dateLabel === currentDateKey ? pendingResult?.spare2?.[0] : undefined)
                   ?? getStartNameForDate(d.dateLabel);
-                // 배정 표시: 7일 이내 날짜만 ✓완료 뱃지 & 초록 배경 표시
+                // 배정 표시: 배정을 실행한 시각 기준 7일 이내만 ✓완료 뱃지 & 초록 배경
+                // (달력 날짜 기준 X → 배정 누른 시각 기준 O)
                 const hasAssigned = (() => {
                   if (!assignmentData[d.dateLabel]) return false;
-                  const m = d.dateLabel.match(/^(\d{2})\.(\d{2})/);
-                  if (!m) return false;
-                  const assignDate = new Date(viewYear, +m[1] - 1, +m[2]);
-                  const today = new Date(); today.setHours(0, 0, 0, 0);
-                  return (today.getTime() - assignDate.getTime()) / 86400000 <= 7;
+                  const ts = assignmentTimestamps[d.dateLabel];
+                  if (!ts) return true; // 타임스탬프 없으면 (구버전 데이터) 항상 표시
+                  return Date.now() - ts <= 7 * 24 * 60 * 60 * 1000;
                 })();
                 // 힌트 실제 표시 여부 (minHeight 계산용)
                 const isOverrideHint = !!(overrideStartByDate[d.dateLabel]);
