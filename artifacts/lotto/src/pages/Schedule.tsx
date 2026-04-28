@@ -10,7 +10,7 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 // ── 타입 ──────────────────────────────────────────
 type StatusType =
   | "조출" | "후출" | "찾근" | "대기"
-  | "당번" | "병가" | "휴무" | "하우스"
+  | "당번" | "병가" | "휴무" | "하우스" | "휴무해제"
   | "VIP1부" | "VIP2부" | "VIP투근무"
   | null;
 
@@ -34,6 +34,7 @@ const STATUS_COLOR: Record<string, { bg: string; color: string }> = {
   병가:     { bg: "#e5e7eb", color: "#4b5563" },  // 회색 (비활성)
   휴무:     { bg: "#f3f4f6", color: "#6b7280" },  // 연회색 (비활성)
   하우스:   { bg: "#fef08a", color: "#713f12" },  // 금 (하우스)
+  휴무해제: { bg: "#dcfce7", color: "#166534" },  // 연초록 (엑셀 휴무 해제)
   VIP1부:   { bg: "#f3e5f5", color: "#7b1fa2" },  // 보라 (VIP 1부)
   VIP2부:   { bg: "#ede7f6", color: "#4527a0" },  // 진보라 (VIP 2부)
   VIP투근무:{ bg: "#e8eaf6", color: "#283593" },  // 남보라 (VIP 투근무)
@@ -2564,17 +2565,19 @@ export default function SchedulePage() {
               <div style={{ ...S.excelStatRow, alignItems: "stretch" }}>
                 <StatBadge label="총 인원" value={customRoster.length} color="#1565c0" />
                 {(() => {
-                  // 최종 휴무 = 엑셀(holidayMap) 기준 + 앱 수정 반영
-                  // 우선순위: 앱 수동 override > 엑셀 이름 > 주중/주말 자동휴무
+                  // 최종 휴무 = 엑셀 기준 + 앱 수정 반영
+                  // 규칙: 엑셀 휴무는 당번/조출/후출 등에 영향 받지 않음
+                  //       오직 "휴무해제" 클릭 시에만 제거
                   const dayKey = selectedDate.dateLabel.slice(0, 5);
                   const mapNames = new Set((holidayMap[dayKey] ?? []).map(n => normalize(n)));
                   const baseNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
                   const finalHoliday = baseNames.filter(name => {
                     const override = manualStatuses[name];
-                    if (override !== undefined) return override === "휴무"; // 앱 override 최우선
-                    if (mapNames.has(normalize(name))) return true;          // 엑셀에 있으면 휴무
+                    if (override === "휴무해제") return false;               // 명시적 해제 → 제외
+                    if (override === "휴무") return true;                    // 앱에서 명시적 추가
+                    if (mapNames.has(normalize(name))) return true;          // 엑셀 기준 (당번 등 무시)
                     const person = getRosterPerson(name);                    // 주중/주말 자동 휴무
-                    return !!(person && isAutoOff(person.group, dayOfWeek));
+                    return !override && !!(person && isAutoOff(person.group, dayOfWeek));
                   }).length;
                   const availableCount = Math.max(0, customRoster.length - finalHoliday);
                   return <StatBadge label="가용인원" value={availableCount} color="#7c3aed" />;
@@ -2586,10 +2589,11 @@ export default function SchedulePage() {
                   const baseNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
                   const finalHoliday = baseNames.filter(name => {
                     const override = manualStatuses[name];
-                    if (override !== undefined) return override === "휴무";
+                    if (override === "휴무해제") return false;
+                    if (override === "휴무") return true;
                     if (mapNames.has(normalize(name))) return true;
                     const person = getRosterPerson(name);
-                    return !!(person && isAutoOff(person.group, dayOfWeek));
+                    return !override && !!(person && isAutoOff(person.group, dayOfWeek));
                   }).length;
                   const availableCount = Math.max(0, customRoster.length - finalHoliday);
                   const danBeon  = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "당번").length;
@@ -4992,7 +4996,8 @@ export default function SchedulePage() {
                           {daegeunType ? `대근-${daegeunType}` : "대근"}
                         </button>
                       ) : (
-                        STATUS_BUTTONS.filter((btn) =>
+                        <>
+                        {STATUS_BUTTONS.filter((btn) =>
                           mode !== "단부제" || (btn !== "조출" && btn !== "후출")
                         ).map((btn) => {
                           const active = effS === btn;
@@ -5020,7 +5025,30 @@ export default function SchedulePage() {
                               {btn}
                             </button>
                           );
-                        })
+                        })}
+                        {/* 엑셀 휴무 인원에게만 "해제" 버튼 표시 */}
+                        {(() => {
+                          const dk = currentDateKey.slice(0, 5);
+                          const isInExcel = new Set((holidayMap[dk] ?? []).map(n => normalize(n))).has(normalize(name));
+                          if (!isInExcel) return null;
+                          const isReleased = effS === "휴무해제";
+                          return (
+                            <button
+                              key="휴무해제"
+                              onClick={() => toggleStatus(name, "휴무해제")}
+                              title={isReleased ? "클릭 시 엑셀 휴무 복원" : "엑셀 휴무 해제 (가용인원에 포함)"}
+                              style={{
+                                ...S.statusBtn,
+                                background: isReleased ? "#dcfce7" : "#fef2f2",
+                                color: isReleased ? "#166534" : "#b91c1c",
+                                border: isReleased ? "1.5px solid #86efac" : "1.5px solid #fca5a5",
+                                fontWeight: 800,
+                              }}>
+                              {isReleased ? "↩복원" : "해제"}
+                            </button>
+                          );
+                        })()}
+                        </>
                       )}
                     </div>
                   </div>
