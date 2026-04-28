@@ -1438,20 +1438,38 @@ export default function SchedulePage() {
   const resultRef = useRef<HTMLDivElement>(null);
   const [rosterForm, setRosterForm] = useState<{ mode: "add"|"edit"; orig?: PersonData; name: string; 조: 1|2|3|4; group: GroupType } | null>(null);
 
-  // 현재 요일의 유효 상태 반환
-  function effectiveStatus(name: string, dayIdx: number = dayOfWeek): StatusType {
-    // 명시적 오버라이드(해당 날짜에 직접 설정된 값)가 있으면 우선
-    if (name in manualStatuses) return manualStatuses[name];
-    // 병가 지속: sickLeave에 등록된 사람은 해제 전까지 자동 병가
+  // ── 통합 상태 계산 헬퍼 ─────────────────────────────────────────────────────
+  // 모든 배정/표시에서 동일 로직 사용 (holidayMap 항상 우선, dateStatuses는 override)
+  function resolveStatus(
+    name: string,
+    dateKey: string,
+    dayIdx: number,
+    savedDay: Record<string, StatusType>,
+    daegeunMap: Record<string, DaegeunType>
+  ): StatusType {
     if (sickLeave[name]) return "병가";
+    const override = savedDay[name] as StatusType | undefined;
+    // 비휴무 명시 override (당번/조출/후출/찾근 등) → 그대로 반환
+    if (override && override !== "휴무" && override !== "휴무해제") return override;
+    // 대근 지정: 엑셀 휴무보다 우선 (주말반 등 대근 출근 허용)
+    if (daegeunMap[name]) return null;
+    // 휴무 판단: 해제 > 추가 > 엑셀 > 자동규칙
+    if (override === "휴무해제") return null;
+    if (override === "휴무") return "휴무";
+    const dk = dateKey.slice(0, 5);
+    if (new Set((holidayMap[dk] ?? []).map(n => normalize(n))).has(normalize(name))) return "휴무";
     const person = getRosterPerson(name);
-    if (person && isAutoOff(person.group, dayIdx)) {
-      const dg = currentDaegeun[name];
-      if (dg === "투라운드") return "찾근";
-      if (dg === "1부" || dg === "2부") return null;
-      return "휴무";
-    }
+    if (person && isAutoOff(person.group, dayIdx)) return "휴무";
     return null;
+  }
+
+  // 현재 날짜의 유효 상태 반환 (UI 표시용)
+  function effectiveStatus(name: string, dayIdx: number = dayOfWeek): StatusType {
+    const dg = currentDaegeun[name];
+    // 대근 UI 표시: 투라운드 → 찾근, 1부/2부 → null (자동휴무 덮어쓰기)
+    if (dg === "투라운드") return "찾근";
+    if (dg === "1부" || dg === "2부") return null;
+    return resolveStatus(name, currentDateKey, dayIdx, manualStatuses, currentDaegeun);
   }
 
   // 수동 상태 삭제 (키 자체 제거 → day-of-week 로직이 다시 적용됨)
@@ -1548,50 +1566,9 @@ export default function SchedulePage() {
       setTeamsLocked(false);
     }
 
-    // 휴무 엑셀 자동 입력 — 최초 1회만 (이미 적용된 날짜는 사용자 수정값 유지)
-    const dk = day.dateLabel.slice(0, 5);
-    const hdNames = holidayMap[dk];
-    if (hdNames && hdNames.length > 0 && !holidayAppliedDates[day.dateLabel]) {
-      setDateStatuses(prev => {
-        const cur = prev[day.dateLabel] ?? {};
-        const next = { ...cur };
-        // 한글 문자만 남기는 엄격 정규화 (숨겨진 공백·특수문자 제거)
-        const koOnly = (s: string) => s.replace(/[^\uAC00-\uD7A3]/g, "");
-        for (const hName of hdNames) {
-          const normH = koOnly(hName);
-          if (!normH) continue;
-          // 1순위: 한글만 추출 후 정확히 일치
-          const exactMatch = sortedCustomRoster.find(p => koOnly(p.name) === normH);
-          // 2순위: 3글자 이상일 때만 앞 2글자 fuzzy (2글자 이름은 exact만 사용)
-          const fuzzyMatch = !exactMatch && normH.length >= 3
-            ? sortedCustomRoster.find(p => koOnly(p.name).startsWith(normH.slice(0, 2)))
-            : null;
-          const matchedPerson = exactMatch ?? fuzzyMatch;
-          if (!matchedPerson) {
-            console.warn("휴무 매칭 실패:", JSON.stringify(hName), `→ koOnly: "${normH}"`);
-            // 매칭 실패 시 trim된 이름으로 저장 (수동 확인 가능하도록)
-            const raw = hName.trim();
-            if (raw && !next[raw]) next[raw] = "휴무";
-            continue;
-          }
-          const matched = matchedPerson.name;
-          // 이미 사용자가 다른 상태로 지정한 경우 덮어쓰지 않음
-          if (!next[matched]) next[matched] = "휴무";
-        }
-        return { ...prev, [day.dateLabel]: next };
-      });
-      // 이 날짜를 "자동 적용 완료"로 표시 → 다음에 다시 와도 덮어쓰기 안 함
-      setHolidayAppliedDates(prev => ({ ...prev, [day.dateLabel]: true }));
-
-      // ── 디버그: roster에 없는 이름이 holidayMap에 있으면 로그 ──
-      const rosterNameSet = new Set(sortedCustomRoster.map(p => p.name.replace(/\s+/g, "")));
-      for (const hName of hdNames) {
-        const ko = hName.replace(/[^\uAC00-\uD7A3]/g, "");
-        if (ko && !rosterNameSet.has(ko)) {
-          console.log(`dateStatuses에는 있음(휴무), roster에는 없음: "${hName}" (ko: "${ko}")`);
-        }
-      }
-    }
+    // [구조 변경] 휴무 자동 복사 로직 제거
+    // 이제 resolveStatus / effectiveStatus 가 매번 holidayMap을 직접 참조하므로
+    // dateStatuses로 1회 복사하는 방식 불필요. holidayAppliedDates 플래그도 미사용.
 
     // ── 디버그: 현재 날짜 dateStatuses 중 roster에 없는 이름 ──
     const rosterNamesNorm = new Set(sortedCustomRoster.map(p => p.name.replace(/\s+/g, "")));
@@ -1884,17 +1861,13 @@ export default function SchedulePage() {
     const dayIdx = selectedDate?.dayIdx ?? dayOfWeek;
     const statuses: Record<string, StatusType> = {};
     effectiveNames.forEach((n) => {
-      if (sickLeave[n]) { statuses[n] = "병가"; return; }
-      if (n in savedDay) { statuses[n] = savedDay[n]; return; }
-      const person = getRosterPerson(n);
-      if (person && isAutoOff(person.group, dayIdx)) { statuses[n] = "휴무"; return; }
-      statuses[n] = null;
+      statuses[n] = resolveStatus(n, currentDateKey, dayIdx, savedDay, currentDaegeun);
     });
     return mode === "2부제"
       ? assignDouble(effectiveNames, statuses, shift1Size, shift2Size, currentDaegeun, dateStatusOrders[currentDateKey] ?? [])
       : assignSingle(effectiveNames, statuses, singleSize);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveNames, dateStatuses, currentDateKey, selectedDate, dayOfWeek, customRosterMap, currentDaegeun, mode, shift1Size, shift2Size, singleSize, dateStatusOrders]);
+  }, [effectiveNames, dateStatuses, currentDateKey, selectedDate, dayOfWeek, customRosterMap, currentDaegeun, mode, shift1Size, shift2Size, singleSize, dateStatusOrders, holidayMap]);
 
   // 이름 → 배정 카테고리 맵 (live)
   const liveCategoryMap = useMemo<Record<string, "1부" | "1부스페어" | "2부" | "2부스페어" | "스페어" | "단부" | "찾근" | "제외">>(() => {
@@ -2051,18 +2024,15 @@ export default function SchedulePage() {
 
       const savedDay = dateStatuses[day.dateLabel] ?? {};
       const statuses: Record<string, StatusType> = {};
+      const dgMap = dateDaegeun[day.dateLabel] ?? {};
       currentNames.forEach((n) => {
-        if (sickLeave[n]) { statuses[n] = "병가"; return; }
-        if (n in savedDay) { statuses[n] = savedDay[n]; return; }
-        const person = getRosterPerson(n);
-        if (person && isAutoOff(person.group, day.dayIdx)) { statuses[n] = "휴무"; return; }
-        statuses[n] = null;
+        statuses[n] = resolveStatus(n, day.dateLabel, day.dayIdx, savedDay, dgMap);
       });
 
       const s1 = shift1Size, s2 = shift2Size, ss = singleSize;
 
       const result = mode === "2부제"
-        ? assignDouble(currentNames, statuses, s1, s2, dateDaegeun[day.dateLabel] ?? {}, dateStatusOrders[day.dateLabel] ?? [])
+        ? assignDouble(currentNames, statuses, s1, s2, dgMap, dateStatusOrders[day.dateLabel] ?? [])
         : assignSingle(currentNames, statuses, ss);
 
       updatedAssignment[day.dateLabel] = result;
@@ -2082,13 +2052,7 @@ export default function SchedulePage() {
     const dayIdx = selectedDate?.dayIdx ?? dayOfWeek;
     const statuses: Record<string, StatusType> = {};
     en.forEach((n) => {
-      if (sickLeave[n]) { statuses[n] = "병가"; return; }
-      if (n in savedDay) { statuses[n] = savedDay[n]; return; }
-      // 대근 지정된 사람은 자동 휴무(주중반/주말반)보다 우선 — null로 처리해야 assignDouble에서 대근 적용됨
-      if (currentDaegeun[n]) { statuses[n] = null; return; }
-      const person = getRosterPerson(n);
-      if (person && isAutoOff(person.group, dayIdx)) { statuses[n] = "휴무"; return; }
-      statuses[n] = null;
+      statuses[n] = resolveStatus(n, currentDateKey, dayIdx, savedDay, currentDaegeun);
     });
     const result = mode === "2부제"
       ? assignDouble(en, statuses, shift1Size, shift2Size, currentDaegeun, dateStatusOrders[currentDateKey] ?? [])
@@ -2198,12 +2162,9 @@ export default function SchedulePage() {
       const dayIdx = weekDay?.dayIdx ?? di;
       const savedDay = dateStatuses[dateLabel] ?? {};
       const statuses: Record<string, StatusType> = {};
+      const dgMap = dateDaegeun[dateLabel] ?? {};
       currentNames.forEach((n) => {
-        if (sickLeave[n]) { statuses[n] = "병가"; return; }
-        if (n in savedDay) { statuses[n] = savedDay[n]; return; }
-        const person = getRosterPerson(n);
-        if (person && isAutoOff(person.group, dayIdx)) { statuses[n] = "휴무"; return; }
-        statuses[n] = null;
+        statuses[n] = resolveStatus(n, dateLabel, dayIdx, savedDay, dgMap);
       });
 
       const s1 = shift1Size, s2 = shift2Size, ss = singleSize;
