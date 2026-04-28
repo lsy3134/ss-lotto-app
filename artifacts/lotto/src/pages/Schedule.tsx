@@ -1154,6 +1154,21 @@ export default function SchedulePage() {
     localStorage.setItem(ASSIGNMENT_KEY, JSON.stringify(assignmentData));
   }, [assignmentData, ASSIGNMENT_KEY]);
 
+  // ── 첫 순번 표시 범위 (배정 완료 시 설정) ──────────────────────────────────
+  // "↑ 이름" 힌트를 달력에 표시할 날짜 범위 (MM.DD 형식)
+  const ASSIGNED_RANGE_KEY = "lotto_assignedRange";
+  const [assignedRange, setAssignedRange] = useState<{ start: string; end: string } | null>(() => {
+    try {
+      const saved = localStorage.getItem("lotto_assignedRange");
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  });
+  function persistAssignedRange(v: { start: string; end: string } | null) {
+    setAssignedRange(v);
+    if (v) localStorage.setItem(ASSIGNED_RANGE_KEY, JSON.stringify(v));
+    else localStorage.removeItem(ASSIGNED_RANGE_KEY);
+  }
+
   // 이전날 날짜 레이블 찾기
   const prevDateLabel = useMemo(() => {
     if (!selectedDate) return null;
@@ -2084,12 +2099,14 @@ export default function SchedulePage() {
     if (curIdx >= 0 && curIdx + 1 < excelDays.length) {
       const nextDateKey = excelDays[curIdx + 1].dateLabel;
       setOverrideStartByDate(prev => {
-        if (!prev[nextDateKey]) return prev; // 없으면 그대로
+        if (!prev[nextDateKey]) return prev;
         const next = { ...prev };
         delete next[nextDateKey];
         localStorage.setItem(OVERRIDE_KEY, JSON.stringify(next));
         return next;
       });
+      // ↑ 힌트 표시 범위: 배정 완료 다음 날 1일만
+      persistAssignedRange({ start: nextDateKey.slice(0, 5), end: nextDateKey.slice(0, 5) });
     }
   }
 
@@ -2121,6 +2138,13 @@ export default function SchedulePage() {
         localStorage.setItem(OVERRIDE_KEY, JSON.stringify(next));
         return next;
       });
+    }
+
+    // ↑ 힌트 표시 범위: 배정+재계산 완료 다음 날 1일만
+    const curIdx2 = excelDays.findIndex(d => d.dateLabel === currentDateKey);
+    if (curIdx2 >= 0 && curIdx2 + 1 < excelDays.length) {
+      const nextDk = excelDays[curIdx2 + 1].dateLabel;
+      persistAssignedRange({ start: nextDk.slice(0, 5), end: nextDk.slice(0, 5) });
     }
 
     if (count > 0) {
@@ -2192,6 +2216,15 @@ export default function SchedulePage() {
       if (Object.keys(newSpare2).length > 0) {
         setSavedSpare2(prev => ({ ...prev, ...newSpare2 }));
       }
+    }
+
+    // ↑ 힌트 표시 범위: 일주일 배정 범위 전체
+    const weekDates = results.map(r => r.day).filter(Boolean).sort();
+    if (weekDates.length > 0) {
+      persistAssignedRange({
+        start: weekDates[0].slice(0, 5),
+        end: weekDates[weekDates.length - 1].slice(0, 5),
+      });
     }
   }
 
@@ -2443,6 +2476,13 @@ export default function SchedulePage() {
                   (d.dateLabel === currentDateKey ? pendingResult?.spare2?.[0] : undefined)
                   ?? getStartNameForDate(d.dateLabel);
                 const hasAssigned = Boolean(assignmentData[d.dateLabel]);
+                // 힌트 실제 표시 여부 (minHeight 계산용)
+                const isOverrideHint = !!(overrideStartByDate[d.dateLabel]);
+                const dk5hint = d.dateLabel.slice(0, 5);
+                const hintVisible = !!nextFirstHint && (
+                  isOverrideHint ||
+                  (assignedRange ? dk5hint >= assignedRange.start && dk5hint <= assignedRange.end : false)
+                );
 
                 return (
                   <button
@@ -2463,7 +2503,7 @@ export default function SchedulePage() {
                       animation: isSelected ? "glowPulse 2s ease-in-out infinite" : "none",
                       transform: isSelected ? "scale(1.05)" : "scale(1)",
                       opacity: !hasExcel && !hasManual && !isSelected ? 0.75 : 1,
-                      minHeight: nextFirstHint ? "64px" : "52px",
+                      minHeight: hintVisible ? "64px" : "52px",
                     }}
                   >
                     <span style={{ fontSize: "0.72rem", fontWeight: 700 }}>{d.dateLabel.split(" ")[0]}</span>
@@ -2493,9 +2533,16 @@ export default function SchedulePage() {
                         {d.예약팀수}팀
                       </span>
                     )}
-                    {/* 전날 spare2[0] → 이 날의 첫대기 힌트 */}
+                    {/* 전날 spare2[0] → 이 날의 첫대기 힌트
+                        📌 수동 override: 항상 표시
+                        ↑ 자동 힌트: 배정 완료 후 지정 범위에서만 표시 */}
                     {nextFirstHint && (() => {
                       const isOverride = !!(overrideStartByDate[d.dateLabel]);
+                      const dk5 = d.dateLabel.slice(0, 5);
+                      const inRange = assignedRange
+                        ? dk5 >= assignedRange.start && dk5 <= assignedRange.end
+                        : false;
+                      if (!isOverride && !inRange) return null;
                       return (
                         <span style={{
                           fontSize: "0.52rem", fontWeight: 800, lineHeight: 1,
