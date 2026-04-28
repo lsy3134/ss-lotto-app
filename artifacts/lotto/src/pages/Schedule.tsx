@@ -2552,7 +2552,7 @@ export default function SchedulePage() {
               {/* 총인원 · 가용인원(계산) · 투인원 · 대근 · 병가 — 5열 그리드 */}
               <div style={{ overflowX: "auto" }}>
               <div style={{ ...S.excelStatRow, alignItems: "stretch" }}>
-                <StatBadge label="총 인원" value={selectedDate.가용인원} color="#1565c0" />
+                <StatBadge label="총 인원" value={customRoster.length} color="#1565c0" />
                 {(() => {
                   const baseNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
                   const danBeon    = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "당번").length;
