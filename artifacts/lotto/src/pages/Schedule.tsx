@@ -2083,6 +2083,8 @@ export default function SchedulePage() {
     en.forEach((n) => {
       if (sickLeave[n]) { statuses[n] = "병가"; return; }
       if (n in savedDay) { statuses[n] = savedDay[n]; return; }
+      // 대근 지정된 사람은 자동 휴무(주중반/주말반)보다 우선 — null로 처리해야 assignDouble에서 대근 적용됨
+      if (currentDaegeun[n]) { statuses[n] = null; return; }
       const person = getRosterPerson(n);
       if (person && isAutoOff(person.group, dayIdx)) { statuses[n] = "휴무"; return; }
       statuses[n] = null;
