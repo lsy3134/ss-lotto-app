@@ -1683,14 +1683,10 @@ export default function SchedulePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 순번표 불러오기 → 첫번호 지정돼 있으면 바로 배정, 없으면 ask 모달
+  // 순번표 불러오기 → 항상 ask 모달 열기 (시각적 피드백 보장)
   function loadRoster() {
-    if (queueStartName) {
-      applyRoster(queueStartName);
-    } else {
-      setQueueModalPos({ x: 0, y: 0 });
-      setQueueModal("ask");
-    }
+    setQueueModalPos({ x: 0, y: 0 });
+    setQueueModal("ask");
   }
 
   // 직접 입력으로 다음 단계
@@ -2945,7 +2941,7 @@ export default function SchedulePage() {
 
           {/* 순번표 불러오기 + 편집 */}
           <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
-            <button onClick={loadRoster} style={{ ...S.primaryBtn, background: "#1565c0", flex: 1, marginBottom: 0 }}>
+            <button onClick={loadRoster} style={{ ...S.primaryBtn, background: "#1565c0", flex: 1, marginBottom: 0, touchAction: "manipulation" }}>
               📋 순번표 불러오기 ({customRoster.length}명)
             </button>
             <button
