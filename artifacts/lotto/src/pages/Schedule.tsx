@@ -1851,26 +1851,6 @@ export default function SchedulePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [names, currentDateKey, overrideStartByDate, viewYear, savedSpare2, assignmentData, queueStartName]);
 
-  // 달력 카드 힌트용: 각 날짜의 "전날 spare2[0]" 맵 (override 무시 — 스페어 체인 우선 표시)
-  const spare2ChainByDate = useMemo(() => {
-    const result: Record<string, string | null> = {};
-    for (const d of displayDays) {
-      const match = d.dateLabel.match(/^(\d{2})\.(\d{2})/);
-      if (!match) { result[d.dateLabel] = null; continue; }
-      const mm = parseInt(match[1], 10);
-      const dd = parseInt(match[2], 10);
-      const prev = new Date(viewYear, mm - 1, dd - 1);
-      const pMM = String(prev.getMonth() + 1).padStart(2, "0");
-      const pDD = String(prev.getDate()).padStart(2, "0");
-      const pDayIdx = (prev.getDay() + 6) % 7;
-      const prevDL = `${pMM}.${pDD} (${KR_DAY[pDayIdx]})`;
-      const spare2 = savedSpare2[prevDL] ?? assignmentData[prevDL]?.spare2;
-      result[d.dateLabel] = spare2?.[0] ?? null;
-    }
-    return result;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [displayDays, viewYear, savedSpare2, assignmentData]);
-
   // ── 실시간 배정 미리보기 ──────────────────────────
   // generateWeek/recalculateFrom과 동일한 패턴: dateStatuses → isAutoOff 순으로 적용
   const livePreview = useMemo(() => {
@@ -2495,12 +2475,18 @@ export default function SchedulePage() {
                 const hasManual = Object.keys(savedStatuses).length > 0;
                 const hasExcel = d.가용인원 > 0 || hasTeams;
 
-                // 이 날의 첫번호: pendingResult → spare2 체인(전날 savedSpare2) → override → queueStartName
-                // spare2 체인을 override보다 우선해 달력과 모달 표시값 일치
-                const nextFirstHint =
-                  (d.dateLabel === currentDateKey ? pendingResult?.spare2?.[0] : undefined)
-                  ?? spare2ChainByDate[d.dateLabel]
-                  ?? getStartNameForDate(d.dateLabel);
+                // 달력 첫번호 힌트: 전날 savedSpare2[0] 직접 계산 (캐시·override·범위 조건 없음)
+                // pendingResult 우선(현재 날짜 배정 직후), 나머지는 전날 spare2 실시간 탐색
+                const calHint: string | null = (() => {
+                  if (d.dateLabel === currentDateKey) {
+                    return pendingResult?.spare2?.[0] ?? null;
+                  }
+                  const m = d.dateLabel.match(/^(\d{2})\.(\d{2})/);
+                  if (!m) return null;
+                  const prev = new Date(viewYear, parseInt(m[1], 10) - 1, parseInt(m[2], 10) - 1);
+                  const pDL = `${String(prev.getMonth() + 1).padStart(2, "0")}.${String(prev.getDate()).padStart(2, "0")} (${KR_DAY[(prev.getDay() + 6) % 7]})`;
+                  return (savedSpare2[pDL] ?? assignmentData[pDL]?.spare2)?.[0] ?? null;
+                })();
                 // 배정 표시: 배정을 실행한 시각 기준 7일 이내만 ✓완료 뱃지 & 초록 배경
                 // (달력 날짜 기준 X → 배정 누른 시각 기준 O)
                 const hasAssigned = (() => {
@@ -2509,15 +2495,7 @@ export default function SchedulePage() {
                   if (!ts) return true; // 타임스탬프 없으면 (구버전 데이터) 항상 표시
                   return Date.now() - ts <= 7 * 24 * 60 * 60 * 1000;
                 })();
-                // 힌트 실제 표시 여부 (minHeight 계산용)
-                // spare2 체인이 있으면 override 뱃지 숨김 (📌는 spare2 없을 때만 수동 선택 표시)
-                const isOverrideHint = !!(overrideStartByDate[d.dateLabel]) && !spare2ChainByDate[d.dateLabel];
-                const dk5hint = d.dateLabel.slice(0, 5);
-                const hintVisible = !!nextFirstHint && (
-                  isOverrideHint ||
-                  !!(spare2ChainByDate[d.dateLabel]) ||
-                  (assignedRange ? dk5hint >= assignedRange.start && dk5hint <= assignedRange.end : false)
-                );
+                const hintVisible = !!calHint;
 
                 return (
                   <button
@@ -2568,31 +2546,19 @@ export default function SchedulePage() {
                         {d.예약팀수}팀
                       </span>
                     )}
-                    {/* 전날 spare2[0] → 이 날의 첫대기 힌트
-                        📌 수동 override: 항상 표시
-                        ↑ 자동 힌트: 배정 완료 후 지정 범위에서만 표시 */}
-                    {nextFirstHint && (() => {
-                      // spare2 체인이 있으면 ↑(자동) 표시, 없을 때만 📌(수동 override) 표시
-                      const hasSpare2Chain = !!(spare2ChainByDate[d.dateLabel]);
-                      const isOverride = !!(overrideStartByDate[d.dateLabel]) && !hasSpare2Chain;
-                      const dk5 = d.dateLabel.slice(0, 5);
-                      const inRange = assignedRange
-                        ? dk5 >= assignedRange.start && dk5 <= assignedRange.end
-                        : false;
-                      if (!isOverride && !inRange && !hasSpare2Chain) return null;
-                      return (
-                        <span style={{
-                          fontSize: "0.52rem", fontWeight: 800, lineHeight: 1,
-                          color: isSelected ? "rgba(255,255,255,0.9)" : isOverride ? "#2e7d32" : "#b91c1c",
-                          background: isSelected ? "rgba(255,255,255,0.15)" : isOverride ? "#e8f5e9" : "#fef2f2",
-                          borderRadius: 4, padding: "1px 4px",
-                          marginTop: 1,
-                          maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                        }}>
-                          {isOverride ? "📌" : "↑"}{nextFirstHint}
-                        </span>
-                      );
-                    })()}
+                    {/* 전날 spare2[0] → 다음날 첫번호 힌트 (savedSpare2 기준, 항상 표시) */}
+                    {calHint && (
+                      <span style={{
+                        fontSize: "0.52rem", fontWeight: 800, lineHeight: 1,
+                        color: isSelected ? "rgba(255,255,255,0.9)" : "#b91c1c",
+                        background: isSelected ? "rgba(255,255,255,0.15)" : "#fef2f2",
+                        borderRadius: 4, padding: "1px 4px",
+                        marginTop: 1,
+                        maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      }}>
+                        ↑{calHint}
+                      </span>
+                    )}
                   </button>
                 );
               })}
