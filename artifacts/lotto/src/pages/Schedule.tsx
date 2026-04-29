@@ -2570,7 +2570,7 @@ export default function SchedulePage() {
                         color: isSelected ? "#fff" : "#2e7d32",
                         lineHeight: 1,
                       }}>
-                        {d.가용인원}명
+                        {customRoster.length}/{d.가용인원}
                       </span>
                     )}
                     {hasTeams && (
@@ -3006,37 +3006,6 @@ export default function SchedulePage() {
             </button>
           </div>
 
-          {/* 첫번호 / 다음날 첫 순번 표시 */}
-          {(todayFirstHint || queueStartName) && (() => {
-            const hasOverride = !!(currentDateKey && overrideStartByDate[currentDateKey]);
-            const displayName = hasOverride
-              ? overrideStartByDate[currentDateKey]
-              : (todayFirstHint ?? queueStartName!);
-            const isAuto = !hasOverride && !!todayFirstHint;
-            const bg = hasOverride ? "#e8f5e9" : isAuto ? "#f3e5f5" : "#e3f2fd";
-            const border = hasOverride ? "1px solid #a5d6a7" : isAuto ? "1px solid #ce93d8" : "1px solid #90caf9";
-            const color = hasOverride ? "#2e7d32" : isAuto ? "#6a1b9a" : "#1565c0";
-            const label = hasOverride ? "📌 수동 시작 " : isAuto ? "🔗 자동 이어짐 " : "첫 순번 ";
-            return (
-              <div style={{
-                display: "flex", alignItems: "center", gap: 8, marginBottom: "12px",
-                padding: "9px 12px", borderRadius: 10, background: bg, border,
-              }}>
-                <span style={{ fontSize: 14, flex: 1, color }}>
-                  <span style={{ fontWeight: 700 }}>{label}</span>
-                  <span style={{ fontWeight: 800 }}>"{displayName}"</span>
-                </span>
-                <button
-                  onClick={() => { setQueueModalPos({ x: 0, y: 0 }); setQueueModal("ask"); }}
-                  style={{
-                    padding: "6px 14px", borderRadius: 8, border: "none",
-                    background: color, color: "#fff", fontWeight: 700, fontSize: 12,
-                    cursor: "pointer", whiteSpace: "nowrap",
-                  }}
-                >변경</button>
-              </div>
-            );
-          })()}
 
         </div>
       {/* ── 첫번호: 이 순번대로 가시겠습니까? ── */}
