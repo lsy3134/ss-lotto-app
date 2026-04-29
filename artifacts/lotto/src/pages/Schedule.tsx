@@ -1415,25 +1415,6 @@ export default function SchedulePage() {
   // lookup helper — 조회 시 항상 normalize 경유
   const getRosterPerson = (name: string) => customRosterMap[normalize(name)];
 
-  // ── displayDays: viewDays에 holidayMap 기반 가용인원 자동 계산 오버레이 ──
-  // 엑셀 데이터(가용인원 > 0)가 없는 달은 순번표 인원 - 당일 휴무자 수로 계산
-  // 조건: 해당 월에 holidayMap 데이터가 하나라도 있어야 계산 (데이터 없는 월은 0 유지)
-  const displayDays = useMemo(() => {
-    const totalRoster = customRoster.length;
-    return viewDays.map(d => {
-      if (d.가용인원 > 0) return d; // 엑셀 데이터 있으면 그대로 사용
-      if (totalRoster === 0) return d; // 순번표가 없으면 계산 불가
-      // 해당 월의 holidayMap 데이터가 있는지 확인 ("05" prefix)
-      const monthPrefix = d.dateLabel.slice(0, 2); // "MM"
-      const hasMonthData = Object.keys(holidayMap).some(k => k.startsWith(monthPrefix + "."));
-      if (!hasMonthData) return d; // 해당 월 휴무 데이터 자체가 없으면 스킵
-      // 당일 휴무자 수 차감 (휴무 없는 날은 totalRoster 그대로)
-      const dayKey = d.dateLabel.slice(0, 5); // "MM.DD"
-      const holidayCount = (holidayMap[dayKey] ?? []).length;
-      const calc가용 = Math.max(0, totalRoster - holidayCount);
-      return { ...d, 가용인원: calc가용 };
-    });
-  }, [viewDays, holidayMap, customRoster]);
   const getGroup = (name: string): GroupType =>
     customRosterMap[normalize(name)]?.group
     ?? NAME_GROUP_NORMALIZED[normalize(name)]
@@ -1479,6 +1460,31 @@ export default function SchedulePage() {
     if (dg === "1부" || dg === "2부") return null;
     return resolveStatus(name, currentDateKey, dayIdx, manualStatuses, currentDaegeun);
   }
+
+  // ── 통일된 가용인원 계산 ────────────────────────────────────────────────────
+  // 가용인원 = 총인원 - EXCLUDED_SET(휴무·당번·병가·하우스) 해당 인원 수
+  // resolveStatus 경유 → 엑셀휴무·수동휴무·자동휴무·당번·병가·대근 모두 반영
+  function calcAvailable(dateLabel: string, dayIdx: number): number {
+    const baseNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
+    if (baseNames.length === 0) return 0;
+    const savedDay = dateStatuses[dateLabel] ?? {};
+    const dgMap = dateDaegeun[dateLabel] ?? {};
+    return baseNames.filter(name => {
+      const st = resolveStatus(name, dateLabel, dayIdx, savedDay, dgMap);
+      return !EXCLUDED_SET.has(st ?? "");
+    }).length;
+  }
+
+  // ── displayDays: 통일된 가용인원 계산 (resolveStatus 기준, 엑셀 가용인원 값 미사용) ──
+  // 달력 카드·하단 패널 모두 동일 계산식 사용
+  const displayDays = useMemo(() => {
+    if (customRoster.length === 0) return viewDays.map(d => ({ ...d, 가용인원: 0 }));
+    return viewDays.map(d => ({
+      ...d,
+      가용인원: calcAvailable(d.dateLabel, d.dayIdx),
+    }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewDays, names, sortedCustomRoster, dateStatuses, dateDaegeun, sickLeave, holidayMap, customRoster]);
 
   // 수동 상태 삭제 (키 자체 제거 → day-of-week 로직이 다시 적용됨)
   function clearStatus(name: string) {
@@ -2587,41 +2593,15 @@ export default function SchedulePage() {
               <div style={{ ...S.excelStatRow, alignItems: "stretch" }}>
                 <StatBadge label="총 인원" value={customRoster.length} color="#1565c0" />
                 {(() => {
-                  // 최종 휴무 = 엑셀 기준 + 앱 수정 반영
-                  // 규칙: 엑셀 휴무는 당번/조출/후출 등에 영향 받지 않음
-                  //       오직 "휴무해제" 클릭 시에만 제거
-                  const dayKey = selectedDate.dateLabel.slice(0, 5);
-                  const mapNames = new Set((holidayMap[dayKey] ?? []).map(n => normalize(n)));
-                  const baseNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
-                  const finalHoliday = baseNames.filter(name => {
-                    const override = manualStatuses[name];
-                    if (override === "휴무해제") return false;               // 명시적 해제 → 제외
-                    if (override === "휴무") return true;                    // 앱에서 명시적 추가
-                    if (mapNames.has(normalize(name))) return true;          // 엑셀 기준 (당번 등 무시)
-                    const person = getRosterPerson(name);                    // 주중/주말 자동 휴무
-                    return !override && !!(person && isAutoOff(person.group, dayOfWeek));
-                  }).length;
-                  const availableCount = Math.max(0, customRoster.length - finalHoliday);
+                  // 통일 계산: 가용인원 = 총인원 - (휴무+당번+병가) — calcAvailable 경유
+                  const availableCount = calcAvailable(selectedDate.dateLabel, dayOfWeek);
                   return <StatBadge label="가용인원" value={availableCount} color="#7c3aed" />;
                 })()}
                 {(() => {
-                  // 투인원 = 가용인원 - 당번 - 병가
-                  const dayKey = selectedDate.dateLabel.slice(0, 5);
-                  const mapNames = new Set((holidayMap[dayKey] ?? []).map(n => normalize(n)));
-                  const baseNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
-                  const finalHoliday = baseNames.filter(name => {
-                    const override = manualStatuses[name];
-                    if (override === "휴무해제") return false;
-                    if (override === "휴무") return true;
-                    if (mapNames.has(normalize(name))) return true;
-                    const person = getRosterPerson(name);
-                    return !override && !!(person && isAutoOff(person.group, dayOfWeek));
-                  }).length;
-                  const availableCount = Math.max(0, customRoster.length - finalHoliday);
-                  const danBeon  = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "당번").length;
-                  const byungGa  = baseNames.filter(n => effectiveStatus(n, dayOfWeek) === "병가").length;
+                  // 투인원: calcAvailable이 이미 당번·병가 제외 → 직접 사용
+                  const availableCount = calcAvailable(selectedDate.dateLabel, dayOfWeek);
                   const totalTeams = mode === "2부제" ? totalSize : singleSize;
-                  const tuInwon = totalTeams > 0 ? Math.max(0, totalTeams - (availableCount - danBeon - byungGa)) : null;
+                  const tuInwon = totalTeams > 0 ? Math.max(0, totalTeams - availableCount) : null;
                   return (
                     <StatBadge
                       label="투 인원"
