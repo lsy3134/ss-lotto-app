@@ -85,6 +85,15 @@ interface ExcelDayData {
 
 // ── 월 달력 생성 헬퍼 (엑셀 없이도 달력 표시) ──────
 const KR_DAY = ["월", "화", "수", "목", "금", "토", "일"];
+
+/** Date → "MM.DD (요일)" 형식 key 생성 (저장·조회·계산 전체에서 이 함수만 사용) */
+function makeDateKey(date: Date): string {
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const dayIdx = (date.getDay() + 6) % 7; // Mon=0 … Sun=6
+  return `${mm}.${dd} (${KR_DAY[dayIdx]})`;
+}
+
 function generateMonthDays(mm: string, year: number): ExcelDayData[] {
   const m = parseInt(mm, 10);
   const daysInMonth = new Date(year, m, 0).getDate();
@@ -93,9 +102,8 @@ function generateMonthDays(mm: string, year: number): ExcelDayData[] {
     const date = new Date(year, m - 1, d);
     const dayIdx = (date.getDay() + 6) % 7; // Mon=0 … Sun=6
     const dayName = KR_DAY[dayIdx];
-    const dd = String(d).padStart(2, "0");
     result.push({
-      dateLabel: `${mm}.${dd} (${dayName})`,
+      dateLabel: makeDateKey(date),
       dayName,
       dayIdx,
       당번: 0, 휴무: 0, 병가: 0,
@@ -1168,13 +1176,8 @@ export default function SchedulePage() {
     // 월 경계: excelDays/viewDays 첫 번째 날인 경우 → 날짜 산술로 전날 직접 계산
     const match = selectedDate.dateLabel.match(/^(\d{2})\.(\d{2})/);
     if (match) {
-      const mm = parseInt(match[1], 10);
-      const dd = parseInt(match[2], 10);
-      const prev = new Date(viewYear, mm - 1, dd - 1);
-      const pMM = String(prev.getMonth() + 1).padStart(2, "0");
-      const pDD = String(prev.getDate()).padStart(2, "0");
-      const pDayIdx = (prev.getDay() + 6) % 7;
-      return `${pMM}.${pDD} (${KR_DAY[pDayIdx]})`;
+      const prev = new Date(viewYear, parseInt(match[1], 10) - 1, parseInt(match[2], 10) - 1);
+      return makeDateKey(prev);
     }
     return null;
   }, [selectedDate, excelDays, viewDays, viewYear]);
@@ -1831,10 +1834,7 @@ export default function SchedulePage() {
       let cur = new Date(viewYear, mm - 1, dd);
       for (let i = 0; i < 400; i++) {
         cur = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() - 1);
-        const curMM = String(cur.getMonth() + 1).padStart(2, "0");
-        const curDD = String(cur.getDate()).padStart(2, "0");
-        const dayIdx = (cur.getDay() + 6) % 7;
-        const dl = `${curMM}.${curDD} (${KR_DAY[dayIdx]})`;
+        const dl = makeDateKey(cur);
         const spare2 = savedSpare2[dl] ?? assignmentData[dl]?.spare2;
         if (spare2 && spare2.length > 0) return spare2[0];
       }
@@ -2156,10 +2156,7 @@ export default function SchedulePage() {
       const m = startDateLabel.match(/^(\d{2})\.(\d{2})/);
       if (!m) return false;
       const prevDate = new Date(viewYear, parseInt(m[1], 10) - 1, parseInt(m[2], 10) - 1);
-      const pMM = String(prevDate.getMonth() + 1).padStart(2, "0");
-      const pDD = String(prevDate.getDate()).padStart(2, "0");
-      const pDayIdx = (prevDate.getDay() + 6) % 7;
-      const prevLabel = `${pMM}.${pDD} (${KR_DAY[pDayIdx]})`;
+      const prevLabel = makeDateKey(prevDate);
       const spare2 = savedSpare2[prevLabel] ?? assignmentData[prevLabel]?.spare2;
       return !!(spare2 && spare2.length > 0);
     })();
@@ -2484,7 +2481,7 @@ export default function SchedulePage() {
                   const m = d.dateLabel.match(/^(\d{2})\.(\d{2})/);
                   if (!m) return null;
                   const prev = new Date(viewYear, parseInt(m[1], 10) - 1, parseInt(m[2], 10) - 1);
-                  const pDL = `${String(prev.getMonth() + 1).padStart(2, "0")}.${String(prev.getDate()).padStart(2, "0")} (${KR_DAY[(prev.getDay() + 6) % 7]})`;
+                  const pDL = makeDateKey(prev);
                   return (savedSpare2[pDL] ?? assignmentData[pDL]?.spare2)?.[0] ?? null;
                 })();
                 // 배정 표시: 배정을 실행한 시각 기준 7일 이내만 ✓완료 뱃지 & 초록 배경
