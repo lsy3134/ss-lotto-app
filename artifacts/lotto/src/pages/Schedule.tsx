@@ -2141,21 +2141,18 @@ export default function SchedulePage() {
   }
 
   function generateWeek() {
-    // 선택한 날짜 기준으로 시작 (월요일 고정 X → 선택 날짜부터 7일)
-    const selIdx = selectedDate
-      ? excelDays.findIndex(d => d.dateLabel === selectedDate.dateLabel)
-      : -1;
-    const startIdx = selIdx >= 0 ? selIdx : -1;
-    const startDayIdx = selectedDate?.dayIdx ?? 0; // 요일 레이블 offset
+    if (!selectedDate) return;
+
+    // ── 시작일: selectedDate 기준 Date 산술 (excelDays 없어도 동작, 월 경계 포함) ──
+    const startDateLabel = selectedDate.dateLabel;
+    const sm = startDateLabel.match(/^(\d{2})\.(\d{2})/);
+    if (!sm) return;
+    const startDate = new Date(viewYear, parseInt(sm[1], 10) - 1, parseInt(sm[2], 10));
 
     // ── 시작 순번: 연속 배정이면 spare2 체인, 아니면 새 세션 ──
-    const startDateLabel = excelDays[startIdx]?.dateLabel ?? "";
-
     // 시작일 바로 전날에 배정 데이터가 있는지 확인 (월 경계 포함)
     const isPrevDayAssigned = (() => {
-      const m = startDateLabel.match(/^(\d{2})\.(\d{2})/);
-      if (!m) return false;
-      const prevDate = new Date(viewYear, parseInt(m[1], 10) - 1, parseInt(m[2], 10) - 1);
+      const prevDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() - 1);
       const prevLabel = makeDateKey(prevDate);
       const spare2 = savedSpare2[prevLabel] ?? assignmentData[prevLabel]?.spare2;
       return !!(spare2 && spare2.length > 0);
@@ -2170,21 +2167,27 @@ export default function SchedulePage() {
     const results: { day: string; result: DayResult; skipped?: boolean }[] = [];
     const newAssignments: Record<string, DayResult> = {};
 
-    Array.from({ length: 7 }, (_, di) => DAY_LABELS[(startDayIdx + di) % 7]).forEach((day, di) => {
-      const absIdx = startIdx + di;
-      const weekDay = absIdx >= 0 && absIdx < excelDays.length ? excelDays[absIdx] : null;
-      const dateLabel = weekDay?.dateLabel ?? "";
+    // excelDays / viewDays 빠른 조회 맵 (① excelDays 우선, ② viewDays fallback)
+    const excelMap = new Map(excelDays.map(d => [d.dateLabel, d]));
+    const viewMap = new Map(viewDays.map(d => [d.dateLabel, d]));
+
+    for (let di = 0; di < 7; di++) {
+      const date = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + di);
+      const dateLabel = makeDateKey(date); // 항상 정상 생성 (빈값 없음)
+
+      // excelDays 우선, 없으면 viewDays fallback으로 dayIdx 얻기
+      const weekDay = excelMap.get(dateLabel) ?? viewMap.get(dateLabel);
+      const dayIdx = weekDay?.dayIdx ?? (date.getDay() + 6) % 7;
 
       // ── 이미 배정된 날짜: 결과 재사용, currentNames만 연속 업데이트 ──
-      if (dateLabel && assignmentData[dateLabel]) {
+      if (assignmentData[dateLabel]) {
         const existingResult = assignmentData[dateLabel];
-        results.push({ day: dateLabel || day, result: existingResult, skipped: true });
+        results.push({ day: dateLabel, result: existingResult, skipped: true });
         currentNames = advanceNames(existingResult, currentNames);
-        return;
+        continue;
       }
 
-      // ── 새 배정 ──
-      const dayIdx = weekDay?.dayIdx ?? di;
+      // ── 새 배정 (계산 로직 변경 없음) ──
       const savedDay = dateStatuses[dateLabel] ?? {};
       const statuses: Record<string, StatusType> = {};
       const dgMap = dateDaegeun[dateLabel] ?? {};
@@ -2198,10 +2201,10 @@ export default function SchedulePage() {
         ? assignDouble(currentNames, statuses, s1, s2, dateDaegeun[dateLabel] ?? {}, dateStatusOrders[dateLabel] ?? [])
         : assignSingle(currentNames, statuses, ss);
 
-      results.push({ day: dateLabel || day, result, skipped: false });
-      if (dateLabel) newAssignments[dateLabel] = result;
+      results.push({ day: dateLabel, result, skipped: false });
+      newAssignments[dateLabel] = result;
       currentNames = advanceNames(result, currentNames);
-    });
+    }
 
     setWeekly(results);
     setDayResult(null);
@@ -2219,15 +2222,11 @@ export default function SchedulePage() {
       }
     }
 
-    // ↑ 힌트 표시 범위: 주간 배정 마지막 날 다음날 1일만
-    const weekEndIdx = startIdx + 6;
-    const afterWeekIdx = weekEndIdx + 1;
-    if (afterWeekIdx < excelDays.length) {
-      const afterDk = excelDays[afterWeekIdx].dateLabel;
-      persistAssignedRange({ start: afterDk.slice(0, 5), end: afterDk.slice(0, 5) });
-    } else {
-      persistAssignedRange(null);
-    }
+    // ↑ 힌트 표시 범위: 주간 배정 마지막 날 다음날 (Date 산술, 월 경계 포함)
+    const afterDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + 7);
+    const afterDk = makeDateKey(afterDate).slice(0, 5); // "MM.DD"
+    persistAssignedRange({ start: afterDk, end: afterDk });
+
     // ✓완료 표시용 배정 시각 기록 (새로 배정된 날짜만)
     const newDateLabels = Object.keys(newAssignments);
     if (newDateLabels.length > 0) recordAssignmentTimestamps(newDateLabels);
