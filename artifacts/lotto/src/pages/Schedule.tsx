@@ -1044,7 +1044,8 @@ export default function SchedulePage() {
 
           setDateStatuses(prev => trimKeys(prev) as typeof prev);
           setAssignmentData(prev => trimKeys(prev) as typeof prev);
-          setSavedSpare2(prev => trimKeys(prev) as typeof prev);
+          // savedSpare2 키는 "MM.DD (요일)" 형식이므로 ISO 기반 trimKeys 미적용
+          // (trimKeys의 cutoff "YYYY-MM-DD"와 문자열 비교 시 전부 삭제되는 버그 방지)
           setDateDaegeun(prev => trimKeys(prev) as typeof prev);
           setOverrideStartByDate(prev => trimKeys(prev) as typeof prev);
           setDateStatusOrders(prev => trimKeys(prev) as typeof prev);
@@ -1161,11 +1162,22 @@ export default function SchedulePage() {
     // excelDays 우선 탐색
     const idx = excelDays.findIndex(d => d.dateLabel === selectedDate.dateLabel);
     if (idx > 0) return excelDays[idx - 1].dateLabel;
-    // 엑셀 없을 때 → viewDays(달력 생성 배열) 폴백
+    // viewDays 폴백
     const vi = viewDays.findIndex(d => d.dateLabel === selectedDate.dateLabel);
     if (vi > 0) return viewDays[vi - 1].dateLabel;
+    // 월 경계: excelDays/viewDays 첫 번째 날인 경우 → 날짜 산술로 전날 직접 계산
+    const match = selectedDate.dateLabel.match(/^(\d{2})\.(\d{2})/);
+    if (match) {
+      const mm = parseInt(match[1], 10);
+      const dd = parseInt(match[2], 10);
+      const prev = new Date(viewYear, mm - 1, dd - 1);
+      const pMM = String(prev.getMonth() + 1).padStart(2, "0");
+      const pDD = String(prev.getDate()).padStart(2, "0");
+      const pDayIdx = (prev.getDay() + 6) % 7;
+      return `${pMM}.${pDD} (${KR_DAY[pDayIdx]})`;
+    }
     return null;
-  }, [selectedDate, excelDays, viewDays]);
+  }, [selectedDate, excelDays, viewDays, viewYear]);
 
   // 오늘 첫번호 힌트 = 전날 2부스페어[0]
   const todayFirstHint = prevDateLabel ? (savedSpare2[prevDateLabel]?.[0] ?? null) : null;
