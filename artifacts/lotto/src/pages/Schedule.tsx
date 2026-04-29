@@ -2198,11 +2198,27 @@ export default function SchedulePage() {
     const startIdx = selIdx >= 0 ? selIdx : -1;
     const startDayIdx = selectedDate?.dayIdx ?? 0; // 요일 레이블 offset
 
-    // ── 시작 순번: 항상 새로운 세션 ──
-    // override(수동 지정)만 참조, spare2 체인(이전 배정 연결) 무시
+    // ── 시작 순번: 연속 배정이면 spare2 체인, 아니면 새 세션 ──
     const startDateLabel = excelDays[startIdx]?.dateLabel ?? "";
-    const freshStart = overrideStartByDate[startDateLabel] ?? queueStartName;
-    let currentNames = freshStart ? rotateNames([...names], freshStart) : [...names];
+
+    // 시작일 바로 전날에 배정 데이터가 있는지 확인 (월 경계 포함)
+    const isPrevDayAssigned = (() => {
+      const m = startDateLabel.match(/^(\d{2})\.(\d{2})/);
+      if (!m) return false;
+      const prevDate = new Date(viewYear, parseInt(m[1], 10) - 1, parseInt(m[2], 10) - 1);
+      const pMM = String(prevDate.getMonth() + 1).padStart(2, "0");
+      const pDD = String(prevDate.getDate()).padStart(2, "0");
+      const pDayIdx = (prevDate.getDay() + 6) % 7;
+      const prevLabel = `${pMM}.${pDD} (${KR_DAY[pDayIdx]})`;
+      const spare2 = savedSpare2[prevLabel] ?? assignmentData[prevLabel]?.spare2;
+      return !!(spare2 && spare2.length > 0);
+    })();
+
+    // 연속이면 spare2 체인(getStartNameForDate), 아니면 override → queueStartName
+    const startName = isPrevDayAssigned
+      ? getStartNameForDate(startDateLabel)
+      : (overrideStartByDate[startDateLabel] ?? queueStartName);
+    let currentNames = startName ? rotateNames([...names], startName) : [...names];
 
     const results: { day: string; result: DayResult; skipped?: boolean }[] = [];
     const newAssignments: Record<string, DayResult> = {};
