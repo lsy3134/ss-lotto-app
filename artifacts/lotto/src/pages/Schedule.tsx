@@ -913,23 +913,16 @@ export default function SchedulePage() {
 
   // 휴무 엑셀 데이터 (날짜 "MM.DD" → 이름 리스트)
   const HM_KEY = "lotto_holidayMap";
-  const HA_KEY = "lotto_holidayApplied";
+
   const [holidayMap, setHolidayMap] = useState<Record<string, string[]>>(() => {
     try { return JSON.parse(localStorage.getItem(HM_KEY) ?? "{}"); } catch { return {}; }
   });
   const [holidayFileName, setHolidayFileName] = useState<string | null>(() =>
     localStorage.getItem("lotto_holidayFileName")
   );
-  // 날짜별 "이미 엑셀 휴무 자동 적용 완료" 여부 추적 → 재선택 시 덮어쓰기 방지
-  const [holidayAppliedDates, setHolidayAppliedDates] = useState<Record<string, true>>(() => {
-    try { return JSON.parse(localStorage.getItem(HA_KEY) ?? "{}"); } catch { return {}; }
-  });
   useEffect(() => {
     localStorage.setItem(HM_KEY, JSON.stringify(holidayMap));
   }, [holidayMap]);
-  useEffect(() => {
-    localStorage.setItem(HA_KEY, JSON.stringify(holidayAppliedDates));
-  }, [holidayAppliedDates]);
 
   // ── 서버에서 휴무 데이터 자동 로드 (마운트 시 1회) ──
   // updatedAt 비교: 서버가 더 최신이면 localStorage 전체 덮어쓰기
@@ -1037,10 +1030,6 @@ export default function SchedulePage() {
         });
         setHolidayFileName(file.name);
         localStorage.setItem("lotto_holidayFileName", file.name);
-
-        // ── "자동 적용 완료" 기록 초기화 → 모든 날짜에 새 엑셀로 다시 적용 가능 ──
-        setHolidayAppliedDates({});
-        localStorage.setItem("lotto_holidayApplied", "{}");
 
         // ── 업로드 월의 휴무 상태만 초기화 (다른 월·다른 상태는 유지) ──
         // viewMonth 대신 실제 업로드된 파일의 월을 기준으로 초기화
