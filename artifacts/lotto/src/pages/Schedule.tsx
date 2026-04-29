@@ -2300,8 +2300,9 @@ export default function SchedulePage() {
   };
 
   // ── 렌더 ────────────────────────────────────────
+  const showFloatingBar = !!(displayResult && displayResult.spare2?.[0] && weekly.length === 0);
   return (
-    <div style={S.page}>
+    <div style={{ ...S.page, paddingBottom: showFloatingBar ? "80px" : undefined }}>
       {/* 헤더 */}
       <div style={S.header}>
         <button onClick={() => setLocation(`${BASE}/`)} style={S.backBtn}>←</button>
@@ -5043,7 +5044,7 @@ export default function SchedulePage() {
         </>
       )}
       {/* ── 플로팅 바: 다음날 첫번호 ── */}
-      {displayResult && displayResult.spare2?.[0] && weekly.length === 0 && (
+      {showFloatingBar && (
         <div style={S.floatingBar}>
           <img src={`${BASE}/char_smile.png`} alt="" style={{ width: 36, height: 36, objectFit: "contain" }} />
           <div style={{ flex: 1 }}>
