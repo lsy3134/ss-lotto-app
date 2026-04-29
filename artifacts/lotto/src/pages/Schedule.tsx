@@ -2472,11 +2472,11 @@ export default function SchedulePage() {
                 const hasManual = Object.keys(savedStatuses).length > 0;
                 const hasExcel = d.가용인원 > 0 || hasTeams;
 
-                // 달력 첫번호 힌트: 전날 savedSpare2[0] 직접 계산 (캐시·override·범위 조건 없음)
-                // pendingResult 우선(현재 날짜 배정 직후), 나머지는 전날 spare2 실시간 탐색
+                // 달력 첫번호 힌트: 전날 savedSpare2[0] 직접 계산 (선택 여부 무관, 항상 렌더)
+                // pendingResult가 있으면 최우선 (배정 직후 즉시 반영), 없으면 전날 spare2 실시간 탐색
                 const calHint: string | null = (() => {
-                  if (d.dateLabel === currentDateKey) {
-                    return pendingResult?.spare2?.[0] ?? null;
+                  if (d.dateLabel === currentDateKey && pendingResult?.spare2?.[0]) {
+                    return pendingResult.spare2[0];
                   }
                   const m = d.dateLabel.match(/^(\d{2})\.(\d{2})/);
                   if (!m) return null;
@@ -2513,7 +2513,7 @@ export default function SchedulePage() {
                       animation: isSelected ? "glowPulse 2s ease-in-out infinite" : "none",
                       transform: isSelected ? "scale(1.05)" : "scale(1)",
                       opacity: !hasExcel && !hasManual && !isSelected ? 0.75 : 1,
-                      minHeight: hintVisible ? "64px" : "52px",
+                      minHeight: hintVisible ? (isSelected ? "68px" : "64px") : "52px",
                     }}
                   >
                     <span style={{ fontSize: "0.72rem", fontWeight: 700 }}>{d.dateLabel.split(" ")[0]}</span>
@@ -2543,18 +2543,33 @@ export default function SchedulePage() {
                         {d.예약팀수}팀
                       </span>
                     )}
-                    {/* 전날 spare2[0] → 다음날 첫번호 힌트 (savedSpare2 기준, 항상 표시) */}
+                    {/* 전날 spare2[0] → 이 날의 첫번호 힌트 (선택 여부 무관, 항상 표시 / 선택 시 강조) */}
                     {calHint && (
-                      <span style={{
-                        fontSize: "0.52rem", fontWeight: 800, lineHeight: 1,
-                        color: isSelected ? "rgba(255,255,255,0.9)" : "#b91c1c",
-                        background: isSelected ? "rgba(255,255,255,0.15)" : "#fef2f2",
-                        borderRadius: 4, padding: "1px 4px",
-                        marginTop: 1,
-                        maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                      }}>
-                        ↑{calHint}
-                      </span>
+                      isSelected ? (
+                        <span style={{
+                          fontSize: "0.58rem", fontWeight: 900, lineHeight: 1,
+                          color: "#fff",
+                          background: "rgba(255,255,255,0.25)",
+                          borderRadius: 5, padding: "2px 6px",
+                          marginTop: 2,
+                          maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                          border: "1px solid rgba(255,255,255,0.45)",
+                          letterSpacing: "0.02em",
+                        }}>
+                          📌 {calHint}
+                        </span>
+                      ) : (
+                        <span style={{
+                          fontSize: "0.52rem", fontWeight: 800, lineHeight: 1,
+                          color: "#b91c1c",
+                          background: "#fef2f2",
+                          borderRadius: 4, padding: "1px 4px",
+                          marginTop: 1,
+                          maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        }}>
+                          ↑{calHint}
+                        </span>
+                      )
                     )}
                   </button>
                 );
