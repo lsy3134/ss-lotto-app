@@ -129,6 +129,8 @@ interface DayResult {
   vipBothList?: string[];
   // 다음날 예상 순번: [스페어(앞번호순)] → [오늘 근무자 + 찾근자(일반 순번으로 포함)]
   nextDayQueue?: string[];
+  // 대근 인원 목록 (1부·2부·투라운드 통합, bold 표시용)
+  daegeunList?: string[];
 }
 
 // ── 엑셀 ArrayBuffer → ExcelDayData[] 공통 파서 ──
@@ -508,9 +510,10 @@ function assignDouble(
     else {
       // status null(정상근무) — 대근 유형 확인
       const dg = daegeunMap[name];
-      if (dg === "1부")       대근1부List.push(name); // 1부만 출근
-      else if (dg === "2부")  대근2부List.push(name); // 2부만 출근
-      else                    autoQueue.push(name);
+      if (dg === "1부")           대근1부List.push(name);  // 1부만 출근
+      else if (dg === "2부")      대근2부List.push(name);  // 2부만 출근
+      else if (dg === "투라운드")  twoRound.push(name);    // 1부+2부 투라운드 대근
+      else                        autoQueue.push(name);
     }
   }
 
@@ -597,7 +600,9 @@ function assignDouble(
     }
   }
 
-  return { twoRound, shift1, spare1, shift2, spare2, excluded, 조출List, 후출List, vip1List, vip2List, vipBothList, nextDayQueue };
+  // 대근 인원 통합 목록 (1부·2부·투라운드 — daegeunMap에 등록된 사람)
+  const daegeunList = [...대근1부List, ...대근2부List, ...twoRound.filter(n => daegeunMap[n] === "투라운드")];
+  return { twoRound, shift1, spare1, shift2, spare2, excluded, 조출List, 후출List, vip1List, vip2List, vipBothList, nextDayQueue, daegeunList };
 }
 
 // ── 배정 엔진: 단부제 ─────────────────────────────
@@ -657,7 +662,7 @@ function assignSingle(
     }
   }
 
-  return { twoRound, shift1, spare1: [], shift2: [], spare2, excluded, nextDayQueue };
+  return { twoRound, shift1, spare1: [], shift2: [], spare2, excluded, nextDayQueue, daegeunList: [] };
 }
 
 // ── 다음날 예상 순번 계산기 ───────────────────────────
@@ -5116,43 +5121,43 @@ function DayResultView({ result, mode, compact = false }: {
   result: DayResult; mode: Mode; compact?: boolean;
 }) {
   const cats = mode === "2부제" ? CATS_DOUBLE : CATS_SINGLE;
-  const 조출Set = new Set(result.조출List ?? []);
-  const 후출Set = new Set(result.후출List ?? []);
+  const 조출Set  = new Set(result.조출List ?? []);
+  const 후출Set  = new Set(result.후출List ?? []);
   const spare1Set = new Set(result.spare1 ?? []); // 1부스페어는 shift2 앞에 이미 배정 → 중복 제거용
+  // 대근 인원 set (1부·2부·투라운드) — 배정 결과에서 bold 표시용
+  const daegeunSet = new Set(result.daegeunList ?? []);
 
   function renderPeople(people: string[], key: string) {
     const isExcluded = key === "excluded";
     if (compact) {
-      if (isExcluded) {
-        return people.map((n, i) => {
-          const grp = NAME_GROUP_NORMALIZED[normalize(n)];
-          const dot = grp ? GROUP_DOT[grp] : null;
-          return (
-            <span key={n}>
-              {i > 0 && "  ·  "}
-              {n}
-              {dot && <span style={{ color: dot, marginLeft: "2px", fontSize: "0.65rem" }}>●</span>}
-            </span>
-          );
-        });
-      }
-      return people.join("  ·  ");
+      return people.map((n, i) => {
+        const grp = isExcluded ? NAME_GROUP_NORMALIZED[normalize(n)] : undefined;
+        const dot = grp ? GROUP_DOT[grp] : null;
+        return (
+          <span key={n} style={{ fontWeight: daegeunSet.has(n) ? 800 : undefined }}>
+            {i > 0 && "  ·  "}
+            {n}
+            {dot && <span style={{ color: dot, marginLeft: "2px", fontSize: "0.65rem" }}>●</span>}
+          </span>
+        );
+      });
     }
     return (
       <span style={{ fontSize: "0.88rem", color: "#333", lineHeight: 1.7 }}>
         {people.map((n, i) => {
-          const isCho   = (key === "shift1") && 조출Set.has(n);
-          const isHu    = (key === "shift2") && 후출Set.has(n);
-          const isSpare1= (key === "shift2") && spare1Set.has(n);
-          const isTwoR  = key === "twoRound";
-          const suffix  = isCho ? " [조출]" : isHu ? " [후출]" : isSpare1 ? " [1부스페어]" : "";
-          const grp     = isExcluded ? NAME_GROUP_NORMALIZED[normalize(n)] : undefined;
+          const isCho    = (key === "shift1") && 조출Set.has(n);
+          const isHu     = (key === "shift2") && 후출Set.has(n);
+          const isSpare1 = (key === "shift2") && spare1Set.has(n);
+          const isTwoR   = key === "twoRound";
+          const isDaegeun = daegeunSet.has(n); // 대근 인원 (bold 강조)
+          const suffix   = isCho ? " [조출]" : isHu ? " [후출]" : isSpare1 ? " [1부스페어]" : "";
+          const grp      = isExcluded ? NAME_GROUP_NORMALIZED[normalize(n)] : undefined;
           const dotColor = grp ? GROUP_DOT[grp] : null;
           return (
             <span key={n}>
               {i > 0 && <span style={{ color: "#d1d5db" }}> · </span>}
               <span style={{
-                fontWeight: (isCho || isHu || isTwoR || isSpare1) ? 800 : 500,
+                fontWeight: (isCho || isHu || isTwoR || isSpare1 || isDaegeun) ? 800 : 500,
                 color: isCho ? "#9a3412" : isHu ? "#5b21b6" : isTwoR ? "#164e63" : isSpare1 ? "#9a3412" : "#374151",
                 background: isCho ? "#fed7aa" : isHu ? "#ddd6fe" : "transparent",
                 borderRadius: 4, padding: (isCho || isHu) ? "1px 4px" : 0,
