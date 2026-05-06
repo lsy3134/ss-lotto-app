@@ -200,6 +200,18 @@ function toHolidayDateKey(v: unknown, month?: number): string | null {
   // "13일" 단독 — 월 context 있을 때
   m = s.match(/^(\d{1,2})일$/);
   if (m && month) return `${String(month).padStart(2, "0")}.${m[1].padStart(2, "0")}`;
+  // 순수 숫자 문자열 "1"~"31" — 달력 날짜 칸 (월 context 필수)
+  m = s.match(/^(\d{1,2})$/);
+  if (m && month) {
+    const d = parseInt(m[1], 10);
+    if (d >= 1 && d <= 31) return `${String(month).padStart(2, "0")}.${m[1].padStart(2, "0")}`;
+  }
+  // 앞 숫자 + 비숫자 혼합: "1 어린이날", "1\n노동절", "01 MBN", "1(공휴일)" 등
+  m = s.match(/^(\d{1,2})\D/);
+  if (m && month) {
+    const d = parseInt(m[1], 10);
+    if (d >= 1 && d <= 31) return `${String(month).padStart(2, "0")}.${m[1].padStart(2, "0")}`;
+  }
   return null;
 }
 
