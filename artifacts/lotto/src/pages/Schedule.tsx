@@ -260,8 +260,24 @@ function parseHolidayExcelBuffer(buf: ArrayBuffer, contextMonth?: number): { map
     const cols = range.e.c - range.s.c + 1;
     debugLines.push(`[${sheetName}] ${rows}행 × ${cols}열`);
 
+    // 병합 셀(merged cell) 처리: 셀이 비어 있으면 해당 셀이 속한 merge 범위의 좌상단 셀 값을 반환
+    const merges: XLSX.Range[] = ws["!merges"] ?? [];
+    const mergeTL = new Map<string, { r: number; c: number }>();
+    for (const mg of merges) {
+      for (let mr = mg.s.r; mr <= mg.e.r; mr++) {
+        for (let mc = mg.s.c; mc <= mg.e.c; mc++) {
+          if (mr === mg.s.r && mc === mg.s.c) continue; // 좌상단 자신은 제외
+          mergeTL.set(XLSX.utils.encode_cell({ r: mr, c: mc }), { r: mg.s.r, c: mg.s.c });
+        }
+      }
+    }
     const getCell = (r: number, c: number) => {
-      const cell = ws[XLSX.utils.encode_cell({ r, c })];
+      const addr = XLSX.utils.encode_cell({ r, c });
+      let cell = ws[addr];
+      if ((!cell || cell.v === undefined || cell.v === null || cell.v === "") && mergeTL.has(addr)) {
+        const tl = mergeTL.get(addr)!;
+        cell = ws[XLSX.utils.encode_cell({ r: tl.r, c: tl.c })];
+      }
       return cell ? cell.v : undefined;
     };
 
