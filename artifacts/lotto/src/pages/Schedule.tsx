@@ -380,13 +380,14 @@ function parseHolidayExcelBuffer(buf: ArrayBuffer, contextMonth?: number): { map
       }
     }
 
-    // ── 포맷G: 주간 달력 — 요일 헤더행 + (날짜행, 이름행) 교대 ──
-    // 구조: Row0=요일(일월화수목금토), Row1=날짜번호, Row2=이름들, Row3=날짜번호, Row4=이름들 ...
+    // ── 포맷G 강화: 달력형 — 요일 헤더 + 날짜/이름 혼합 행 ──
+    // 구조: 요일 헤더행 → 각 열마다 [날짜번호] → [이름 N행] → [날짜번호] → ...
+    // 핵심: r+=2 고정 stride 제거, 열별로 현재 날짜를 독립 추적하며 행을 1행씩 내려감
     const fmtG: Record<string, string[]> = {}; let gS = 0;
-    // 첫 행이 요일 헤더인지 확인 (일/월/화/수/목/금/토 포함)
     const weekdayHeader = /^[일월화수목금토]$/;
+    // 요일 헤더 행 탐색 (시트 앞 10행 이내)
     let headerRow = -1;
-    for (let r = range.s.r; r <= Math.min(range.s.r + 2, range.e.r); r++) {
+    for (let r = range.s.r; r <= Math.min(range.s.r + 9, range.e.r); r++) {
       let wdCount = 0;
       for (let c = range.s.c; c <= range.e.c; c++) {
         const v = String(getCell(r, c) ?? "").trim();
@@ -395,23 +396,43 @@ function parseHolidayExcelBuffer(buf: ArrayBuffer, contextMonth?: number): { map
       if (wdCount >= 3) { headerRow = r; break; }
     }
     if (headerRow >= 0) {
-      // 요일→열 목록
-      const colsWithDates: number[] = [];
+      // 요일 헤더가 있는 열 위치 수집
+      const weekdayCols: number[] = [];
       for (let c = range.s.c; c <= range.e.c; c++) {
         const v = String(getCell(headerRow, c) ?? "").trim();
-        if (weekdayHeader.test(v)) colsWithDates.push(c);
+        if (weekdayHeader.test(v)) weekdayCols.push(c);
       }
-      // headerRow 이후 행들을 2행씩 처리 (날짜행, 이름행)
-      for (let r = headerRow + 1; r < range.e.r; r += 2) {
-        const dateRow = r;
-        const nameRow = r + 1;
-        for (const c of colsWithDates) {
-          const key = dk(getCell(dateRow, c));
-          if (!key) continue;
-          // 이름행의 같은 열에서만 이름 수집 (인접 열 제외)
-          const names = extractNames(getCell(nameRow, c));
-          if (!fmtG[key]) fmtG[key] = [];
-          for (const name of names) if (!fmtG[key].includes(name)) { fmtG[key].push(name); gS++; }
+      // 열마다 현재 추적 중인 날짜 키 (독립 관리)
+      const colCurKey: Record<number, string> = {};
+
+      // 헤더 다음 행부터 끝까지 1행씩 스캔
+      for (let r = headerRow + 1; r <= range.e.r; r++) {
+        // 이 행이 "요일 헤더 반복"이면 skip (달력 다음 달 헤더 등)
+        let wdRepeat = 0;
+        for (const c of weekdayCols) {
+          const v = String(getCell(r, c) ?? "").trim();
+          if (weekdayHeader.test(v)) wdRepeat++;
+        }
+        if (wdRepeat >= 3) continue; // 요일 헤더 반복행 → skip
+
+        for (const c of weekdayCols) {
+          const v = getCell(r, c);
+          const dateKey = dk(v);
+          if (dateKey) {
+            // 날짜값 → 이 열의 현재 날짜 갱신
+            colCurKey[c] = dateKey;
+            if (!fmtG[dateKey]) fmtG[dateKey] = [];
+          } else {
+            // 날짜가 아니면 이름 여부 확인 → 현재 날짜에 누적
+            const names = extractNames(v);
+            const curKey = colCurKey[c];
+            if (names.length && curKey) {
+              for (const name of names) {
+                if (!fmtG[curKey].includes(name)) { fmtG[curKey].push(name); gS++; }
+              }
+            }
+            // 빈 셀이어도 break 없이 continue
+          }
         }
       }
     }
