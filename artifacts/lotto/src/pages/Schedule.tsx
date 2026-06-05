@@ -1104,13 +1104,18 @@ export default function SchedulePage() {
             return next;
           };
 
-          setDateStatuses(prev => trimKeys(prev) as typeof prev);
+          // ── trimKeys 적용 범위 ──────────────────────────────────────
+          // trimKeys는 ISO "YYYY-MM-DD" 형식 키에만 안전하게 동작합니다.
+          // "MM.DD (요일)" 형식 키를 사용하는 state에 적용하면
+          // "0..." < "2026-..." 비교로 모든 키가 삭제되는 버그가 발생합니다.
+          //
+          // ISO 키 state (trimKeys 적용 가능):
+          //   - assignmentData
+          //
+          // MM.DD 형식 state (trimKeys 미적용 — 전부 삭제 버그 방지):
+          //   - dateStatuses, savedSpare2, dateDaegeun,
+          //     overrideStartByDate, dateStatusOrders
           setAssignmentData(prev => trimKeys(prev) as typeof prev);
-          // savedSpare2 키는 "MM.DD (요일)" 형식이므로 ISO 기반 trimKeys 미적용
-          // (trimKeys의 cutoff "YYYY-MM-DD"와 문자열 비교 시 전부 삭제되는 버그 방지)
-          setDateDaegeun(prev => trimKeys(prev) as typeof prev);
-          setOverrideStartByDate(prev => trimKeys(prev) as typeof prev);
-          setDateStatusOrders(prev => trimKeys(prev) as typeof prev);
         }
 
         const totalPeople = Object.values(map).reduce((s, a) => s + a.length, 0);
