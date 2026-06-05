@@ -1584,8 +1584,9 @@ export default function SchedulePage() {
       }
       return;
     }
-    // 찾근/조출/후출: 클릭 순서 추적 (dateStatusOrders 업데이트)
-    if ((btn === "찾근" || btn === "조출" || btn === "후출") && currentDateKey) {
+    // 모든 수동 상태: 클릭 순서 추적 (dateStatusOrders 업데이트)
+    // 찾근/조출/후출 + 휴무/병가/당번/대기 모두 동일하게 적용
+    if (currentDateKey) {
       const cur = effectiveStatus(name);
       if (cur === btn) {
         // 취소 → 순서 배열에서 제거
@@ -3601,17 +3602,9 @@ export default function SchedulePage() {
         const _filtered = isVip
           ? currentVipMembers.map(m => m.name)
           : names.filter(n => effectiveStatus(n) === modalStatus as StatusType);
-        const selectedNames = (modalStatus === "휴무" && !isVip)
-          ? (() => {
-              const dk = selectedDate?.dateLabel.slice(0, 5) ?? "";
-              const order = holidayMap[dk] ?? [];
-              return [..._filtered].sort((a, b) => {
-                const ia = order.findIndex(h => normalize(h) === normalize(a));
-                const ib = order.findIndex(h => normalize(h) === normalize(b));
-                return (ia === -1 ? 9999 : ia) - (ib === -1 ? 9999 : ib);
-              });
-            })()
-          : (modalStatus === "찾근" || modalStatus === "조출" || modalStatus === "후출")
+        // 클릭 순서(dateStatusOrders) 우선 → 나머지는 기존 순서 유지
+        // 모든 상태(휴무/병가/당번/대기/찾근/조출/후출) 동일하게 적용
+        const selectedNames = !isVip
           ? (() => {
               const order = dateStatusOrders[currentDateKey] ?? [];
               const orderSet = new Set(order);
