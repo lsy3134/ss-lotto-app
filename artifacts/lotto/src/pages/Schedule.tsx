@@ -528,8 +528,8 @@ function assignDouble(
   statusOrder: string[] = []                // 찾근/조출/후출 클릭 순서 (앞에 배치)
 ): DayResult {
   const twoRound: string[] = [];   // 찾근 (1부+2부 투라운드)
-  const 조출List: string[] = [];   // 조출 (1부 앞 고정, 최대 4명)
-  const 후출List: string[] = [];   // 후출 (2부 뒤에서 3번째, 최대 4명)
+  const 조출List: string[] = [];   // 조출 (1부 앞 고정, 최대 6명)
+  const 후출List: string[] = [];   // 후출 (2부 뒤에서 3번째, 최대 6명)
   const 대기List: string[] = [];   // 대기 (1부 출근대기 → spare1로 2부 첫번째 고정)
   const 대근1부List: string[] = []; // 대근-1부: 1부만 근무 후 귀가
   const 대근2부List: string[] = []; // 대근-2부: 2부만 근무
@@ -552,9 +552,9 @@ function assignDouble(
     else if (s === "대기") {
       대기List.push(name);
     } else if (s === "조출") {
-      if (조출List.length < 4) 조출List.push(name); else autoQueue.push(name);
+      if (조출List.length < 6) 조출List.push(name); else autoQueue.push(name);
     } else if (s === "후출") {
-      if (후출List.length < 4) 후출List.push(name); else autoQueue.push(name);
+      if (후출List.length < 6) 후출List.push(name); else autoQueue.push(name);
     } else if (EXCLUDED_SET.has(s ?? "")) { excluded.push(name); }
     else {
       // status null(정상근무) — 대근 유형 확인
@@ -5038,15 +5038,15 @@ export default function SchedulePage() {
                           const disabled = (btn === "조출" && !cho가능 && effS !== "조출");
                           const col = active ? STATUS_COLOR[btn!] : null;
                           const maxReached =
-                            (btn === "조출" && cho현재수 >= 4 && effS !== "조출") ||
-                            (btn === "후출" && hu현재수 >= 4 && effS !== "후출");
+                            (btn === "조출" && cho현재수 >= 6 && effS !== "조출") ||
+                            (btn === "후출" && hu현재수 >= 6 && effS !== "후출");
                           return (
                             <button key={btn} disabled={disabled || maxReached}
                               onClick={() => toggleStatus(name, btn)}
                               title={
                                 btn === "조출" && !cho가능 ? "1부 6팀 이상일 때만 사용 가능" :
-                                btn === "조출" && maxReached ? "조출 최대 4명" :
-                                btn === "후출" && maxReached ? "후출 최대 4명" : ""
+                                btn === "조출" && maxReached ? "조출 최대 6명" :
+                                btn === "후출" && maxReached ? "후출 최대 6명" : ""
                               }
                               style={{
                                 ...S.statusBtn,
