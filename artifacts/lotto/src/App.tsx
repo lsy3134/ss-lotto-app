@@ -992,11 +992,16 @@ function LottoPage() {
     const hot = currentStats.hot30;
     const cold = currentStats.cold30;
 
+    // ── 1단계: 후보 3,000개 생성 ──
     const raw: { nums: number[]; pairRaw: number; tripleRaw: number; quadRaw: number }[] = [];
+    const rawKeys = new Set<string>();
     let attempts = 0;
-    while (raw.length < 1000 && attempts++ < 8000) {
+    while (raw.length < 3000 && attempts++ < 20000) {
       const candidate = makeCandidate(hot, cold, Math.random() > 0.4);
       if (!candidate) continue;
+      const key = candidate.join(",");
+      if (rawKeys.has(key)) continue;
+      rawKeys.add(key);
       const pairRaw = lc(candidate, 2).reduce((s, c) => s + (currentStats.pairFreq.get(c.join(",")) || 0), 0);
       const tripleRaw = lc(candidate, 3).reduce((s, c) => s + (currentStats.tripleFreq.get(c.join(",")) || 0), 0);
       const quadRaw = lc(candidate, 4).reduce((s, c) => s + (currentStats.quadFreq.get(c.join(",")) || 0), 0);
@@ -1005,24 +1010,35 @@ function LottoPage() {
 
     if (raw.length === 0) { setLog("후보 생성 실패. 다시 시도해주세요."); setGenerating(false); return; }
 
+    // ── 2단계: 점수 계산 및 정렬 ──
     const maxPR = Math.max(...raw.map(c => c.pairRaw));
     const maxTR = Math.max(...raw.map(c => c.tripleRaw));
     const maxQR = Math.max(...raw.map(c => c.quadRaw));
     const scored = raw.map(c => scoreLottoCandidate(c.nums, currentStats, maxPR, maxTR, maxQR));
     scored.sort((a, b) => b.score - a.score);
 
+    // ── 3단계: Diversity Selection ──
+    // 이미 선택된 조합과 번호 4개 이상 겹치면 제외
+    function overlapCount(a: number[], b: number[]): number {
+      return a.filter(n => b.includes(n)).length;
+    }
+
     const selected: ScoredGame[] = [];
-    const used = new Set<string>();
     for (const g of scored) {
-      const key = g.nums.join(",");
-      if (used.has(key)) continue;
-      used.add(key);
+      if (count === 1) {
+        // 1게임: 최고점 1개
+        selected.push(g);
+        break;
+      }
+      // 3/5게임: 이미 선택된 조합과 4개 이상 겹치면 제외
+      const tooSimilar = selected.some(s => overlapCount(s.nums, g.nums) >= 4);
+      if (tooSimilar) continue;
       selected.push(g);
       if (selected.length >= count) break;
     }
 
     setGames(selected);
-    setLog(`${raw.length}개 후보 분석 → AI 점수 상위 ${count}게임 추천`);
+    setLog(`${raw.length}개 후보 분석 → 다양성 선택 → ${count}게임 추천`);
     setGenerating(false);
   }
 
