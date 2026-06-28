@@ -768,11 +768,20 @@ function LottoPage() {
   }
 
   function loadLatest() {
-    const saved = localStorage.getItem("latestLotto");
-    if (saved) {
-      const arr = saved.split(",").map(Number);
-      if (!pastWinners.current.has(saved)) { pastWinners.current.add(saved); allDraws.current.unshift(arr); }
-    }
+    // 새 방식: 배열로 저장된 전체 등록 번호 로드
+    const list: string[] = (() => {
+      try { return JSON.parse(localStorage.getItem("lotto_userRegistered") ?? "[]") as string[]; } catch { return []; }
+    })();
+    // 구 방식(단일 항목) 마이그레이션
+    const legacy = localStorage.getItem("latestLotto");
+    if (legacy && !list.includes(legacy)) list.unshift(legacy);
+    list.forEach(key => {
+      const arr = key.split(",").map(Number);
+      if (arr.length === 6 && !pastWinners.current.has(key)) {
+        pastWinners.current.add(key);
+        allDraws.current.unshift(arr);
+      }
+    });
   }
 
   function addLatest() {
@@ -782,7 +791,14 @@ function LottoPage() {
     const key = nums.join(",");
     if (pastWinners.current.has(key)) { alert("이미 등록된 숫자입니다."); return; }
     pastWinners.current.add(key); allDraws.current.unshift(nums);
-    localStorage.setItem("latestLotto", key); setInput(""); alert("추가 완료");
+    // 전체 등록 목록에 추가 저장
+    const list: string[] = (() => {
+      try { return JSON.parse(localStorage.getItem("lotto_userRegistered") ?? "[]") as string[]; } catch { return []; }
+    })();
+    if (!list.includes(key)) list.unshift(key);
+    localStorage.setItem("lotto_userRegistered", JSON.stringify(list));
+    localStorage.setItem("latestLotto", key); // 구 방식 호환
+    setInput(""); alert("추가 완료");
   }
 
   function rand() { return Math.floor(Math.random() * 45) + 1; }
