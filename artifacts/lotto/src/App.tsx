@@ -934,7 +934,7 @@ function LottoPage() {
     return pick([], 6).sort((a, b) => a - b);
   }
 
-  function generate() {
+  function generate(count: 3 | 5 = 5) {
     const { hot, cold } = getHotCold();
     const hasData = allDraws.current.length >= 10;
     setHotText(hasData
@@ -942,9 +942,14 @@ function LottoPage() {
       : "📊 데이터 10회 미만 — 랜덤 모드로 생성"
     );
     const result: Game[] = [];
-    for (let i = 0; i < 3; i++) result.push({ type: "균형형", nums: generateBalanced(hot, cold) });
-    for (let i = 0; i < 2; i++) result.push({ type: "변형", nums: generateVariant(hot, cold) });
-    setGames(result); setLog("생성 완료");
+    if (count === 3) {
+      for (let i = 0; i < 2; i++) result.push({ type: "균형형", nums: generateBalanced(hot, cold) });
+      result.push({ type: "변형", nums: generateVariant(hot, cold) });
+    } else {
+      for (let i = 0; i < 3; i++) result.push({ type: "균형형", nums: generateBalanced(hot, cold) });
+      for (let i = 0; i < 2; i++) result.push({ type: "변형", nums: generateVariant(hot, cold) });
+    }
+    setGames(result); setLog(`${count}게임 생성 완료`);
   }
 
   const ballColor = (n: number) => {
@@ -1035,17 +1040,28 @@ function LottoPage() {
         )}
 
         {/* 생성 버튼 */}
-        <button
-          onClick={generate}
-          style={{
-            width: "100%", padding: "18px 0", borderRadius: 16, border: "none",
-            background: "linear-gradient(135deg, #f0b429 0%, #d08000 100%)",
-            color: "#fff", fontWeight: 800, fontSize: "1.15rem",
-            cursor: "pointer",
-            letterSpacing: 1,
-            boxShadow: "0 6px 20px rgba(240,180,41,0.38)",
-          }}
-        > 5게임 생성</button>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            onClick={() => generate(5)}
+            style={{
+              flex: 1, padding: "18px 0", borderRadius: 16, border: "none",
+              background: "linear-gradient(135deg, #f0b429 0%, #d08000 100%)",
+              color: "#fff", fontWeight: 800, fontSize: "1.15rem",
+              cursor: "pointer", letterSpacing: 1,
+              boxShadow: "0 6px 20px rgba(240,180,41,0.38)",
+            }}
+          >5게임</button>
+          <button
+            onClick={() => generate(3)}
+            style={{
+              flex: 1, padding: "18px 0", borderRadius: 16, border: "none",
+              background: "linear-gradient(135deg, #f7a55a 0%, #d06010 100%)",
+              color: "#fff", fontWeight: 800, fontSize: "1.15rem",
+              cursor: "pointer", letterSpacing: 1,
+              boxShadow: "0 6px 20px rgba(247,165,90,0.35)",
+            }}
+          >3게임</button>
+        </div>
 
         {/* 결과 */}
         {games.length > 0 && (
