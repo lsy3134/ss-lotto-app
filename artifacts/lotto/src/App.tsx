@@ -934,7 +934,7 @@ function LottoPage() {
     return pick([], 6).sort((a, b) => a - b);
   }
 
-  function generate(count: 3 | 5 = 5) {
+  function generate(count: 1 | 3 | 5 = 5) {
     const { hot, cold } = getHotCold();
     const hasData = allDraws.current.length >= 10;
     setHotText(hasData
@@ -942,7 +942,9 @@ function LottoPage() {
       : "📊 데이터 10회 미만 — 랜덤 모드로 생성"
     );
     const result: Game[] = [];
-    if (count === 3) {
+    if (count === 1) {
+      result.push({ type: "균형형", nums: generateBalanced(hot, cold) });
+    } else if (count === 3) {
       for (let i = 0; i < 2; i++) result.push({ type: "균형형", nums: generateBalanced(hot, cold) });
       result.push({ type: "변형", nums: generateVariant(hot, cold) });
     } else {
@@ -1061,6 +1063,16 @@ function LottoPage() {
               boxShadow: "0 6px 20px rgba(247,165,90,0.35)",
             }}
           >3게임</button>
+          <button
+            onClick={() => generate(1)}
+            style={{
+              flex: 1, padding: "18px 0", borderRadius: 16, border: "none",
+              background: "linear-gradient(135deg, #43a047 0%, #2e7d32 100%)",
+              color: "#fff", fontWeight: 800, fontSize: "1.15rem",
+              cursor: "pointer", letterSpacing: 1,
+              boxShadow: "0 6px 20px rgba(67,160,71,0.35)",
+            }}
+          >1게임</button>
         </div>
 
         {/* 결과 */}
