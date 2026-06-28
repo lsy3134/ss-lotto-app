@@ -754,9 +754,11 @@ function LottoPage() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const buf = await res.arrayBuffer();
       const wb = XLSX.read(buf, { type: "array" });
-      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]]);
-      rows.forEach((row) => {
-        const nums = [row["당첨번호"], row["Unnamed: 3"], row["Unnamed: 4"], row["Unnamed: 5"], row["Unnamed: 6"], row["Unnamed: 7"]]
+      // header:1 → 배열 모드. 헤더행(row[0]) 스킵, 데이터는 index 2~7이 6개 번호
+      const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+      rows.slice(1).forEach((row) => {
+        if (!Array.isArray(row)) return;
+        const nums = (row as unknown[]).slice(2, 8)
           .map(Number).filter((v) => Number.isInteger(v) && v >= 1 && v <= 45).sort((a, b) => a - b);
         if (nums.length === 6) { pastWinners.current.add(nums.join(",")); allDraws.current.push(nums); }
       });
@@ -778,7 +780,7 @@ function LottoPage() {
     if (nums.length < 6 || nums.length > 7) { alert("6개 또는 7개(보너스 포함) 숫자를 입력해주세요."); return; }
     nums.splice(6);
     const key = nums.join(",");
-    if (pastWinners.current.has(key)) { alert("이미 존재"); return; }
+    if (pastWinners.current.has(key)) { alert("이미 등록된 숫자입니다."); return; }
     pastWinners.current.add(key); allDraws.current.unshift(nums);
     localStorage.setItem("latestLotto", key); setInput(""); alert("추가 완료");
   }
