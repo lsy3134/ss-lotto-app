@@ -1286,8 +1286,8 @@ export default function SchedulePage() {
     [dateDaegeun, currentDateKey]
   );
 
-  // 일주일 생성 시 기존 배정 덮어쓰기 확인 모달
-  const [weekForceConfirm, setWeekForceConfirm] = useState(false);
+  // 일주일/3일 생성 시 기존 배정 덮어쓰기 확인 모달 (0=닫힘, 3=3일, 7=7일)
+  const [weekForceConfirm, setWeekForceConfirm] = useState(0);
 
   // 대근 모달 (어느 사람의 대근 선택 중인지)
   const [daegeunModal, setDaegeunModal] = useState<string | null>(null);
@@ -2211,8 +2211,9 @@ export default function SchedulePage() {
   }
 
   // force=false: 이미 배정된 날짜 스킵 (기존 동작)
-  // force=true : 7일 전체 재계산 후 이후 날짜도 recalculateFrom으로 연쇄 갱신
-  function generateWeek(force = false) {
+  // force=true : days일 전체 재계산 후 이후 날짜도 recalculateFrom으로 연쇄 갱신
+  // days: 생성할 날짜 수 (기본 7, 3일 생성 시 3)
+  function generateWeek(force = false, days = 7) {
     if (!selectedDate) return;
 
     // ── 시작일: selectedDate 기준 Date 산술 (excelDays 없어도 동작, 월 경계 포함) ──
@@ -2221,14 +2222,14 @@ export default function SchedulePage() {
     if (!sm) return;
     const startDate = new Date(viewYear, parseInt(sm[1], 10) - 1, parseInt(sm[2], 10));
 
-    // ── force=false: 7일 안에 기존 배정이 있으면 확인 모달 표시 후 중단 ──
+    // ── force=false: days일 안에 기존 배정이 있으면 확인 모달 표시 후 중단 ──
     if (!force) {
-      const hasExisting = Array.from({ length: 7 }, (_, di) => {
+      const hasExisting = Array.from({ length: days }, (_, di) => {
         const d = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + di);
         return makeDateKey(d);
       }).some(dl => !!assignmentData[dl]);
       if (hasExisting) {
-        setWeekForceConfirm(true);
+        setWeekForceConfirm(days);
         return;
       }
     }
@@ -2257,7 +2258,7 @@ export default function SchedulePage() {
 
     let lastDayLabel = startDateLabel;
 
-    for (let di = 0; di < 7; di++) {
+    for (let di = 0; di < days; di++) {
       const date = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + di);
       const dateLabel = makeDateKey(date);
       lastDayLabel = dateLabel;
@@ -2324,7 +2325,7 @@ export default function SchedulePage() {
         });
 
         if (count > 0) {
-          setRecalcMessage(`7일 재계산 완료 + 이후 ${count}일 연쇄 갱신되었습니다.`);
+          setRecalcMessage(`${days}일 재계산 완료 + 이후 ${count}일 연쇄 갱신되었습니다.`);
           setTimeout(() => setRecalcMessage(null), 4000);
         }
       } else {
@@ -2335,8 +2336,8 @@ export default function SchedulePage() {
       }
     }
 
-    // 힌트 표시 범위: 주간 배정 마지막 날 다음날
-    const afterDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + 7);
+    // 힌트 표시 범위: 배정 마지막 날 다음날
+    const afterDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + days);
     const afterDk = makeDateKey(afterDate).slice(0, 5);
     persistAssignedRange({ start: afterDk, end: afterDk });
 
@@ -4300,14 +4301,14 @@ export default function SchedulePage() {
           </div>
         );
       })()}
-      {/* ─── 일주일 생성 덮어쓰기 확인 모달 ─── */}
-      {weekForceConfirm && (
+      {/* ─── 일주일/3일 생성 덮어쓰기 확인 모달 ─── */}
+      {weekForceConfirm > 0 && (
         <div style={{
           position: "fixed", inset: 0, zIndex: 600,
           background: "rgba(0,0,0,0.6)",
           display: "flex", alignItems: "center", justifyContent: "center",
         }}
-          onClick={(e) => { if (e.target === e.currentTarget) setWeekForceConfirm(false); }}
+          onClick={(e) => { if (e.target === e.currentTarget) setWeekForceConfirm(0); }}
         >
           <div style={{
             background: "#fff", borderRadius: 20, padding: "24px 20px 20px",
@@ -4318,13 +4319,14 @@ export default function SchedulePage() {
               📅 이미 배정된 날짜가 있습니다
             </div>
             <div style={{ fontSize: "0.82rem", color: "#666", marginBottom: "20px", textAlign: "center", lineHeight: 1.5 }}>
-              선택한 7일 범위 안에<br />이미 배정된 날짜가 포함되어 있습니다.<br />어떻게 처리할까요?
+              선택한 {weekForceConfirm}일 범위 안에<br />이미 배정된 날짜가 포함되어 있습니다.<br />어떻게 처리할까요?
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "10px" }}>
               <button
                 onClick={() => {
-                  setWeekForceConfirm(false);
-                  generateWeek(false);
+                  const d = weekForceConfirm;
+                  setWeekForceConfirm(0);
+                  generateWeek(false, d);
                 }}
                 style={{
                   padding: "13px", borderRadius: "12px", border: "1.5px solid #374151",
@@ -4339,8 +4341,9 @@ export default function SchedulePage() {
               </button>
               <button
                 onClick={() => {
-                  setWeekForceConfirm(false);
-                  generateWeek(true);
+                  const d = weekForceConfirm;
+                  setWeekForceConfirm(0);
+                  generateWeek(true, d);
                 }}
                 style={{
                   padding: "13px", borderRadius: "12px", border: "none",
@@ -4348,14 +4351,14 @@ export default function SchedulePage() {
                   fontWeight: 700, fontSize: "0.95rem", cursor: "pointer",
                   textAlign: "left",
                 }}>
-                <div>🔄 선택 날짜부터 7일 다시 계산</div>
+                <div>🔄 선택 날짜부터 {weekForceConfirm}일 다시 계산</div>
                 <div style={{ fontSize: "0.72rem", fontWeight: 500, color: "#9ca3af", marginTop: "3px" }}>
                   입력 데이터 유지 · 순번 체인만 새로 계산 · 이후 날짜 연쇄 갱신
                 </div>
               </button>
             </div>
             <button
-              onClick={() => setWeekForceConfirm(false)}
+              onClick={() => setWeekForceConfirm(0)}
               style={{
                 width: "100%", padding: "10px", borderRadius: "10px",
                 border: "none", background: "#f3f4f6",
@@ -4771,6 +4774,9 @@ export default function SchedulePage() {
                   background: currentDateKey && assignmentData[currentDateKey] ? "#b45309" : undefined,
                 }}>
                 {currentDateKey && assignmentData[currentDateKey] ? "재배정 ⚠️" : "배정하기"}
+              </button>
+              <button onClick={() => generateWeek(false, 3)} style={{ ...S.primaryBtn, flex: 1, background: "#4b5563" }}>
+                3일 생성
               </button>
               <button onClick={() => generateWeek()} style={{ ...S.primaryBtn, flex: 1, background: "#374151" }}>
                 일주일 생성
