@@ -3907,77 +3907,93 @@ export default function SchedulePage() {
                     })
                   ) : (
                     <>
-                      <div style={{ width: "100%", fontSize: "0.72rem", color: "#aaa", marginBottom: "2px", paddingLeft: "2px" }}>
-                        ↕ 드래그해서 순서 변경
+                      <div style={{ width: "100%", fontSize: "0.72rem", color: "#aaa", marginBottom: "4px", paddingLeft: "2px" }}>
+                        ↕ 드래그해서 순서 변경 (그룹 내)
                       </div>
-                      {selectedNames.map((n, idx) => {
-                        const gs = GROUP_STYLE[getGroup(n) as "하우스" | "주말" | "주중"];
-                        const isDragSrc = chipDragRef.current.fromIdx === idx;
-                        const isDragOver = chipDragOver === idx;
+                      {(["하우스", "주말", "주중"] as const).map(grp => {
+                        const gs = GROUP_STYLE[grp];
+                        // selectedNames 순서 유지하면서 이 그룹 이름만 추출 (인덱스 보존)
+                        const grpEntries = selectedNames
+                          .map((n, idx) => ({ n, idx }))
+                          .filter(({ n }) => (getGroup(n) as string) === grp);
+                        if (grpEntries.length === 0) return null;
                         return (
-                          <div
-                            key={n}
-                            data-chip-index={String(idx)}
-                            draggable
-                            onDragStart={() => {
-                              chipDragRef.current.fromIdx = idx;
-                              chipDragRef.current.didDrag = false;
-                            }}
-                            onDragOver={(e) => { e.preventDefault(); if (chipDragOver !== idx) setChipDragOver(idx); }}
-                            onDragLeave={() => setChipDragOver(null)}
-                            onDrop={(e) => {
-                              e.preventDefault();
-                              if (chipDragRef.current.fromIdx !== null) {
-                                reorderSelectedChips(chipDragRef.current.fromIdx, idx, selectedNames);
-                                chipDragRef.current.didDrag = true;
-                              }
-                              chipDragRef.current.fromIdx = null;
-                              setChipDragOver(null);
-                            }}
-                            onDragEnd={() => {
-                              chipDragRef.current.fromIdx = null;
-                              setChipDragOver(null);
-                            }}
-                            onTouchStart={() => {
-                              chipDragRef.current.fromIdx = idx;
-                              chipDragRef.current.didDrag = false;
-                            }}
-                            onTouchMove={(e) => {
-                              const touch = e.touches[0];
-                              const el = document.elementFromPoint(touch.clientX, touch.clientY);
-                              const chip = (el?.closest?.("[data-chip-index]")) as HTMLElement | null;
-                              if (chip) {
-                                const i = parseInt(chip.dataset.chipIndex ?? "-1");
-                                if (i >= 0 && chipDragOver !== i) setChipDragOver(i);
-                              }
-                            }}
-                            onTouchEnd={() => {
-                              const from = chipDragRef.current.fromIdx;
-                              const to = chipDragOver;
-                              if (from !== null && to !== null && from !== to) {
-                                reorderSelectedChips(from, to, selectedNames);
-                                chipDragRef.current.didDrag = true;
-                              }
-                              chipDragRef.current.fromIdx = null;
-                              setChipDragOver(null);
-                            }}
-                            onClick={() => {
-                              if (chipDragRef.current.didDrag) { chipDragRef.current.didDrag = false; return; }
-                              toggleStatus(n, modalStatus as StatusType);
-                            }}
-                            style={{
-                              display: "inline-flex", alignItems: "center", gap: "5px",
-                              padding: "5px 10px", borderRadius: "999px", background: "#fff",
-                              border: `1.5px solid ${isDragOver ? gs.color : gs.color + "55"}`,
-                              fontSize: "0.83rem", fontWeight: 700,
-                              cursor: "grab", userSelect: "none", touchAction: "none",
-                              opacity: isDragSrc ? 0.4 : 1,
-                              boxShadow: isDragOver ? `0 0 0 2.5px ${gs.color}88` : "none",
-                              transition: "box-shadow 0.1s, opacity 0.1s",
-                            }}>
-                            <span style={{ width: 7, height: 7, borderRadius: "50%", background: gs.color, flexShrink: 0 }} />
-                            <span style={{ color: "#1a2035" }}>{n}</span>
-                            <span style={{ color: "#9aa3b5", fontWeight: 800, fontSize: "0.85rem", lineHeight: 1 }}>×</span>
+                          <div key={grp} style={{ width: "100%" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "5px", marginBottom: "5px" }}>
+                              <span style={{ color: gs.color, fontSize: "0.85rem", lineHeight: 1 }}>●</span>
+                              <span style={{ fontSize: "0.75rem", fontWeight: 800, color: gs.color }}>{grp} {grpEntries.length}명</span>
+                            </div>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "6px" }}>
+                              {grpEntries.map(({ n, idx }) => {
+                                const isDragSrc = chipDragRef.current.fromIdx === idx;
+                                const isDragOver = chipDragOver === idx;
+                                return (
+                                  <div
+                                    key={n}
+                                    data-chip-index={String(idx)}
+                                    draggable
+                                    onDragStart={() => {
+                                      chipDragRef.current.fromIdx = idx;
+                                      chipDragRef.current.didDrag = false;
+                                    }}
+                                    onDragOver={(e) => { e.preventDefault(); if (chipDragOver !== idx) setChipDragOver(idx); }}
+                                    onDragLeave={() => setChipDragOver(null)}
+                                    onDrop={(e) => {
+                                      e.preventDefault();
+                                      if (chipDragRef.current.fromIdx !== null) {
+                                        reorderSelectedChips(chipDragRef.current.fromIdx, idx, selectedNames);
+                                        chipDragRef.current.didDrag = true;
+                                      }
+                                      chipDragRef.current.fromIdx = null;
+                                      setChipDragOver(null);
+                                    }}
+                                    onDragEnd={() => {
+                                      chipDragRef.current.fromIdx = null;
+                                      setChipDragOver(null);
+                                    }}
+                                    onTouchStart={() => {
+                                      chipDragRef.current.fromIdx = idx;
+                                      chipDragRef.current.didDrag = false;
+                                    }}
+                                    onTouchMove={(e) => {
+                                      const touch = e.touches[0];
+                                      const el = document.elementFromPoint(touch.clientX, touch.clientY);
+                                      const chip = (el?.closest?.("[data-chip-index]")) as HTMLElement | null;
+                                      if (chip) {
+                                        const i = parseInt(chip.dataset.chipIndex ?? "-1");
+                                        if (i >= 0 && chipDragOver !== i) setChipDragOver(i);
+                                      }
+                                    }}
+                                    onTouchEnd={() => {
+                                      const from = chipDragRef.current.fromIdx;
+                                      const to = chipDragOver;
+                                      if (from !== null && to !== null && from !== to) {
+                                        reorderSelectedChips(from, to, selectedNames);
+                                        chipDragRef.current.didDrag = true;
+                                      }
+                                      chipDragRef.current.fromIdx = null;
+                                      setChipDragOver(null);
+                                    }}
+                                    onClick={() => {
+                                      if (chipDragRef.current.didDrag) { chipDragRef.current.didDrag = false; return; }
+                                      toggleStatus(n, modalStatus as StatusType);
+                                    }}
+                                    style={{
+                                      display: "inline-flex", alignItems: "center", gap: "5px",
+                                      padding: "5px 10px", borderRadius: "999px", background: "#fff",
+                                      border: `1.5px solid ${isDragOver ? gs.color : gs.color + "55"}`,
+                                      fontSize: "0.83rem", fontWeight: 700,
+                                      cursor: "grab", userSelect: "none", touchAction: "none",
+                                      opacity: isDragSrc ? 0.4 : 1,
+                                      boxShadow: isDragOver ? `0 0 0 2.5px ${gs.color}88` : "none",
+                                      transition: "box-shadow 0.1s, opacity 0.1s",
+                                    }}>
+                                    <span style={{ color: "#1a2035" }}>{n}</span>
+                                    <span style={{ color: "#9aa3b5", fontWeight: 800, fontSize: "0.85rem", lineHeight: 1 }}>×</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
                         );
                       })}
