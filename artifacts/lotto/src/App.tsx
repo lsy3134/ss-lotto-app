@@ -158,8 +158,8 @@ function scoreLottoCandidate(
   const ldFreq: Record<number, number> = {};
   nums.forEach(n => { const d = n % 10; ldFreq[d] = (ldFreq[d] || 0) + 1; });
   const maxLd = Math.max(...Object.values(ldFreq));
-  if (maxLd <= 1) { score += 5; reasons.push("끝자리 중복 없음"); }
-  else if (maxLd === 2) score += 3;
+  if (maxLd <= 1) { score += 5; reasons.push("끝자리 중복 없음 (+5점)"); }
+  else if (maxLd === 2) { score += 3; reasons.push("끝자리 2개 중복, 허용 범위 (+3점)"); }
 
   let maxC = 1, curC = 1;
   for (let i = 1; i < nums.length; i++) {
