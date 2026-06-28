@@ -3760,8 +3760,8 @@ export default function SchedulePage() {
               const isVipDiff = VIP_STATUSES.has(effS);
               const isDisabled = (() => {
                 if (isSelected) return false;
-                if (st === "조출") return !cho가능 || cho현재수 >= 4;
-                if (st === "후출") return hu현재수 >= 4;
+                if (st === "조출") return !cho가능 || cho현재수 >= 6;
+                if (st === "후출") return hu현재수 >= 6;
                 return false;
               })();
               items.push(
@@ -4709,7 +4709,7 @@ export default function SchedulePage() {
                         status: "조출" as StatusType,
                         icon: "⬆", color: "#ff6b35", bg: "#fff3ee",
                         label: "조출", sub: `1부 앞배치`,
-                        count: cho현재수, max: 4,
+                        count: cho현재수, max: 6,
                         disabled: !cho가능,
                         hint: !cho가능 ? "1부 6팀+" : ""
                       },
@@ -4717,7 +4717,7 @@ export default function SchedulePage() {
                         status: "후출" as StatusType,
                         icon: "⬇", color: "#2196f3", bg: "#e8f4ff",
                         label: "후출", sub: `2부 뒤배치`,
-                        count: hu현재수, max: 4, disabled: false, hint: ""
+                        count: hu현재수, max: 6, disabled: false, hint: ""
                       },
                       {
                         status: "찾근" as StatusType,
