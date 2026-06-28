@@ -1286,6 +1286,9 @@ export default function SchedulePage() {
     [dateDaegeun, currentDateKey]
   );
 
+  // 일주일 생성 시 기존 배정 덮어쓰기 확인 모달
+  const [weekForceConfirm, setWeekForceConfirm] = useState(false);
+
   // 대근 모달 (어느 사람의 대근 선택 중인지)
   const [daegeunModal, setDaegeunModal] = useState<string | null>(null);
 
@@ -2207,7 +2210,9 @@ export default function SchedulePage() {
     }
   }
 
-  function generateWeek() {
+  // force=false: 이미 배정된 날짜 스킵 (기존 동작)
+  // force=true : 7일 전체 재계산 후 이후 날짜도 recalculateFrom으로 연쇄 갱신
+  function generateWeek(force = false) {
     if (!selectedDate) return;
 
     // ── 시작일: selectedDate 기준 Date 산술 (excelDays 없어도 동작, 월 경계 포함) ──
@@ -2216,8 +2221,19 @@ export default function SchedulePage() {
     if (!sm) return;
     const startDate = new Date(viewYear, parseInt(sm[1], 10) - 1, parseInt(sm[2], 10));
 
+    // ── force=false: 7일 안에 기존 배정이 있으면 확인 모달 표시 후 중단 ──
+    if (!force) {
+      const hasExisting = Array.from({ length: 7 }, (_, di) => {
+        const d = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + di);
+        return makeDateKey(d);
+      }).some(dl => !!assignmentData[dl]);
+      if (hasExisting) {
+        setWeekForceConfirm(true);
+        return;
+      }
+    }
+
     // ── 시작 순번: 연속 배정이면 spare2 체인, 아니면 새 세션 ──
-    // 시작일 바로 전날에 배정 데이터가 있는지 확인 (월 경계 포함)
     const isPrevDayAssigned = (() => {
       const prevDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() - 1);
       const prevLabel = makeDateKey(prevDate);
@@ -2232,29 +2248,34 @@ export default function SchedulePage() {
     let currentNames = startName ? rotateNames([...names], startName) : [...names];
 
     const results: { day: string; result: DayResult; skipped?: boolean }[] = [];
+    // force 시 기존+신규 모두 포함 / 非force 시 신규만
     const newAssignments: Record<string, DayResult> = {};
 
     // excelDays / viewDays 빠른 조회 맵 (① excelDays 우선, ② viewDays fallback)
     const excelMap = new Map(excelDays.map(d => [d.dateLabel, d]));
     const viewMap = new Map(viewDays.map(d => [d.dateLabel, d]));
 
+    let lastDayLabel = startDateLabel;
+
     for (let di = 0; di < 7; di++) {
       const date = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + di);
-      const dateLabel = makeDateKey(date); // 항상 정상 생성 (빈값 없음)
+      const dateLabel = makeDateKey(date);
+      lastDayLabel = dateLabel;
 
       // excelDays 우선, 없으면 viewDays fallback으로 dayIdx 얻기
       const weekDay = excelMap.get(dateLabel) ?? viewMap.get(dateLabel);
       const dayIdx = weekDay?.dayIdx ?? (date.getDay() + 6) % 7;
 
-      // ── 이미 배정된 날짜: 결과 재사용, currentNames만 연속 업데이트 ──
-      if (assignmentData[dateLabel]) {
+      // ── 이미 배정된 날짜: force=false 시 재사용, force=true 시 재계산 ──
+      if (!force && assignmentData[dateLabel]) {
         const existingResult = assignmentData[dateLabel];
         results.push({ day: dateLabel, result: existingResult, skipped: true });
         currentNames = advanceNames(existingResult, currentNames);
         continue;
       }
 
-      // ── 새 배정 (계산 로직 변경 없음) ──
+      // ── 배정 계산 (입력 데이터 그대로 사용, 결과만 재계산) ──
+      // dateStatuses / dateDaegeun / dateStatusOrders / holidayMap 등 입력 데이터 불변
       const savedDay = dateStatuses[dateLabel] ?? {};
       const statuses: Record<string, StatusType> = {};
       const dgMap = dateDaegeun[dateLabel] ?? {};
@@ -2277,21 +2298,46 @@ export default function SchedulePage() {
     setDayResult(null);
     setPendingResult(null);
 
-    // ── 새 배정만 저장 ──
+    // ── 배정 저장 (force: 7일 전체 / 非force: 새 날짜만) ──
     if (Object.keys(newAssignments).length > 0) {
-      setAssignmentData(prev => ({ ...prev, ...newAssignments }));
+      const mergedAssignment = { ...assignmentData, ...newAssignments };
       const newSpare2: Record<string, string[]> = {};
       Object.entries(newAssignments).forEach(([d, r]) => {
         if (d && r.spare2.length > 0) newSpare2[d] = r.spare2;
       });
-      if (Object.keys(newSpare2).length > 0) {
-        setSavedSpare2(prev => ({ ...prev, ...newSpare2 }));
+      const mergedSpare2 = { ...savedSpare2, ...newSpare2 };
+
+      if (force) {
+        // 7일 이후 이미 배정된 날짜들도 새 spare2 체인으로 연쇄 재계산
+        const { updatedAssignment, updatedSpare2, count } = recalculateFrom(lastDayLabel, mergedAssignment, mergedSpare2);
+        setAssignmentData(updatedAssignment);
+        setSavedSpare2(updatedSpare2);
+
+        // 7일 범위 override 정리 (새 spare2 체인이 더 정확하므로)
+        const forcedKeys = new Set(Object.keys(newAssignments));
+        setOverrideStartByDate(prev => {
+          const hasAny = Object.keys(prev).some(k => forcedKeys.has(k));
+          if (!hasAny) return prev;
+          const next = Object.fromEntries(Object.entries(prev).filter(([k]) => !forcedKeys.has(k)));
+          localStorage.setItem(OVERRIDE_KEY, JSON.stringify(next));
+          return next;
+        });
+
+        if (count > 0) {
+          setRecalcMessage(`7일 재계산 완료 + 이후 ${count}일 연쇄 갱신되었습니다.`);
+          setTimeout(() => setRecalcMessage(null), 4000);
+        }
+      } else {
+        setAssignmentData(prev => ({ ...prev, ...newAssignments }));
+        if (Object.keys(newSpare2).length > 0) {
+          setSavedSpare2(prev => ({ ...prev, ...newSpare2 }));
+        }
       }
     }
 
-    // ↑ 힌트 표시 범위: 주간 배정 마지막 날 다음날 (Date 산술, 월 경계 포함)
+    // 힌트 표시 범위: 주간 배정 마지막 날 다음날
     const afterDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + 7);
-    const afterDk = makeDateKey(afterDate).slice(0, 5); // "MM.DD"
+    const afterDk = makeDateKey(afterDate).slice(0, 5);
     persistAssignedRange({ start: afterDk, end: afterDk });
 
     // ✓완료 표시용 배정 시각 기록 (새로 배정된 날짜만)
@@ -4254,6 +4300,73 @@ export default function SchedulePage() {
           </div>
         );
       })()}
+      {/* ─── 일주일 생성 덮어쓰기 확인 모달 ─── */}
+      {weekForceConfirm && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 600,
+          background: "rgba(0,0,0,0.6)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}
+          onClick={(e) => { if (e.target === e.currentTarget) setWeekForceConfirm(false); }}
+        >
+          <div style={{
+            background: "#fff", borderRadius: 20, padding: "24px 20px 20px",
+            maxWidth: 320, width: "90%",
+            boxShadow: "0 8px 40px rgba(0,0,0,0.28)",
+          }}>
+            <div style={{ fontWeight: 800, fontSize: "1rem", color: "#1a1a2e", marginBottom: "6px", textAlign: "center" }}>
+              📅 이미 배정된 날짜가 있습니다
+            </div>
+            <div style={{ fontSize: "0.82rem", color: "#666", marginBottom: "20px", textAlign: "center", lineHeight: 1.5 }}>
+              선택한 7일 범위 안에<br />이미 배정된 날짜가 포함되어 있습니다.<br />어떻게 처리할까요?
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "10px" }}>
+              <button
+                onClick={() => {
+                  setWeekForceConfirm(false);
+                  generateWeek(false);
+                }}
+                style={{
+                  padding: "13px", borderRadius: "12px", border: "1.5px solid #374151",
+                  background: "#f9fafb", color: "#374151",
+                  fontWeight: 700, fontSize: "0.95rem", cursor: "pointer",
+                  textAlign: "left",
+                }}>
+                <div>✅ 기존 배정 유지</div>
+                <div style={{ fontSize: "0.72rem", fontWeight: 500, color: "#888", marginTop: "3px" }}>
+                  배정된 날짜는 그대로 두고, 빈 날짜만 새로 생성
+                </div>
+              </button>
+              <button
+                onClick={() => {
+                  setWeekForceConfirm(false);
+                  generateWeek(true);
+                }}
+                style={{
+                  padding: "13px", borderRadius: "12px", border: "none",
+                  background: "#374151", color: "#fff",
+                  fontWeight: 700, fontSize: "0.95rem", cursor: "pointer",
+                  textAlign: "left",
+                }}>
+                <div>🔄 선택 날짜부터 7일 다시 계산</div>
+                <div style={{ fontSize: "0.72rem", fontWeight: 500, color: "#9ca3af", marginTop: "3px" }}>
+                  입력 데이터 유지 · 순번 체인만 새로 계산 · 이후 날짜 연쇄 갱신
+                </div>
+              </button>
+            </div>
+            <button
+              onClick={() => setWeekForceConfirm(false)}
+              style={{
+                width: "100%", padding: "10px", borderRadius: "10px",
+                border: "none", background: "#f3f4f6",
+                color: "#6b7280", fontWeight: 600, fontSize: "0.85rem", cursor: "pointer",
+              }}>
+              취소
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ─── 대근 선택 모달 ─── */}
       {daegeunModal && (
         <div style={{
@@ -4659,7 +4772,7 @@ export default function SchedulePage() {
                 }}>
                 {currentDateKey && assignmentData[currentDateKey] ? "재배정 ⚠️" : "배정하기"}
               </button>
-              <button onClick={generateWeek} style={{ ...S.primaryBtn, flex: 1, background: "#374151" }}>
+              <button onClick={() => generateWeek()} style={{ ...S.primaryBtn, flex: 1, background: "#374151" }}>
                 일주일 생성
               </button>
             </div>
