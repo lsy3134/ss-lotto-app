@@ -1289,6 +1289,18 @@ export default function SchedulePage() {
   // 일주일/3일 생성 시 기존 배정 덮어쓰기 확인 모달 (0=닫힘, 3=3일, 7=7일)
   const [weekForceConfirm, setWeekForceConfirm] = useState(0);
 
+  // 칩 드래그 상태 (드래그 중 인덱스 추적)
+  const chipDragRef = useRef<{ fromIdx: number | null; didDrag: boolean }>({ fromIdx: null, didDrag: false });
+  const [chipDragOver, setChipDragOver] = useState<number | null>(null);
+
+  function reorderSelectedChips(fromIdx: number, toIdx: number, ordered: string[]) {
+    if (fromIdx === toIdx || !currentDateKey) return;
+    const next = [...ordered];
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+    setDateStatusOrders(prev => ({ ...prev, [currentDateKey]: next }));
+  }
+
   // 대근 모달 (어느 사람의 대근 선택 중인지)
   const [daegeunModal, setDaegeunModal] = useState<string | null>(null);
 
@@ -3894,41 +3906,82 @@ export default function SchedulePage() {
                       );
                     })
                   ) : (
-                    (() => {
-                      const chipGrouped: Record<"하우스" | "주말" | "주중", string[]> = { 하우스: [], 주말: [], 주중: [] };
-                      selectedNames.forEach(n => {
-                        const g = getGroup(n) as "하우스" | "주말" | "주중";
-                        chipGrouped[g].push(n);
-                      });
-                      return (["하우스", "주말", "주중"] as const).map(grp => {
-                        const grpNames = chipGrouped[grp];
-                        if (grpNames.length === 0) return null;
-                        const gs = GROUP_STYLE[grp];
+                    <>
+                      <div style={{ width: "100%", fontSize: "0.72rem", color: "#aaa", marginBottom: "2px", paddingLeft: "2px" }}>
+                        ↕ 드래그해서 순서 변경
+                      </div>
+                      {selectedNames.map((n, idx) => {
+                        const gs = GROUP_STYLE[getGroup(n) as "하우스" | "주말" | "주중"];
+                        const isDragSrc = chipDragRef.current.fromIdx === idx;
+                        const isDragOver = chipDragOver === idx;
                         return (
-                          <div key={grp} style={{ width: "100%" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: "5px", marginBottom: "5px" }}>
-                              <span style={{ color: gs.color, fontSize: "0.85rem", lineHeight: 1 }}>●</span>
-                              <span style={{ fontSize: "0.75rem", fontWeight: 800, color: gs.color }}>{grp} {grpNames.length}명</span>
-                            </div>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "6px" }}>
-                              {grpNames.map(n => (
-                                <div key={n}
-                                  onClick={() => toggleStatus(n, modalStatus as StatusType)}
-                                  style={{
-                                    display: "inline-flex", alignItems: "center", gap: "5px",
-                                    padding: "5px 10px", borderRadius: "999px", background: "#fff",
-                                    border: `1.5px solid ${gs.color}55`,
-                                    fontSize: "0.83rem", fontWeight: 700, cursor: "pointer",
-                                  }}>
-                                  <span style={{ color: "#1a2035" }}>{n}</span>
-                                  <span style={{ color: "#9aa3b5", fontWeight: 800, fontSize: "0.85rem", lineHeight: 1 }}>×</span>
-                                </div>
-                              ))}
-                            </div>
+                          <div
+                            key={n}
+                            data-chip-index={String(idx)}
+                            draggable
+                            onDragStart={() => {
+                              chipDragRef.current.fromIdx = idx;
+                              chipDragRef.current.didDrag = false;
+                            }}
+                            onDragOver={(e) => { e.preventDefault(); if (chipDragOver !== idx) setChipDragOver(idx); }}
+                            onDragLeave={() => setChipDragOver(null)}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              if (chipDragRef.current.fromIdx !== null) {
+                                reorderSelectedChips(chipDragRef.current.fromIdx, idx, selectedNames);
+                                chipDragRef.current.didDrag = true;
+                              }
+                              chipDragRef.current.fromIdx = null;
+                              setChipDragOver(null);
+                            }}
+                            onDragEnd={() => {
+                              chipDragRef.current.fromIdx = null;
+                              setChipDragOver(null);
+                            }}
+                            onTouchStart={() => {
+                              chipDragRef.current.fromIdx = idx;
+                              chipDragRef.current.didDrag = false;
+                            }}
+                            onTouchMove={(e) => {
+                              const touch = e.touches[0];
+                              const el = document.elementFromPoint(touch.clientX, touch.clientY);
+                              const chip = (el?.closest?.("[data-chip-index]")) as HTMLElement | null;
+                              if (chip) {
+                                const i = parseInt(chip.dataset.chipIndex ?? "-1");
+                                if (i >= 0 && chipDragOver !== i) setChipDragOver(i);
+                              }
+                            }}
+                            onTouchEnd={() => {
+                              const from = chipDragRef.current.fromIdx;
+                              const to = chipDragOver;
+                              if (from !== null && to !== null && from !== to) {
+                                reorderSelectedChips(from, to, selectedNames);
+                                chipDragRef.current.didDrag = true;
+                              }
+                              chipDragRef.current.fromIdx = null;
+                              setChipDragOver(null);
+                            }}
+                            onClick={() => {
+                              if (chipDragRef.current.didDrag) { chipDragRef.current.didDrag = false; return; }
+                              toggleStatus(n, modalStatus as StatusType);
+                            }}
+                            style={{
+                              display: "inline-flex", alignItems: "center", gap: "5px",
+                              padding: "5px 10px", borderRadius: "999px", background: "#fff",
+                              border: `1.5px solid ${isDragOver ? gs.color : gs.color + "55"}`,
+                              fontSize: "0.83rem", fontWeight: 700,
+                              cursor: "grab", userSelect: "none", touchAction: "none",
+                              opacity: isDragSrc ? 0.4 : 1,
+                              boxShadow: isDragOver ? `0 0 0 2.5px ${gs.color}88` : "none",
+                              transition: "box-shadow 0.1s, opacity 0.1s",
+                            }}>
+                            <span style={{ width: 7, height: 7, borderRadius: "50%", background: gs.color, flexShrink: 0 }} />
+                            <span style={{ color: "#1a2035" }}>{n}</span>
+                            <span style={{ color: "#9aa3b5", fontWeight: 800, fontSize: "0.85rem", lineHeight: 1 }}>×</span>
                           </div>
                         );
-                      });
-                    })()
+                      })}
+                    </>
                   )}
                 </div>
 
