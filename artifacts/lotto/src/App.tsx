@@ -39,6 +39,144 @@ const C = {
 
 interface Game { type: string; nums: number[]; }
 
+interface ScoredGame {
+  nums: number[];
+  score: number;
+  reasons: string[];
+  hotCount: number;
+  coldCount: number;
+  oddCount: number;
+  ranges: Record<string, number>;
+  pairScore: number;
+}
+
+interface LottoStats {
+  freq: Record<number, number>;
+  hot10: number[];
+  cold10: number[];
+  hot30: number[];
+  cold30: number[];
+  pairFreq: Map<string, number>;
+  tripleFreq: Map<string, number>;
+  quadFreq: Map<string, number>;
+  pairTop20: [string, number][];
+  tripleTop20: [string, number][];
+  quadTop20: [string, number][];
+  sumMean: number;
+  sumStd: number;
+}
+
+function lc(arr: number[], r: number): number[][] {
+  const result: number[][] = [];
+  function h(start: number, cur: number[]) {
+    if (cur.length === r) { result.push([...cur]); return; }
+    for (let i = start; i < arr.length; i++) { cur.push(arr[i]); h(i + 1, cur); cur.pop(); }
+  }
+  h(0, []);
+  return result;
+}
+
+function computeLottoStats(draws: number[][]): LottoStats {
+  const freq: Record<number, number> = {};
+  for (let i = 1; i <= 45; i++) freq[i] = 0;
+  const pairFreq = new Map<string, number>();
+  const tripleFreq = new Map<string, number>();
+  const quadFreq = new Map<string, number>();
+  const sums: number[] = [];
+  const addMap = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) || 0) + 1);
+  draws.forEach(d => {
+    d.forEach(n => { freq[n] = (freq[n] || 0) + 1; });
+    sums.push(d.reduce((a, b) => a + b, 0));
+    lc(d, 2).forEach(c => addMap(pairFreq, c.join(",")));
+    lc(d, 3).forEach(c => addMap(tripleFreq, c.join(",")));
+    lc(d, 4).forEach(c => addMap(quadFreq, c.join(",")));
+  });
+  function topHC(n: number) {
+    const f: Record<number, number> = {};
+    for (let i = 1; i <= 45; i++) f[i] = 0;
+    draws.slice(0, n).forEach(d => d.forEach(x => { f[x] = (f[x] || 0) + 1; }));
+    const s = Object.entries(f).map(([k, v]) => ({ n: Number(k), c: v })).sort((a, b) => b.c - a.c);
+    return { hot: s.slice(0, 6).map(x => x.n), cold: s.slice(-6).map(x => x.n) };
+  }
+  const { hot: hot10, cold: cold10 } = topHC(10);
+  const { hot: hot30, cold: cold30 } = topHC(30);
+  const pairTop20 = [...pairFreq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20);
+  const tripleTop20 = [...tripleFreq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20);
+  const quadTop20 = [...quadFreq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20);
+  const sumMean = sums.reduce((a, b) => a + b, 0) / (sums.length || 1);
+  const sumStd = Math.sqrt(sums.reduce((a, b) => a + (b - sumMean) ** 2, 0) / (sums.length || 1));
+  return { freq, hot10, cold10, hot30, cold30, pairFreq, tripleFreq, quadFreq, pairTop20, tripleTop20, quadTop20, sumMean, sumStd };
+}
+
+function scoreLottoCandidate(
+  nums: number[], stats: LottoStats,
+  maxPairRaw: number, maxTripleRaw: number, maxQuadRaw: number,
+): ScoredGame {
+  let score = 0;
+  const reasons: string[] = [];
+
+  const hotCount = nums.filter(n => stats.hot30.includes(n)).length;
+  const coldCount = nums.filter(n => stats.cold30.includes(n)).length;
+  let hcPts = 0;
+  if (hotCount >= 2) hcPts += 10; else if (hotCount >= 1) hcPts += 5;
+  if (coldCount >= 2) hcPts += 10; else if (coldCount >= 1) hcPts += 5;
+  score += Math.min(hcPts, 20);
+  if (hotCount > 0 || coldCount > 0) reasons.push(`최근 30회 핫번호 ${hotCount}개 포함`);
+
+  const pairRaw = lc(nums, 2).reduce((s, c) => s + (stats.pairFreq.get(c.join(",")) || 0), 0);
+  const pairScore = maxPairRaw > 0 ? Math.round((pairRaw / maxPairRaw) * 20) : 10;
+  score += pairScore;
+  if (pairScore >= 15) reasons.push("동반출현(쌍) 점수 상위권");
+  else if (pairScore >= 10) reasons.push("동반출현(쌍) 점수 양호");
+
+  const tripleRaw = lc(nums, 3).reduce((s, c) => s + (stats.tripleFreq.get(c.join(",")) || 0), 0);
+  const triplePts = maxTripleRaw > 0 ? Math.round((tripleRaw / maxTripleRaw) * 15) : 7;
+  score += triplePts;
+  if (triplePts >= 10) reasons.push("3개 조합 출현빈도 높음");
+
+  const quadRaw = lc(nums, 4).reduce((s, c) => s + (stats.quadFreq.get(c.join(",")) || 0), 0);
+  score += maxQuadRaw > 0 ? Math.round((quadRaw / maxQuadRaw) * 10) : 5;
+
+  const oddCount = nums.filter(n => n % 2 !== 0).length;
+  const evenCount = 6 - oddCount;
+  if (oddCount === 3) { score += 10; reasons.push("홀짝 3:3 균형"); }
+  else if (oddCount === 2 || oddCount === 4) { score += 7; reasons.push(`홀짝 ${oddCount}:${evenCount} 양호`); }
+  else if (oddCount === 1 || oddCount === 5) score += 3;
+
+  const ranges: Record<string, number> = { "1-10": 0, "11-20": 0, "21-30": 0, "31-40": 0, "41-45": 0 };
+  nums.forEach(n => {
+    if (n <= 10) ranges["1-10"]++;
+    else if (n <= 20) ranges["11-20"]++;
+    else if (n <= 30) ranges["21-30"]++;
+    else if (n <= 40) ranges["31-40"]++;
+    else ranges["41-45"]++;
+  });
+  const covered = Object.values(ranges).filter(v => v > 0).length;
+  score += Math.round((covered / 5) * 10);
+  if (covered >= 4) reasons.push(`구간 ${covered}개 분포 안정적`);
+
+  const ldFreq: Record<number, number> = {};
+  nums.forEach(n => { const d = n % 10; ldFreq[d] = (ldFreq[d] || 0) + 1; });
+  const maxLd = Math.max(...Object.values(ldFreq));
+  if (maxLd <= 1) { score += 5; reasons.push("끝자리 중복 없음"); }
+  else if (maxLd === 2) score += 3;
+
+  let maxC = 1, curC = 1;
+  for (let i = 1; i < nums.length; i++) {
+    if (nums[i] === nums[i - 1] + 1) { curC++; if (curC > maxC) maxC = curC; } else curC = 1;
+  }
+  if (maxC <= 2) { score += 5; reasons.push("연속번호 과다 없음"); }
+  else if (maxC === 3) score += 2;
+
+  const sum = nums.reduce((a, b) => a + b, 0);
+  if (Math.abs(sum - stats.sumMean) <= stats.sumStd) { score += 5; reasons.push(`합계 ${sum} (통계 범위 내)`); }
+  else if (Math.abs(sum - stats.sumMean) <= 2 * stats.sumStd) { score += 2; reasons.push(`합계 ${sum}`); }
+  else reasons.push(`합계 ${sum}`);
+
+  reasons.push("과거 당첨 조합과 중복 아님");
+  return { nums, score: Math.min(100, score), reasons, hotCount, coldCount, oddCount, ranges, pairScore };
+}
+
 // ───────────────────────────────────────────
 // 인증 컨텍스트 (앱 전역)
 // ───────────────────────────────────────────
@@ -737,10 +875,12 @@ function LottoPage() {
   const isAdmin = user?.role === "admin";
   const allDraws = useRef<number[][]>([]);
   const pastWinners = useRef<Set<string>>(new Set());
-  const [hotText, setHotText] = useState("");
-  const [games, setGames] = useState<Game[]>([]);
+  const [stats, setStats] = useState<LottoStats | null>(null);
+  const [games, setGames] = useState<ScoredGame[]>([]);
+  const [tab, setTab] = useState<"rec" | "stats">("rec");
   const [log, setLog] = useState("");
   const [input, setInput] = useState("");
+  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     if (!isAdmin) { setLocation(`${base}/`); return; }
@@ -754,7 +894,6 @@ function LottoPage() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const buf = await res.arrayBuffer();
       const wb = XLSX.read(buf, { type: "array" });
-      // header:1 → 배열 모드. 헤더행(row[0]) 스킵, 데이터는 index 2~7이 6개 번호
       const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[wb.SheetNames[0]], { header: 1 });
       rows.slice(1).forEach((row) => {
         if (!Array.isArray(row)) return;
@@ -762,17 +901,16 @@ function LottoPage() {
           .map(Number).filter((v) => Number.isInteger(v) && v >= 1 && v <= 45).sort((a, b) => a - b);
         if (nums.length === 6) { pastWinners.current.add(nums.join(",")); allDraws.current.push(nums); }
       });
+      setStats(computeLottoStats(allDraws.current));
     } catch (e) {
       console.warn("lotto.xlsx 로드 실패 — 기본 모드로 실행:", e);
     }
   }
 
   function loadLatest() {
-    // 새 방식: 배열로 저장된 전체 등록 번호 로드
     const list: string[] = (() => {
       try { return JSON.parse(localStorage.getItem("lotto_userRegistered") ?? "[]") as string[]; } catch { return []; }
     })();
-    // 구 방식(단일 항목) 마이그레이션
     const legacy = localStorage.getItem("latestLotto");
     if (legacy && !list.includes(legacy)) list.unshift(legacy);
     list.forEach(key => {
@@ -791,34 +929,19 @@ function LottoPage() {
     const key = nums.join(",");
     if (pastWinners.current.has(key)) { alert("이미 등록된 숫자입니다."); return; }
     pastWinners.current.add(key); allDraws.current.unshift(nums);
-    // 전체 등록 목록에 추가 저장
     const list: string[] = (() => {
       try { return JSON.parse(localStorage.getItem("lotto_userRegistered") ?? "[]") as string[]; } catch { return []; }
     })();
     if (!list.includes(key)) list.unshift(key);
     localStorage.setItem("lotto_userRegistered", JSON.stringify(list));
-    localStorage.setItem("latestLotto", key); // 구 방식 호환
+    localStorage.setItem("latestLotto", key);
     setInput(""); alert("추가 완료");
   }
 
   function rand() { return Math.floor(Math.random() * 45) + 1; }
 
-  // 빈 배열 안전 처리: arr가 비어있으면 랜덤 유니크 숫자로 대체
-  function pick(arr: number[], n: number): number[] {
-    const src = arr.length >= n ? arr : Array.from({ length: 45 }, (_, i) => i + 1);
-    const copy = [...src]; const res: number[] = [];
-    while (res.length < n) {
-      const i = Math.floor(Math.random() * copy.length);
-      res.push(copy.splice(i, 1)[0]);
-    }
-    return res;
-  }
-
-  // 기존 nums와 중복 없이 source에서 count개 선택
   function safePick(base: number[], source: number[], count: number): number[] {
-    const pool = source.length >= count
-      ? source
-      : Array.from({ length: 45 }, (_, i) => i + 1);
+    const pool = source.length >= count ? source : Array.from({ length: 45 }, (_, i) => i + 1);
     const result: number[] = [];
     let guard = 0;
     while (result.length < count && guard++ < 10000) {
@@ -828,130 +951,79 @@ function LottoPage() {
     return result;
   }
 
-  // ── 공통 유효성 검사 ─────────────────────────────────────────
-  // noDuplast: 끝자리 중복 3개 이상 금지 (균형형만 적용)
-  function isValid(nums: number[], opts: { checkOddEven?: boolean; checkConsec?: boolean; checkLastDigit?: boolean } = {}): boolean {
-    const { checkOddEven = true, checkConsec = true, checkLastDigit = true } = opts;
-    if (nums.length !== 6) return false;
+  function isValid(nums: number[]): boolean {
+    if (nums.length !== 6 || new Set(nums).size !== 6) return false;
     if (nums.some((n) => !Number.isInteger(n) || n < 1 || n > 45)) return false;
-    if (new Set(nums).size !== 6) return false;                        // 중복 숫자 금지
-    if (pastWinners.current.has(nums.join(","))) return false;         // 과거 당첨 조합 제외
-    if (checkLastDigit) {
-      const last: Record<number, number> = {};
-      nums.forEach((n) => { const d = n % 10; last[d] = (last[d] || 0) + 1; });
-      if (Object.values(last).some((v) => v >= 3)) return false;       // 끝자리 3개 이상 중복 금지
+    if (pastWinners.current.has(nums.join(","))) return false;
+    const ld: Record<number, number> = {};
+    nums.forEach(n => { const d = n % 10; ld[d] = (ld[d] || 0) + 1; });
+    if (Object.values(ld).some(v => v >= 3)) return false;
+    let cnt = 1;
+    for (let i = 1; i < nums.length; i++) {
+      if (nums[i] === nums[i - 1] + 1) { cnt++; if (cnt > 3) return false; } else cnt = 1;
     }
-    if (checkConsec) {
-      let cnt = 1;
-      for (let i = 1; i < nums.length; i++) {
-        if (nums[i] === nums[i - 1] + 1) { cnt++; if (cnt > 3) return false; } else cnt = 1;
-      }
-    }
-    if (checkOddEven) {
-      const odd = nums.filter((n) => n % 2).length;
-      if (odd < 2 || odd > 4) return false;                            // 홀짝 2~4 유지
-    }
-    return true;
+    const odd = nums.filter(n => n % 2).length;
+    return odd >= 2 && odd <= 4;
   }
 
-  // ── Hot / Cold 계산 ──────────────────────────────────────────
-  // 최근 10회 기준, 1~45 전체 번호를 등장 횟수로 정렬
-  // → 상위 6개 = Hot(자주 나온 번호), 하위 6개 = Cold(거의 안 나온 번호)
-  // → 1~45 전체를 대상으로 하므로 hot ∩ cold = ∅ 보장
-  function getHotCold() {
-    if (allDraws.current.length < 10) return { hot: [] as number[], cold: [] as number[] };
-
-    const freq: Record<number, number> = {};
-    // 1~45 모든 번호를 0으로 초기화 → Cold 후보에 미등장 번호도 포함
-    for (let i = 1; i <= 45; i++) freq[i] = 0;
-    allDraws.current.slice(0, 10).forEach((draw) => {
-      draw.forEach((n) => { freq[n] = (freq[n] || 0) + 1; });
-    });
-
-    const entries = Object.entries(freq)
-      .map(([num, count]) => ({ num: Number(num), count: Number(count) }))
-      .sort((a, b) => b.count - a.count);   // 빈도 내림차순
-
-    const hot  = entries.slice(0, 6).map((x) => x.num);   // 상위 6개 (자주 등장)
-    const cold = entries.slice(-6).map((x) => x.num);      // 하위 6개 (거의 미등장)
-
-    return { hot, cold };
+  function makeCandidate(hot: number[], cold: number[], balanced: boolean): number[] | null {
+    const nums: number[] = [];
+    if (hot.length >= 2 && cold.length >= 2) {
+      if (balanced) {
+        nums.push(...safePick(nums, hot, 2));
+        nums.push(...safePick(nums, cold, 2));
+      } else {
+        nums.push(...safePick(nums, hot, Math.min(3, hot.length)));
+        nums.push(...safePick(nums, cold, 1));
+      }
+    }
+    let inner = 0;
+    while (nums.length < 6 && inner++ < 500) { const n = rand(); if (!nums.includes(n)) nums.push(n); }
+    nums.sort((a, b) => a - b);
+    return isValid(nums) ? nums : null;
   }
 
-  // ── 균형형 조합 ───────────────────────────────────────────────
-  // Hot 2개 + Cold 2개 + 랜덤 2개 / 중복·연속3·홀짝2~4 조건 통과
-  function generateBalanced(hot: number[], cold: number[]): number[] {
-    const useHotCold = hot.length >= 2 && cold.length >= 2;
-    for (let attempt = 0; attempt < 5000; attempt++) {
-      const nums: number[] = [];
-      if (useHotCold) {
-        nums.push(...safePick(nums, hot, 2));   // Hot에서 2개
-        nums.push(...safePick(nums, cold, 2));  // Cold에서 2개 (Hot과 중복 불가)
-      }
-      // 나머지 랜덤 채움
-      let inner = 0;
-      while (nums.length < 6 && inner++ < 500) {
-        const n = rand();
-        if (!nums.includes(n)) nums.push(n);
-      }
-      nums.sort((a, b) => a - b);
-      if (isValid(nums, { checkOddEven: true, checkConsec: true, checkLastDigit: true })) return nums;
-    }
-    // 최종 fallback: 홀짝 조건만 유지
-    for (let i = 0; i < 10000; i++) {
-      const nums = pick([], 6).sort((a, b) => a - b);
-      const odd = nums.filter((n) => n % 2).length;
-      if (odd >= 2 && odd <= 4 && new Set(nums).size === 6) return nums;
-    }
-    return pick([], 6).sort((a, b) => a - b);
-  }
+  function generateTopGames(count: 1 | 3 | 5) {
+    if (generating) return;
+    setGenerating(true);
+    setLog("AI 분석 중...");
+    const currentStats = stats ?? (allDraws.current.length >= 2 ? computeLottoStats(allDraws.current) : null);
+    if (!currentStats) { setLog("데이터 로딩 중입니다. 잠시 후 다시 시도해주세요."); setGenerating(false); return; }
+    const hot = currentStats.hot30;
+    const cold = currentStats.cold30;
 
-  // ── 변형 전략 조합 ───────────────────────────────────────────────
-  // Hot 3개 + Cold 1개 + 랜덤 2개 / 중복·연속3·홀짝2~4 조건 통과
-  function generateVariant(hot: number[], cold: number[]): number[] {
-    const useHotCold = hot.length >= 3 && cold.length >= 1;
-    for (let attempt = 0; attempt < 5000; attempt++) {
-      const nums: number[] = [];
-      if (useHotCold) {
-        nums.push(...safePick(nums, hot, 3));   // Hot에서 3개
-        nums.push(...safePick(nums, cold, 1));  // Cold에서 1개 (Hot과 중복 불가)
-      }
-      // 나머지 랜덤 채움
-      let inner = 0;
-      while (nums.length < 6 && inner++ < 500) {
-        const n = rand();
-        if (!nums.includes(n)) nums.push(n);
-      }
-      nums.sort((a, b) => a - b);
-      if (isValid(nums, { checkOddEven: true, checkConsec: true, checkLastDigit: true })) return nums;
+    const raw: { nums: number[]; pairRaw: number; tripleRaw: number; quadRaw: number }[] = [];
+    let attempts = 0;
+    while (raw.length < 1000 && attempts++ < 8000) {
+      const candidate = makeCandidate(hot, cold, Math.random() > 0.4);
+      if (!candidate) continue;
+      const pairRaw = lc(candidate, 2).reduce((s, c) => s + (currentStats.pairFreq.get(c.join(",")) || 0), 0);
+      const tripleRaw = lc(candidate, 3).reduce((s, c) => s + (currentStats.tripleFreq.get(c.join(",")) || 0), 0);
+      const quadRaw = lc(candidate, 4).reduce((s, c) => s + (currentStats.quadFreq.get(c.join(",")) || 0), 0);
+      raw.push({ nums: candidate, pairRaw, tripleRaw, quadRaw });
     }
-    // 최종 fallback: 홀짝 조건만 유지
-    for (let i = 0; i < 10000; i++) {
-      const nums = pick([], 6).sort((a, b) => a - b);
-      const odd = nums.filter((n) => n % 2).length;
-      if (odd >= 2 && odd <= 4 && new Set(nums).size === 6) return nums;
-    }
-    return pick([], 6).sort((a, b) => a - b);
-  }
 
-  function generate(count: 1 | 3 | 5 = 5) {
-    const { hot, cold } = getHotCold();
-    const hasData = allDraws.current.length >= 10;
-    setHotText(hasData
-      ? `🔥 핫(상위6): ${hot.join(", ")}  |  ❄️ 콜드(하위6): ${cold.join(", ")}`
-      : "📊 데이터 10회 미만 — 랜덤 모드로 생성"
-    );
-    const result: Game[] = [];
-    if (count === 1) {
-      result.push({ type: "균형형", nums: generateBalanced(hot, cold) });
-    } else if (count === 3) {
-      for (let i = 0; i < 2; i++) result.push({ type: "균형형", nums: generateBalanced(hot, cold) });
-      result.push({ type: "변형", nums: generateVariant(hot, cold) });
-    } else {
-      for (let i = 0; i < 3; i++) result.push({ type: "균형형", nums: generateBalanced(hot, cold) });
-      for (let i = 0; i < 2; i++) result.push({ type: "변형", nums: generateVariant(hot, cold) });
+    if (raw.length === 0) { setLog("후보 생성 실패. 다시 시도해주세요."); setGenerating(false); return; }
+
+    const maxPR = Math.max(...raw.map(c => c.pairRaw));
+    const maxTR = Math.max(...raw.map(c => c.tripleRaw));
+    const maxQR = Math.max(...raw.map(c => c.quadRaw));
+    const scored = raw.map(c => scoreLottoCandidate(c.nums, currentStats, maxPR, maxTR, maxQR));
+    scored.sort((a, b) => b.score - a.score);
+
+    const selected: ScoredGame[] = [];
+    const used = new Set<string>();
+    for (const g of scored) {
+      const key = g.nums.join(",");
+      if (used.has(key)) continue;
+      used.add(key);
+      selected.push(g);
+      if (selected.length >= count) break;
     }
-    setGames(result); setLog(`${count}게임 생성 완료`);
+
+    setGames(selected);
+    setLog(`${raw.length}개 후보 분석 → AI 점수 상위 ${count}게임 추천`);
+    setGenerating(false);
   }
 
   const ballColor = (n: number) => {
@@ -962,158 +1034,216 @@ function LottoPage() {
     return "#43a047";
   };
 
+  const BallRow = ({ nums }: { nums: number[] }) => (
+    <div style={{ display: "flex", justifyContent: "center", gap: 7, flexWrap: "nowrap", overflowX: "auto" }}>
+      {nums.map(n => (
+        <div key={n} style={{
+          width: 38, height: 38, minWidth: 38, borderRadius: "50%",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          color: "#fff", fontWeight: 800, fontSize: "0.88rem",
+          background: ballColor(n), boxShadow: `0 2px 6px ${ballColor(n)}88`,
+          flexShrink: 0,
+        }}>{n}</div>
+      ))}
+    </div>
+  );
+
+  const BTN_COLORS = [
+    "linear-gradient(135deg,#f0b429 0%,#d08000 100%)",
+    "linear-gradient(135deg,#f7a55a 0%,#d06010 100%)",
+    "linear-gradient(135deg,#43a047 0%,#2e7d32 100%)",
+  ];
+
   return (
     <div style={{
-      fontFamily: "'Noto Sans KR', 'Pretendard', 'Apple SD Gothic Neo', sans-serif",
-      background: "#eef1f8",
-      minHeight: "100dvh",
-      display: "flex",
-      flexDirection: "column",
-      padding: "0",
+      fontFamily: "'Noto Sans KR','Pretendard','Apple SD Gothic Neo',sans-serif",
+      background: "#eef1f8", minHeight: "100dvh",
+      display: "flex", flexDirection: "column",
     }}>
       {/* 헤더 */}
       <div style={{
         display: "flex", alignItems: "center", gap: 10,
-        padding: "16px 18px 12px",
-        borderBottom: "1px solid #e5e7eb",
-        background: "#fff",
+        padding: "16px 18px 12px", borderBottom: "1px solid #e5e7eb", background: "#fff",
       }}>
-        <button
-          onClick={() => setLocation(`${base}/`)}
-          style={{
-            padding: "8px 14px", background: "#f0f0f0",
-            border: "none", borderRadius: 10, cursor: "pointer",
-            fontSize: "0.9rem", color: "#555", fontWeight: 600,
-          }}
-        >← 홈</button>
-        <div style={{ flex: 1, textAlign: "center" }}>
-          <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#1a1a2e" }}>써니의 로또 추천🚀 </div>
+        <button onClick={() => setLocation(`${base}/`)} style={{
+          padding: "8px 14px", background: "#f0f0f0", border: "none",
+          borderRadius: 10, cursor: "pointer", fontSize: "0.9rem", color: "#555", fontWeight: 600,
+        }}>← 홈</button>
+        <div style={{ flex: 1, textAlign: "center", fontSize: "1.1rem", fontWeight: 800, color: "#1a1a2e" }}>
+          써니의 로또 추천🚀
         </div>
         <div style={{ width: 60 }} />
       </div>
 
+      {/* 탭 */}
+      <div style={{ display: "flex", background: "#fff", borderBottom: "1px solid #e5e7eb" }}>
+        {(["rec", "stats"] as const).map(t => (
+          <button key={t} onClick={() => setTab(t)} style={{
+            flex: 1, padding: "12px 0", border: "none", background: "transparent",
+            cursor: "pointer", fontWeight: 700, fontSize: "0.92rem",
+            color: tab === t ? "#7c6ef7" : "#9ca3af",
+            borderBottom: tab === t ? "2.5px solid #7c6ef7" : "2.5px solid transparent",
+            transition: "all 0.15s",
+          }}>{t === "rec" ? "🎰 번호 추천" : "📊 통계"}</button>
+        ))}
+      </div>
+
       {/* 본문 */}
-      <div style={{ flex: 1, padding: "20px 16px 100px", display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ flex: 1, padding: "16px 16px 100px", display: "flex", flexDirection: "column", gap: 14, overflowY: "auto" }}>
 
-        {/* 번호 입력 카드 */}
-        <div style={{
-          background: "#fff", borderRadius: 18,
-          padding: "16px", border: "1px solid #e5e7eb",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-        }}>
-          <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginBottom: 8, fontWeight: 600 }}>
-            이번주 당첨번호 등록
-          </div>
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="예: 3 11 15 29 35 44"
-            style={{
-              width: "100%", boxSizing: "border-box",
-              padding: "13px 14px", borderRadius: 12,
-              border: "1px solid #d1d5db",
-              background: "#f9fafb",
-              color: "#1a1a2e", fontSize: "1rem",
-              outline: "none",
-            }}
-          />
-          <button
-            onClick={addLatest}
-            style={{
-              width: "100%", marginTop: 10,
-              padding: "14px 0", borderRadius: 12, border: "none",
-              background: "linear-gradient(135deg, #7c6ef7 0%, #5b4de8 100%)",
-              color: "#fff", fontWeight: 700, fontSize: "1rem",
-              cursor: "pointer",
+        {/* ── 추천 탭 ── */}
+        {tab === "rec" && (<>
+
+          {/* 번호 입력 */}
+          <div style={{ background: "#fff", borderRadius: 18, padding: "16px", border: "1px solid #e5e7eb", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
+            <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginBottom: 8, fontWeight: 600 }}>이번주 당첨번호 등록</div>
+            <input value={input} onChange={(e) => setInput(e.target.value)}
+              placeholder="예: 3 11 15 29 35 44"
+              style={{
+                width: "100%", boxSizing: "border-box", padding: "13px 14px", borderRadius: 12,
+                border: "1px solid #d1d5db", background: "#f9fafb", color: "#1a1a2e", fontSize: "1rem", outline: "none",
+              }} />
+            <button onClick={addLatest} style={{
+              width: "100%", marginTop: 10, padding: "14px 0", borderRadius: 12, border: "none",
+              background: "linear-gradient(135deg,#7c6ef7 0%,#5b4de8 100%)",
+              color: "#fff", fontWeight: 700, fontSize: "1rem", cursor: "pointer",
               boxShadow: "0 4px 14px rgba(124,110,247,0.30)",
-            }}
-          >번호 추가</button>
-        </div>
-
-        {/* 핫/콜드 정보 */}
-        {hotText && (
-          <div style={{
-            background: "#fffbeb", borderRadius: 12,
-            padding: "10px 14px", border: "1px solid #fde68a",
-            fontSize: "0.8rem", color: "#92400e", lineHeight: 1.6,
-          }}>
-            {hotText}
+            }}>번호 추가</button>
           </div>
-        )}
 
-        {/* 생성 버튼 */}
-        <div style={{ display: "flex", gap: 10 }}>
-          <button
-            onClick={() => generate(5)}
-            style={{
-              flex: 1, padding: "18px 0", borderRadius: 16, border: "none",
-              background: "linear-gradient(135deg, #f0b429 0%, #d08000 100%)",
-              color: "#fff", fontWeight: 800, fontSize: "1.15rem",
-              cursor: "pointer", letterSpacing: 1,
-              boxShadow: "0 6px 20px rgba(240,180,41,0.38)",
-            }}
-          >5게임</button>
-          <button
-            onClick={() => generate(3)}
-            style={{
-              flex: 1, padding: "18px 0", borderRadius: 16, border: "none",
-              background: "linear-gradient(135deg, #f7a55a 0%, #d06010 100%)",
-              color: "#fff", fontWeight: 800, fontSize: "1.15rem",
-              cursor: "pointer", letterSpacing: 1,
-              boxShadow: "0 6px 20px rgba(247,165,90,0.35)",
-            }}
-          >3게임</button>
-          <button
-            onClick={() => generate(1)}
-            style={{
-              flex: 1, padding: "18px 0", borderRadius: 16, border: "none",
-              background: "linear-gradient(135deg, #43a047 0%, #2e7d32 100%)",
-              color: "#fff", fontWeight: 800, fontSize: "1.15rem",
-              cursor: "pointer", letterSpacing: 1,
-              boxShadow: "0 6px 20px rgba(67,160,71,0.35)",
-            }}
-          >1게임</button>
-        </div>
+          {/* AI 통계 요약 */}
+          {stats && (
+            <div style={{
+              background: "#fffbeb", borderRadius: 12, padding: "10px 14px",
+              border: "1px solid #fde68a", fontSize: "0.78rem", color: "#92400e", lineHeight: 1.8,
+            }}>
+              <div>🔥 핫(30회): {stats.hot30.join(", ")}</div>
+              <div>❄️ 콜드(30회): {stats.cold30.join(", ")}</div>
+              <div style={{ marginTop: 4, color: "#64748b" }}>
+                📈 합계 평균 {Math.round(stats.sumMean)} ± {Math.round(stats.sumStd)} · 데이터 {allDraws.current.length}회차
+              </div>
+            </div>
+          )}
 
-        {/* 결과 */}
-        {games.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {games.map((game, i) => (
-              <div key={i} style={{
-                background: "#fff", borderRadius: 16,
-                padding: "14px 16px", border: "1px solid #e5e7eb",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-              }}>
-                <div style={{
-                  fontSize: "0.72rem", color: "#9ca3af",
-                  fontWeight: 700, marginBottom: 10, letterSpacing: 0.5,
+          {/* 생성 버튼 */}
+          <div style={{ display: "flex", gap: 10 }}>
+            {([5, 3, 1] as const).map((n, idx) => (
+              <button key={n} onClick={() => generateTopGames(n)} disabled={generating} style={{
+                flex: 1, padding: "16px 0", borderRadius: 16, border: "none",
+                background: generating ? "#ccc" : BTN_COLORS[idx],
+                color: "#fff", fontWeight: 800, fontSize: "1.1rem",
+                cursor: generating ? "not-allowed" : "pointer", letterSpacing: 1,
+                boxShadow: generating ? "none" : "0 4px 14px rgba(0,0,0,0.15)",
+                transition: "all 0.15s",
+              }}>{generating ? "분석중..." : `${n}게임`}</button>
+            ))}
+          </div>
+
+          {/* 결과 카드 */}
+          {games.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {games.map((game, i) => (
+                <div key={i} style={{
+                  background: "#fff", borderRadius: 18, padding: "16px",
+                  border: "1px solid #e5e7eb", boxShadow: "0 2px 10px rgba(0,0,0,0.07)",
                 }}>
-                  게임 {i + 1} · {game.type}
-                </div>
-                <div style={{ overflowX: "auto" }}>
-                  <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "nowrap" }}>
-                    {game.nums.map((n) => (
-                      <div key={n} style={{
-                        width: 40, height: 40, minWidth: 40, borderRadius: "50%",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        color: "#fff", fontWeight: 800, fontSize: "1rem",
-                        background: ballColor(n),
-                        boxShadow: `0 2px 6px ${ballColor(n)}66`,
-                        flexShrink: 0,
-                      }}>{n}</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                    <div style={{ fontSize: "0.75rem", color: "#9ca3af", fontWeight: 700 }}>게임 {i + 1}</div>
+                    <div style={{
+                      background: game.score >= 80 ? "#4caf50" : game.score >= 65 ? "#f0b429" : "#ef5350",
+                      color: "#fff", fontWeight: 800, fontSize: "0.82rem",
+                      padding: "3px 12px", borderRadius: 20,
+                    }}>AI {game.score}점</div>
+                  </div>
+                  <BallRow nums={game.nums} />
+                  <div style={{
+                    marginTop: 12, padding: "10px 12px", background: "#f8f9ff",
+                    borderRadius: 12, fontSize: "0.72rem", color: "#4b5563", lineHeight: 1.9,
+                  }}>
+                    {game.reasons.map((r, j) => <div key={j}>✓ {r}</div>)}
+                  </div>
+                  <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {[
+                      `🔥핫 ${game.hotCount}개`,
+                      `❄️콜드 ${game.coldCount}개`,
+                      `홀 ${game.oddCount}:짝 ${6 - game.oddCount}`,
+                      `구간 ${Object.values(game.ranges).filter(v => v > 0).length}/5`,
+                      `쌍점수 ${game.pairScore}pt`,
+                    ].map((label, j) => (
+                      <span key={j} style={{
+                        background: "#eef1f8", borderRadius: 8,
+                        padding: "3px 9px", fontSize: "0.68rem", color: "#374151", fontWeight: 600,
+                      }}>{label}</span>
                     ))}
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
+          )}
+
+          {log && (
+            <div style={{ textAlign: "center", fontSize: "0.78rem", color: "#9ca3af", marginTop: 2 }}>{log}</div>
+          )}
+
+          <div style={{ textAlign: "center", fontSize: "0.67rem", color: "#b0b8ca", padding: "6px 0", lineHeight: 1.6 }}>
+            로또는 무작위 추첨이므로 본 추천은 통계 기반 참고용입니다.
           </div>
+        </>)}
+
+        {/* ── 통계 탭 ── */}
+        {tab === "stats" && !stats && (
+          <div style={{ textAlign: "center", color: "#9ca3af", paddingTop: 40 }}>통계 데이터를 불러오는 중...</div>
         )}
 
-        {log && (
-          <div style={{ textAlign: "center", fontSize: "0.8rem", color: "#9ca3af", marginTop: 4 }}>
-            {log}
+        {tab === "stats" && stats && (<>
+
+          <div style={{ background: "#fff", borderRadius: 16, padding: "16px", border: "1px solid #e5e7eb" }}>
+            <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#1a1a2e", marginBottom: 12 }}>🔥 최근 10회 핫번호</div>
+            <BallRow nums={stats.hot10} />
           </div>
-        )}
+
+          <div style={{ background: "#fff", borderRadius: 16, padding: "16px", border: "1px solid #e5e7eb" }}>
+            <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#1a1a2e", marginBottom: 12 }}>🔥 최근 30회 핫번호</div>
+            <BallRow nums={stats.hot30} />
+            <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#1a1a2e", margin: "14px 0 12px" }}>❄️ 최근 30회 콜드번호</div>
+            <BallRow nums={stats.cold30} />
+          </div>
+
+          {[
+            { title: "🔗 번호쌍 TOP 20", data: stats.pairTop20, color: "#7c6ef7" },
+            { title: "🔗🔗 3개 조합 TOP 20", data: stats.tripleTop20, color: "#f0b429" },
+            { title: "🔗🔗🔗 4개 조합 TOP 20", data: stats.quadTop20, color: "#43a047" },
+          ].map(({ title, data, color }) => (
+            <div key={title} style={{ background: "#fff", borderRadius: 16, padding: "16px", border: "1px solid #e5e7eb" }}>
+              <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#1a1a2e", marginBottom: 12 }}>{title}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {data.map(([key, cnt], i) => (
+                  <div key={key} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.78rem" }}>
+                    <span style={{ color: "#9ca3af", width: 20, textAlign: "right", flexShrink: 0 }}>{i + 1}</span>
+                    <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                      {key.split(",").map(Number).map(n => (
+                        <span key={n} style={{
+                          width: 26, height: 26, borderRadius: "50%",
+                          background: ballColor(n), color: "#fff",
+                          display: "inline-flex", alignItems: "center", justifyContent: "center",
+                          fontWeight: 800, fontSize: "0.68rem",
+                        }}>{n}</span>
+                      ))}
+                    </div>
+                    <div style={{ flex: 1, background: "#eef1f8", borderRadius: 6, height: 7, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${(cnt / (data[0]?.[1] ?? 1)) * 100}%`, background: color, borderRadius: 6 }} />
+                    </div>
+                    <span style={{ color: "#374151", fontWeight: 700, minWidth: 30, textAlign: "right", flexShrink: 0 }}>{cnt}회</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          <div style={{ textAlign: "center", fontSize: "0.67rem", color: "#b0b8ca", padding: "6px 0", lineHeight: 1.6 }}>
+            로또는 무작위 추첨이므로 본 통계는 참고용입니다.
+          </div>
+        </>)}
       </div>
     </div>
   );
