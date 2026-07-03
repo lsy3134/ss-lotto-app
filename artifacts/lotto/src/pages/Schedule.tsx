@@ -1668,13 +1668,11 @@ export default function SchedulePage() {
 
     // 날짜 이동 시 미저장 임시 결과 항상 초기화
     setPendingResult(null);
-
-    // 이미 배정된 날짜면 저장된 결과 자동 표시 (weekly 초기화)
+    // dayResult를 선택 날짜 기준으로 항상 초기화/복원 (다른 날짜 결과가 남지 않도록)
+    setDayResult(assignmentData[day.dateLabel] ?? null);
+    // 이미 배정된 날짜면 weekly 초기화 → 1일 배정 결과 화면으로 전환
     if (assignmentData[day.dateLabel]) {
-      setDayResult(assignmentData[day.dateLabel]);
       setWeekly([]);
-    } else {
-      setDayResult(null);
     }
   }
 
@@ -2265,8 +2263,11 @@ export default function SchedulePage() {
       const weekDay = excelMap.get(dateLabel) ?? viewMap.get(dateLabel);
       const dayIdx = weekDay?.dayIdx ?? (date.getDay() + 6) % 7;
 
-      // ── 실시간 배정과 동일한 방식: 날짜별 getStartNameForDate + rotateNames ──
-      const dayStartName = getStartNameForDate(dateLabel);
+      // ── 시작 이름: 루프 내 직전 결과 spare2[0] 우선 → getStartNameForDate → fallback ──
+      // 직전 날짜를 이번 루프에서 방금 계산했다면 그 spare2[0]을 state 우회하여 직접 사용
+      const prevLoopResult = results.length > 0 ? results[results.length - 1].result : null;
+      const prevSpare2First = prevLoopResult?.spare2?.[0] ?? null;
+      const dayStartName = prevSpare2First ?? getStartNameForDate(dateLabel);
       const dayNames = dayStartName ? rotateNames([...names], dayStartName) : [...names];
 
       // ── 배정 계산: 항상 해당 날짜의 최신 dateStatuses 기준으로 재계산 ──
@@ -4869,8 +4870,9 @@ export default function SchedulePage() {
 
           {/* ── 컷 기준 요약 ── */}
           {(displayResult || (currentDateKey && assignmentData[currentDateKey]) || (livePreview && names.length > 0)) && (() => {
-            // pendingResult → dayResult → assignmentData(재진입 복원) → livePreview 순 우선
-            const cutSource = pendingResult ?? dayResult ?? (currentDateKey ? assignmentData[currentDateKey] : undefined) ?? livePreview!;
+            // pendingResult → livePreview(실시간) → dayResult → assignmentData 순 우선
+            // livePreview가 항상 최신 dateStatuses 반영값이므로 assignmentData보다 우선
+            const cutSource = (pendingResult ?? livePreview ?? dayResult ?? (currentDateKey ? assignmentData[currentDateKey] : undefined))!;
             return (
             <div style={{
               background: "#f8f9ff", border: "1.5px solid #c5cae9", borderRadius: 12,
