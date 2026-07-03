@@ -2246,20 +2246,6 @@ export default function SchedulePage() {
       }
     }
 
-    // ── 시작 순번: 연속 배정이면 spare2 체인, 아니면 새 세션 ──
-    const isPrevDayAssigned = (() => {
-      const prevDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() - 1);
-      const prevLabel = makeDateKey(prevDate);
-      const spare2 = savedSpare2[prevLabel] ?? assignmentData[prevLabel]?.spare2;
-      return !!(spare2 && spare2.length > 0);
-    })();
-
-    // 연속이면 spare2 체인(getStartNameForDate), 아니면 override → queueStartName
-    const startName = isPrevDayAssigned
-      ? getStartNameForDate(startDateLabel)
-      : (overrideStartByDate[startDateLabel] ?? queueStartName);
-    let currentNames = startName ? rotateNames([...names], startName) : [...names];
-
     const results: { day: string; result: DayResult; skipped?: boolean }[] = [];
     // 항상 각 날짜의 최신 dateStatuses 기준으로 재계산 (force 여부와 무관)
     const newAssignments: Record<string, DayResult> = {};
@@ -2279,23 +2265,26 @@ export default function SchedulePage() {
       const weekDay = excelMap.get(dateLabel) ?? viewMap.get(dateLabel);
       const dayIdx = weekDay?.dayIdx ?? (date.getDay() + 6) % 7;
 
+      // ── 실시간 배정과 동일한 방식: 날짜별 getStartNameForDate + rotateNames ──
+      const dayStartName = getStartNameForDate(dateLabel);
+      const dayNames = dayStartName ? rotateNames([...names], dayStartName) : [...names];
+
       // ── 배정 계산: 항상 해당 날짜의 최신 dateStatuses 기준으로 재계산 ──
       const savedDay = dateStatuses[dateLabel] ?? {};
       const statuses: Record<string, StatusType> = {};
       const dgMap = dateDaegeun[dateLabel] ?? {};
-      currentNames.forEach((n) => {
+      dayNames.forEach((n) => {
         statuses[n] = resolveStatus(n, dateLabel, dayIdx, savedDay, dgMap);
       });
 
       const s1 = shift1Size, s2 = shift2Size, ss = singleSize;
 
       const result = mode === "2부제"
-        ? assignDouble(currentNames, statuses, s1, s2, dateDaegeun[dateLabel] ?? {}, dateStatusOrders[dateLabel] ?? [])
-        : assignSingle(currentNames, statuses, ss);
+        ? assignDouble(dayNames, statuses, s1, s2, dateDaegeun[dateLabel] ?? {}, dateStatusOrders[dateLabel] ?? [])
+        : assignSingle(dayNames, statuses, ss);
 
       results.push({ day: dateLabel, result, skipped: false });
       newAssignments[dateLabel] = result;
-      currentNames = advanceNames(result, currentNames);
     }
 
     setWeekly(results);
