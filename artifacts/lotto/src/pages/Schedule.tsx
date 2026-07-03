@@ -831,12 +831,13 @@ export default function SchedulePage() {
   // React state 업데이트 비동기 문제 방지: 현재 선택 날짜를 ref로 동기 추적
   const activeDateLabelRef = useRef<string>("");
 
-  const [mode, setMode] = useState<Mode>("단부제");
-  // 2부제: totalSize = 총팀수, shift1Size = 1부팀수, shift2Size = 총팀수 - 1부팀수
-  const [totalSize, setTotalSize] = useState<number>(70);
-  const [shift1Size, setShift1Size] = useState<number>(35);
+  // shift1Input: 빈 문자열 → 단부제 자동 판별, 숫자 입력 → 2부제 자동 판별
+  const [shift1Input, setShift1Input] = useState<string>("");
+  const mode: Mode = shift1Input.trim() !== "" ? "2부제" : "단부제";
+  const [totalSize, setTotalSize] = useState<number>(60);
+  const shift1Size = shift1Input.trim() !== "" ? Math.max(0, Number(shift1Input) || 0) : 0;
   const shift2Size = Math.max(0, totalSize - shift1Size);
-  const [singleSize, setSingleSize] = useState<number>(60);
+  const singleSize = totalSize;  // 단부제: 총 팀수를 그대로 사용
   // 팀수 설정 잠금 (저장 완료 상태)
   const [teamsLocked, setTeamsLocked] = useState<boolean>(false);
 
@@ -844,13 +845,14 @@ export default function SchedulePage() {
   function saveTeamSettings() {
     const dateLabel = activeDateLabelRef.current || selectedDate?.dateLabel;
     if (!dateLabel) return;
-    _writeTeamForDate(dateLabel, { mode, totalSize, shift1Size, singleSize, locked: true });
+    if (mode === "2부제" && shift1Size >= totalSize) return;  // 1부 >= 총 팀수 → 저장 불가
+    _writeTeamForDate(dateLabel, { mode, totalSize, shift1Size, singleSize: totalSize, locked: true });
     setTeamsLocked(true);
   }
   function unlockTeamSettings() {
     const dateLabel = activeDateLabelRef.current || selectedDate?.dateLabel;
     if (!dateLabel) return;
-    _writeTeamForDate(dateLabel, { mode, totalSize, shift1Size, singleSize, locked: false });
+    _writeTeamForDate(dateLabel, { mode, totalSize, shift1Size, singleSize: totalSize, locked: false });
     setTeamsLocked(false);
   }
   const [nameText, setNameText] = useState("");
@@ -1652,17 +1654,20 @@ export default function SchedulePage() {
     setDayOfWeek(day.dayIdx);
     const saved = _readTeamMap()[day.dateLabel];
     if (saved) {
-      // 해당 날짜에 저장된 팀수 설정 복원
-      setMode(saved.mode ?? "단부제");
-      setTotalSize(saved.totalSize ?? 70);
-      setShift1Size(saved.shift1Size ?? 35);
-      setSingleSize(saved.singleSize ?? 60);
+      // 마이그레이션: 저장된 mode 기준으로 shift1Input 복원
+      if (saved.mode === "2부제") {
+        setShift1Input(String(saved.shift1Size ?? 35));
+        setTotalSize(saved.totalSize ?? 60);
+      } else {
+        // 단부제: 기존 singleSize를 새 totalSize로 사용 (마이그레이션)
+        setShift1Input("");
+        setTotalSize(saved.singleSize ?? saved.totalSize ?? 60);
+      }
       setTeamsLocked(saved.locked ?? false);
     } else {
-      // 기본값으로 팀수만 리셋, 모드는 현재 그대로 유지
-      setTotalSize(70);
-      setShift1Size(35);
-      setSingleSize(60);
+      // 기본값으로 리셋
+      setShift1Input("");
+      setTotalSize(60);
       setTeamsLocked(false);
     }
 
@@ -2448,26 +2453,6 @@ export default function SchedulePage() {
       </div>
       {/* ─── 입력 단계 (항상 표시) ─── */}
         <div style={S.card}>
-          {/* 운영 모드 */}
-          <label style={S.label}>운영 방식</label>
-          {/* iOS 세그먼트 컨트롤 */}
-          <div style={S.segmentTrack}>
-            {(["2부제", "단부제"] as Mode[]).map((m) => (
-              <button key={m}
-                onClick={() => { setMode(m); if (teamsLocked) setTeamsLocked(false); }}
-                style={{
-                  ...S.segmentBtn,
-                  background: mode === m
-                    ? "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)"
-                    : "transparent",
-                  color: mode === m ? "#fff" : "#6b7280",
-                  boxShadow: mode === m ? "0 2px 8px rgba(26,26,46,0.3)" : "none",
-                }}>
-                {m === "2부제" ? "☀️ 2부제" : "🌙 단부제"}
-              </button>
-            ))}
-          </div>
-
           {/* ── 날짜 선택 + 휴무 교체 버튼 (같은 행) ── */}
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
             <label style={{ ...S.label, margin: 0, flex: 1 }}>
@@ -2923,47 +2908,64 @@ export default function SchedulePage() {
               )}
             </div>)
           ) : (
-            /* ── 팀수 입력 폼 ── */
+            /* ── 팀수 입력 폼 (통합: 총 팀수 필수, 1부 팀수 선택 → 자동 판별) ── */
             (<div style={{ marginBottom: "4px", marginTop: "14px" }}>
+              <div style={{ display: "flex", gap: "10px", marginBottom: "8px" }}>
+                <div style={{ flex: 1 }}>
+                  <label style={S.label}>
+                    총 팀수 <span style={{ color: "#e53935" }}>*</span>
+                  </label>
+                  <input type="number" value={totalSize} min={1}
+                    onChange={(e) => setTotalSize(Number(e.target.value))} style={S.numInput} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={S.label}>
+                    1부 팀수 <span style={{ color: "#9ca3af", fontSize: "0.7rem" }}>(선택)</span>
+                  </label>
+                  <input
+                    type="number"
+                    value={shift1Input}
+                    placeholder="비우면 단부제"
+                    min={1}
+                    onChange={(e) => setShift1Input(e.target.value)}
+                    style={S.numInput}
+                  />
+                </div>
+              </div>
+              {/* 1부 >= 총 팀수 오류 */}
+              {mode === "2부제" && shift1Size >= totalSize && (
+                <div style={{ color: "#c62828", fontSize: "0.78rem", marginBottom: "6px", fontWeight: 600 }}>
+                  ⚠️ 1부 팀수는 총 팀수보다 작아야 합니다
+                </div>
+              )}
+              {/* 계산식 요약 */}
               {mode === "2부제" ? (
-                <>
-                  <div style={{ display: "flex", gap: "10px", marginBottom: "8px" }}>
-                    <div style={{ flex: 1 }}>
-                      <label style={S.label}>총 팀수</label>
-                      <input type="number" value={totalSize} min={1}
-                        onChange={(e) => setTotalSize(Number(e.target.value))} style={S.numInput} />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <label style={S.label}>1부 팀수</label>
-                      <input type="number" value={shift1Size} min={1} max={totalSize}
-                        onChange={(e) => setShift1Size(Number(e.target.value))} style={S.numInput} />
-                    </div>
-                  </div>
-                  <div style={S.calcBox}>
-                    <span style={{ color: "#1565c0" }}>1부 {shift1Size}팀</span>
-                    <span style={{ color: "#aaa" }}>+</span>
-                    <span style={{ color: "#2e7d32" }}>2부 {shift2Size}팀</span>
-                    <span style={{ color: "#aaa" }}>=</span>
-                    <span style={{ fontWeight: 700 }}>총 {totalSize}팀</span>
-                    <span style={{ color: "#aaa", margin: "0 4px" }}>│</span>
-                    <span style={{ color: "#e65100", fontSize: "0.75rem" }}>1부스페어: {shift1Size + 1}번째</span>
-                    <span style={{ color: "#6a1b9a", fontSize: "0.75rem" }}>2부스페어: {totalSize + 2}번째~</span>
-                  </div>
-                </>
+                <div style={S.calcBox}>
+                  <span style={{ color: "#1565c0" }}>1부 {shift1Size}팀</span>
+                  <span style={{ color: "#aaa" }}>+</span>
+                  <span style={{ color: "#2e7d32" }}>2부 {shift2Size}팀</span>
+                  <span style={{ color: "#aaa" }}>=</span>
+                  <span style={{ fontWeight: 700 }}>총 {totalSize}팀</span>
+                  <span style={{ color: "#aaa", margin: "0 4px" }}>│</span>
+                  <span style={{ color: "#e65100", fontSize: "0.75rem" }}>1부스페어: {shift1Size + 1}번째</span>
+                  <span style={{ color: "#6a1b9a", fontSize: "0.75rem" }}>2부스페어: {totalSize + 2}번째~</span>
+                </div>
               ) : (
-                <div style={{ marginBottom: "8px" }}>
-                  <label style={S.label}>팀수</label>
-                  <input type="number" value={singleSize} min={1}
-                    onChange={(e) => setSingleSize(Number(e.target.value))} style={S.numInput} />
+                <div style={S.calcBox}>
+                  <span style={{ fontWeight: 700, color: "#374151" }}>단부제</span>
+                  <span style={{ color: "#aaa" }}>·</span>
+                  <span style={{ fontWeight: 700 }}>총 {totalSize}팀</span>
                 </div>
               )}
               <button
                 onClick={saveTeamSettings}
+                disabled={mode === "2부제" && shift1Size >= totalSize}
                 style={{
                   width: "100%", marginTop: "10px", padding: "11px",
                   borderRadius: "12px", border: "none",
-                  background: "#2e7d32", color: "#fff",
-                  fontWeight: 800, fontSize: "0.9rem", cursor: "pointer",
+                  background: (mode === "2부제" && shift1Size >= totalSize) ? "#9ca3af" : "#2e7d32",
+                  color: "#fff", fontWeight: 800, fontSize: "0.9rem",
+                  cursor: (mode === "2부제" && shift1Size >= totalSize) ? "not-allowed" : "pointer",
                 }}>
                 💾 저장하기
               </button>
