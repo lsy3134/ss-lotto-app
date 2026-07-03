@@ -2222,8 +2222,8 @@ export default function SchedulePage() {
     }
   }
 
-  // force=false: 이미 배정된 날짜 스킵 (기존 동작)
-  // force=true : days일 전체 재계산 후 이후 날짜도 recalculateFrom으로 연쇄 갱신
+  // force=false: N일 전체를 최신 dateStatuses로 재계산, 이후 날짜 연쇄 갱신 없음
+  // force=true : N일 전체를 최신 dateStatuses로 재계산 후 이후 날짜도 recalculateFrom으로 연쇄 갱신
   // days: 생성할 날짜 수 (기본 7, 3일 생성 시 3)
   function generateWeek(force = false, days = 7) {
     if (!selectedDate) return;
@@ -2261,7 +2261,7 @@ export default function SchedulePage() {
     let currentNames = startName ? rotateNames([...names], startName) : [...names];
 
     const results: { day: string; result: DayResult; skipped?: boolean }[] = [];
-    // force 시 기존+신규 모두 포함 / 非force 시 신규만
+    // 항상 각 날짜의 최신 dateStatuses 기준으로 재계산 (force 여부와 무관)
     const newAssignments: Record<string, DayResult> = {};
 
     // excelDays / viewDays 빠른 조회 맵 (① excelDays 우선, ② viewDays fallback)
@@ -2279,16 +2279,7 @@ export default function SchedulePage() {
       const weekDay = excelMap.get(dateLabel) ?? viewMap.get(dateLabel);
       const dayIdx = weekDay?.dayIdx ?? (date.getDay() + 6) % 7;
 
-      // ── 이미 배정된 날짜: force=false 시 재사용, force=true 시 재계산 ──
-      if (!force && assignmentData[dateLabel]) {
-        const existingResult = assignmentData[dateLabel];
-        results.push({ day: dateLabel, result: existingResult, skipped: true });
-        currentNames = advanceNames(existingResult, currentNames);
-        continue;
-      }
-
-      // ── 배정 계산 (입력 데이터 그대로 사용, 결과만 재계산) ──
-      // dateStatuses / dateDaegeun / dateStatusOrders / holidayMap 등 입력 데이터 불변
+      // ── 배정 계산: 항상 해당 날짜의 최신 dateStatuses 기준으로 재계산 ──
       const savedDay = dateStatuses[dateLabel] ?? {};
       const statuses: Record<string, StatusType> = {};
       const dgMap = dateDaegeun[dateLabel] ?? {};
@@ -4403,9 +4394,9 @@ export default function SchedulePage() {
                   fontWeight: 700, fontSize: "0.95rem", cursor: "pointer",
                   textAlign: "left",
                 }}>
-                <div>✅ 기존 배정 유지</div>
+                <div>✅ 최신 상태로 재계산 (이후 날짜 유지)</div>
                 <div style={{ fontSize: "0.72rem", fontWeight: 500, color: "#888", marginTop: "3px" }}>
-                  배정된 날짜는 그대로 두고, 빈 날짜만 새로 생성
+                  선택 범위만 최신 상태로 재계산 · 이후 날짜 연쇄 갱신 없음
                 </div>
               </button>
               <button
