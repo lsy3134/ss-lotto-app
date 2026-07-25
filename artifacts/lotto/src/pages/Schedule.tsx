@@ -1981,8 +1981,12 @@ export default function SchedulePage() {
     effectiveNames.forEach((n) => {
       baseStatuses[n] = resolveStatus(n, currentDateKey, dayIdx, baseSavedDay, currentDaegeun);
     });
+    // 번호 유무 판정용 baseResult: 타이밍 상태(조출/후출/찾근)로 인한 순서 클릭은 제외하고
+    // 나머지 수동 순서(휴무해제·당번 등)는 그대로 반영 → 실제 배정과 동일한 기준으로 판단
+    const baseStatusOrder = (dateStatusOrders[currentDateKey] ?? [])
+      .filter(n => !timingStatuses.has(savedDay[n] as StatusType));
     const baseResult = mode === "2부제"
-      ? assignDouble(effectiveNames, baseStatuses, shift1Size, shift2Size, currentDaegeun, [])
+      ? assignDouble(effectiveNames, baseStatuses, shift1Size, shift2Size, currentDaegeun, baseStatusOrder)
       : assignSingle(effectiveNames, baseStatuses, singleSize);
     const baseShift1Set = new Set(baseResult.shift1);
     const baseShift2Set = new Set(baseResult.shift2);
@@ -2006,7 +2010,7 @@ export default function SchedulePage() {
       ? assignDouble(effectiveNames, validatedStatuses, shift1Size, shift2Size, currentDaegeun, dateStatusOrders[currentDateKey] ?? [])
       : assignSingle(effectiveNames, validatedStatuses, singleSize);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveNames, dateStatuses, currentDateKey, selectedDate, dayOfWeek, customRosterMap, currentDaegeun, mode, shift1Size, shift2Size, singleSize, dateStatusOrders, holidayMap]);
+  }, [effectiveNames, dateStatuses, currentDateKey, selectedDate, dayOfWeek, customRosterMap, currentDaegeun, mode, shift1Size, shift2Size, singleSize, dateStatusOrders, holidayMap, sickLeave]);
 
   // 이름 → 배정 카테고리 맵 (live)
   const liveCategoryMap = useMemo<Record<string, "1부" | "1부스페어" | "2부" | "2부스페어" | "스페어" | "단부" | "찾근" | "제외">>(() => {
@@ -2204,8 +2208,12 @@ export default function SchedulePage() {
     en.forEach((n) => {
       baseStatuses[n] = resolveStatus(n, currentDateKey, dayIdx, baseSavedDay, currentDaegeun);
     });
+    // 번호 유무 판정용 baseResult: 타이밍 상태(조출/후출/찾근)로 인한 순서 클릭은 제외하고
+    // 나머지 수동 순서(휴무해제·당번 등)는 그대로 반영 → livePreview와 동일한 기준 (sickLeave도 반영)
+    const baseStatusOrder = (dateStatusOrders[currentDateKey] ?? [])
+      .filter(n => !timingStatuses.has(savedDay[n] as StatusType));
     const baseResult = mode === "2부제"
-      ? assignDouble(en, baseStatuses, shift1Size, shift2Size, currentDaegeun, [])
+      ? assignDouble(en, baseStatuses, shift1Size, shift2Size, currentDaegeun, baseStatusOrder)
       : assignSingle(en, baseStatuses, singleSize);
     const baseShift1Set = new Set(baseResult.shift1);
     const baseShift2Set = new Set(baseResult.shift2);
