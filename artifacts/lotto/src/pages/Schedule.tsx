@@ -2000,7 +2000,7 @@ export default function SchedulePage() {
       statuses[n] = resolveStatus(n, dateLabel, dayIdx, savedDay, dgMap);
     });
 
-    // ② 타이밍 제거 상태 (번호 유무 판정용)
+    // ② 타이밍 완전 제거 상태 (무효 시 복원용)
     const baseSavedDay: Record<string, StatusType> = {};
     for (const [name, st] of Object.entries(savedDay)) {
       if (!timingStatuses.has(st)) baseSavedDay[name] = st;
@@ -2010,62 +2010,92 @@ export default function SchedulePage() {
       baseStatuses[n] = resolveStatus(n, dateLabel, dayIdx, baseSavedDay, dgMap);
     });
 
-    // ③ baseResult: 타이밍 상태로 인한 순서 클릭 제외, 나머지 수동 순서는 그대로 반영
-    const baseStatusOrder = statusOrder.filter(
-      (n) => !timingStatuses.has(savedDay[n] as StatusType)
+    // ③ chakgunFreeResult: 찾근만 일반 근무자로 치환, 조출·후출·휴무 등은 현재 상태 유지
+    //    목적: "찾근 신청자들이 자연 순번으로 배정됐을 때 2부에 들어가는가?" 판단
+    //    찾근 우선권 없이 다른 찾근 신청자(예: 권희진)도 포함한 circularQueue로 배정하므로
+    //    권희진이 먼저 2부를 차지하면 유미선·이수예는 spare → 찾근 유효 판정됨
+    const chakgunFreeStatuses: Record<string, StatusType> = {};
+    namesList.forEach((n) => {
+      const st = statuses[n];
+      chakgunFreeStatuses[n] = st === "찾근" ? baseStatuses[n] : st;
+    });
+    const chakgunFreeStatusOrder = statusOrder.filter(
+      (n) => (savedDay[n] as StatusType) !== "찾근"
     );
-    const baseResult = mode === "2부제"
-      ? assignDouble(namesList, baseStatuses, shift1Size, shift2Size, dgMap, baseStatusOrder)
-      : assignSingle(namesList, baseStatuses, singleSize);
+    const chakgunFreeResult = mode === "2부제"
+      ? assignDouble(namesList, chakgunFreeStatuses, shift1Size, shift2Size, dgMap, chakgunFreeStatusOrder)
+      : assignSingle(namesList, chakgunFreeStatuses, singleSize);
 
-    const baseShift1Set = new Set(baseResult.shift1);
-    const baseShift2Set = new Set(baseResult.shift2);
+    const chakgunFreeShift1Set = new Set(chakgunFreeResult.shift1);
+    const chakgunFreeShift2Set = new Set(chakgunFreeResult.shift2);
 
-    // ④ 검증: 타이밍 상태(찾근·조출·후출) 유효성 검사
-    // 기준: baseResult — 타이밍 적용 전 정상 배정 결과
-    //
-    // 찾근: 정상 순번상 번호가 안 오는 사람만 유효
-    //   → baseResult에서 1부·2부 어디든 번호가 오면 무효 (원래 배정 위치 유지)
-    // 조출·후출: 정상 순번상 번호가 오는 사람만 유효
-    //   → baseResult에서 번호가 없으면 무효 (스페어 상태 유지)
-    const validatedStatuses = { ...statuses };
+    // ④ 찾근 유효성 판단 — chakgunFreeResult 기준 (loop에서 변하지 않는 고정값)
+    //    자연 순번으로 이미 2부에 들어가는 사람 → 어차피 투근무 → 찾근 불필요 → 무효
+    //    자연 순번에서 2부에 없는 사람 (스페어 포함) → 찾근 신청으로 투근무 가능 → 유효
     const invalidStatusReasons: Record<string, string> = {};
+    const invalidNames = new Set<string>();
+
     namesList.forEach((name) => {
-      const st = statuses[name];
-      if (st === "찾근") {
-        // 찾근: 번호가 오는 사람은 무효 (1부·2부 모두 포함)
-        const hasAnyNumber = mode === "2부제"
-          ? baseShift1Set.has(name) || baseShift2Set.has(name)
-          : baseShift1Set.has(name);
-        if (hasAnyNumber) {
-          validatedStatuses[name] = baseStatuses[name];
-          invalidStatusReasons[name] = "번호 옴";
-        }
-      } else if (st === "조출" || st === "후출") {
-        // 조출·후출: 번호가 안 오는 사람은 무효
-        // 기본 상태가 제외(휴무/당번 등)면 명시적 투입 → 검증 통과
-        if (!EXCLUDED_SET.has(baseStatuses[name] ?? "")) {
-          const hasOriginalNumber = mode === "2부제"
-            ? baseShift1Set.has(name) || baseShift2Set.has(name)
-            : baseShift1Set.has(name);
-          if (!hasOriginalNumber) {
-            validatedStatuses[name] = baseStatuses[name];
-            invalidStatusReasons[name] = "번호 안옴";
-          }
-        }
+      if (statuses[name] !== "찾근") return;
+      const inShift2 = mode === "2부제"
+        ? chakgunFreeShift2Set.has(name)
+        : chakgunFreeShift1Set.has(name);
+      if (inShift2) {
+        invalidStatusReasons[name] = "번호 옴";
+        invalidNames.add(name);
       }
     });
 
-    // ⑤ 유효 순서 (무효 인원 제거)
-    const invalidNameSet = new Set(Object.keys(invalidStatusReasons));
-    const validatedStatusOrder = statusOrder.filter((n) => !invalidNameSet.has(n));
+    // ⑤ 조출·후출 유효성 — 반복 계산 (최대 10회, 수렴 시 조기 종료)
+    //    상태가 변경될 때마다 현재 전체 상태 기준으로 재계산하므로
+    //    조출 추가·취소, 후출 추가·취소 모두 이 흐름 하나로 처리됨
+    //
+    //    규칙 (완화 없음):
+    //      조출·후출: 재계산된 현재 배정에서 번호가 오는 사람만 유효, 스페어는 무효
+    //
+    //    연쇄 변화 방지: 매 iteration에서 새로 무효가 된 사람만 추가,
+    //    더 이상 변화가 없으면 즉시 종료
+    const MAX_ITER = 10;
+    let iterResult!: DayResult;
 
-    // ⑥ 최종 배정
-    const result = mode === "2부제"
-      ? assignDouble(namesList, validatedStatuses, shift1Size, shift2Size, dgMap, validatedStatusOrder)
-      : assignSingle(namesList, validatedStatuses, singleSize);
+    for (let iter = 0; iter < MAX_ITER; iter++) {
+      // 현재 invalid 제외하고 statuses 구성 (무효인 경우 baseStatuses로 복원)
+      const iterStatuses: Record<string, StatusType> = {};
+      namesList.forEach((n) => {
+        iterStatuses[n] = invalidNames.has(n) ? baseStatuses[n] : statuses[n];
+      });
+      const iterStatusOrder = statusOrder.filter((n) => !invalidNames.has(n));
 
-    return { result, invalidStatusReasons };
+      iterResult = mode === "2부제"
+        ? assignDouble(namesList, iterStatuses, shift1Size, shift2Size, dgMap, iterStatusOrder)
+        : assignSingle(namesList, iterStatuses, singleSize);
+
+      const iterShift1Set = new Set(iterResult.shift1);
+      const iterAllSet = new Set([...iterResult.shift1, ...iterResult.shift2]);
+
+      // 이번 iteration에서 새로 무효가 된 조출·후출 찾기
+      const newlyInvalid: string[] = [];
+      namesList.forEach((name) => {
+        if (invalidNames.has(name)) return; // 이미 무효
+        const st = statuses[name];
+        if (st !== "조출" && st !== "후출") return;
+        // 기본 상태가 EXCLUDED(휴무·당번 등)면 명시적 투입 → 검증 통과
+        if (EXCLUDED_SET.has(baseStatuses[name] ?? "")) return;
+        const hasNumber = mode === "2부제"
+          ? iterAllSet.has(name)
+          : iterShift1Set.has(name);
+        if (!hasNumber) newlyInvalid.push(name);
+      });
+
+      if (newlyInvalid.length === 0) break; // 수렴 — 최종 배정 확정
+
+      newlyInvalid.forEach((name) => {
+        invalidNames.add(name);
+        invalidStatusReasons[name] = "번호 안옴";
+      });
+    }
+
+    return { result: iterResult, invalidStatusReasons };
   }
 
   // ── 실시간 배정 미리보기 ──────────────────────────
