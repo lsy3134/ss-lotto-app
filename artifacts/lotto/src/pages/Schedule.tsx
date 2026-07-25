@@ -122,6 +122,8 @@ interface DayResult {
   spare2FromTemporaryWork?: string[];
   excluded: string[];
   invalidStatusReasons?: Record<string, string>;
+  // 배정 검증 오류 (순환·비수렴 등 예외 상황)
+  validationError?: string;
   // 위치 표시용 메타 (후출: 2부 뒤에서3번째, 조출: 1부 앞)
   조출List?: string[];
   후출List?: string[];
@@ -2000,7 +2002,7 @@ export default function SchedulePage() {
       statuses[n] = resolveStatus(n, dateLabel, dayIdx, savedDay, dgMap);
     });
 
-    // ② 타이밍 완전 제거 상태 (무효 시 복원용)
+    // ② 타이밍 완전 제거 상태 (무효 시 복원·충돌 판단용)
     const baseSavedDay: Record<string, StatusType> = {};
     for (const [name, st] of Object.entries(savedDay)) {
       if (!timingStatuses.has(st)) baseSavedDay[name] = st;
@@ -2029,34 +2031,58 @@ export default function SchedulePage() {
     const chakgunFreeShift1Set = new Set(chakgunFreeResult.shift1);
     const chakgunFreeShift2Set = new Set(chakgunFreeResult.shift2);
 
-    // ④ 찾근 유효성 판단 — chakgunFreeResult 기준 (loop에서 변하지 않는 고정값)
-    //    자연 순번으로 이미 2부에 들어가는 사람 → 어차피 투근무 → 찾근 불필요 → 무효
-    //    자연 순번에서 2부에 없는 사람 (스페어 포함) → 찾근 신청으로 투근무 가능 → 유효
+    // ④ 선처리: 상태 충돌 + 찾근 유효성 — loop 밖에서 확정 (고정값, loop에서 변하지 않음)
+    //
+    //    [상태 충돌 규칙]
+    //    휴무·병가·당번·하우스(EXCLUDED) 상태인 사람이 타이밍 상태(찾근·조출·후출)를 신청하면
+    //    "상태 충돌"로 즉시 무효. 배제 상태를 먼저 취소한 뒤 타이밍 신청 필요.
+    //    → "명시적 투입" 예외 없음. 예외를 허용하면 휴무+조출 중 무엇이 우선인지 불명확해짐.
+    //
+    //    [찾근 유효성 규칙]
+    //    chakgunFreeResult(찾근 신청자 전원을 동시에 일반 근무자로 치환한 배정) 기준:
+    //    - 2부에 이미 자연 배정되는 사람 → 어차피 투근무 → 찾근 불필요 → 무효 ("번호 옴")
+    //    - 2부에 없는 사람(스페어 포함)  → 찾근으로 추가 투근무 가능 → 유효
+    //
+    //    [순서 독립성 보장]
+    //    찾근 신청자들이 동시에 일반 근무자로 치환되므로, 찾근 신청 순서(statusOrder)가
+    //    아닌 roster 순번만이 chakgunFreeResult를 결정 → 신청 순서 변경해도 결과 동일
     const invalidStatusReasons: Record<string, string> = {};
     const invalidNames = new Set<string>();
 
     namesList.forEach((name) => {
-      if (statuses[name] !== "찾근") return;
-      const inShift2 = mode === "2부제"
-        ? chakgunFreeShift2Set.has(name)
-        : chakgunFreeShift1Set.has(name);
-      if (inShift2) {
-        invalidStatusReasons[name] = "번호 옴";
+      const st = statuses[name];
+      if (!timingStatuses.has(st)) return;
+
+      // 배정 제외 상태 + 타이밍 상태 = 상태 충돌 → 무효 (예외 없음)
+      if (EXCLUDED_SET.has(baseStatuses[name] ?? "")) {
+        invalidStatusReasons[name] = "상태 충돌";
         invalidNames.add(name);
+        return;
+      }
+
+      // 찾근 전용: chakgunFreeResult의 shift2 기준으로 유효성 판단
+      if (st === "찾근") {
+        const inShift2 = mode === "2부제"
+          ? chakgunFreeShift2Set.has(name)
+          : chakgunFreeShift1Set.has(name);
+        if (inShift2) {
+          invalidStatusReasons[name] = "번호 옴";
+          invalidNames.add(name);
+        }
       }
     });
 
-    // ⑤ 조출·후출 유효성 — 반복 계산 (최대 10회, 수렴 시 조기 종료)
-    //    상태가 변경될 때마다 현재 전체 상태 기준으로 재계산하므로
-    //    조출 추가·취소, 후출 추가·취소 모두 이 흐름 하나로 처리됨
-    //
-    //    규칙 (완화 없음):
-    //      조출·후출: 재계산된 현재 배정에서 번호가 오는 사람만 유효, 스페어는 무효
-    //
-    //    연쇄 변화 방지: 매 iteration에서 새로 무효가 된 사람만 추가,
-    //    더 이상 변화가 없으면 즉시 종료
-    const MAX_ITER = 10;
+    // ⑤ 조출·후출 유효성 — 반복 계산 (최대 20회, 수렴 시 즉시 종료)
+    //    규칙(완화 없음): 재계산된 현재 배정에서 번호가 오는 사람만 유효, 스페어는 무효
+    //    - ④에서 이미 무효(EXCLUDED 충돌 포함)인 사람은 재검사 없이 유지
+    //    - 매 iteration에서 새 무효만 추가(단조 증가), 추가 없으면 즉시 수렴 종료
+    //    - 직전 iteration과 동일 무효 집합이 또 나오면 순환 오류로 중단
+    //    - 20회 내 수렴 못하면 오류 표시 (조용히 저장하지 않음)
+    const MAX_ITER = 20;
     let iterResult!: DayResult;
+    let validationError: string | undefined;
+    let converged = false;
+    let prevNewInvalidKey = "";
 
     for (let iter = 0; iter < MAX_ITER; iter++) {
       // 현재 invalid 제외하고 statuses 구성 (무효인 경우 baseStatuses로 복원)
@@ -2074,25 +2100,44 @@ export default function SchedulePage() {
       const iterAllSet = new Set([...iterResult.shift1, ...iterResult.shift2]);
 
       // 이번 iteration에서 새로 무효가 된 조출·후출 찾기
+      // ④에서 EXCLUDED 충돌 처리 완료 → 여기선 "번호 안옴"만 처리
       const newlyInvalid: string[] = [];
       namesList.forEach((name) => {
-        if (invalidNames.has(name)) return; // 이미 무효
+        if (invalidNames.has(name)) return; // 이미 무효 (EXCLUDED 충돌 포함)
         const st = statuses[name];
         if (st !== "조출" && st !== "후출") return;
-        // 기본 상태가 EXCLUDED(휴무·당번 등)면 명시적 투입 → 검증 통과
-        if (EXCLUDED_SET.has(baseStatuses[name] ?? "")) return;
         const hasNumber = mode === "2부제"
           ? iterAllSet.has(name)
           : iterShift1Set.has(name);
         if (!hasNumber) newlyInvalid.push(name);
       });
 
-      if (newlyInvalid.length === 0) break; // 수렴 — 최종 배정 확정
+      if (newlyInvalid.length === 0) {
+        converged = true;
+        break; // 수렴 — 최종 배정 확정
+      }
+
+      // 순환 감지: 직전 iteration과 정확히 동일한 집합이 새 무효로 등장하면 순환 오류
+      // (invalidNames는 단조 증가이므로 이론상 발생 불가이나 방어적으로 체크)
+      const newKey = [...newlyInvalid].sort().join(",");
+      if (newKey === prevNewInvalidKey) {
+        validationError = `순환 오류 (${iter + 1}회, 대상: ${newlyInvalid.join(", ")})`;
+        break;
+      }
+      prevNewInvalidKey = newKey;
 
       newlyInvalid.forEach((name) => {
         invalidNames.add(name);
         invalidStatusReasons[name] = "번호 안옴";
       });
+    }
+
+    if (!converged && !validationError) {
+      validationError = `${MAX_ITER}회 반복 후에도 배정이 확정되지 않았습니다`;
+    }
+
+    if (validationError) {
+      iterResult.validationError = validationError;
     }
 
     return { result: iterResult, invalidStatusReasons };
@@ -5750,6 +5795,22 @@ function DayResultView({ result, mode, compact = false }: {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: compact ? "4px" : "10px" }}>
+      {/* 배정 검증 오류 표시 (순환·비수렴 등 예외 상황) */}
+      {result.validationError && (
+        <div style={{
+          padding: "6px 12px",
+          borderRadius: "8px",
+          background: "#fee2e2",
+          color: "#991b1b",
+          fontSize: "0.8rem",
+          fontWeight: 600,
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
+        }}>
+          ⚠️ 배정 오류: {result.validationError}
+        </div>
+      )}
       {cats.map(({ key, label, badge }) => {
         // shift2에서 spare1 중복 제거 (1부스페어는 별도 행에 표시되므로)
         const rawPeople = result[key];
