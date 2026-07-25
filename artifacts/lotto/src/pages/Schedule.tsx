@@ -4940,9 +4940,9 @@ export default function SchedulePage() {
 
           {/* ── 컷 기준 요약 ── */}
           {(displayResult || (currentDateKey && assignmentData[currentDateKey]) || (livePreview && names.length > 0)) && (() => {
-            // pendingResult → livePreview(실시간) → dayResult → assignmentData 순 우선
-            // livePreview가 항상 최신 dateStatuses 반영값이므로 assignmentData보다 우선
-            const cutSource = (pendingResult ?? livePreview ?? dayResult ?? (currentDateKey ? assignmentData[currentDateKey] : undefined))!;
+            // pendingResult → dayResult → livePreview → assignmentData 순 우선
+            // 배정 결과(DayResultView)와 동일한 소스를 사용해야 컷 기준 요약과 배정 결과가 일치
+            const cutSource = (pendingResult ?? dayResult ?? livePreview ?? (currentDateKey ? assignmentData[currentDateKey] : undefined))!;
             return (
             <div style={{
               background: "#f8f9ff", border: "1.5px solid #c5cae9", borderRadius: 12,
