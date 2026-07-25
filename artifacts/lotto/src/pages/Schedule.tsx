@@ -1967,13 +1967,44 @@ export default function SchedulePage() {
     if (effectiveNames.length === 0) return null;
     const savedDay = currentDateKey ? (dateStatuses[currentDateKey] ?? {}) : {};
     const dayIdx = selectedDate?.dayIdx ?? dayOfWeek;
+    // assign()과 동일한 검증 로직 적용 → 배정 전 미리보기와 배정 결과가 항상 일치
     const statuses: Record<string, StatusType> = {};
     effectiveNames.forEach((n) => {
       statuses[n] = resolveStatus(n, currentDateKey, dayIdx, savedDay, currentDaegeun);
     });
+    const timingStatuses = new Set<StatusType>(["찾근", "조출", "후출"]);
+    const baseSavedDay: Record<string, StatusType> = {};
+    for (const [name, st] of Object.entries(savedDay)) {
+      if (!timingStatuses.has(st)) baseSavedDay[name] = st;
+    }
+    const baseStatuses: Record<string, StatusType> = {};
+    effectiveNames.forEach((n) => {
+      baseStatuses[n] = resolveStatus(n, currentDateKey, dayIdx, baseSavedDay, currentDaegeun);
+    });
+    const baseResult = mode === "2부제"
+      ? assignDouble(effectiveNames, baseStatuses, shift1Size, shift2Size, currentDaegeun, [])
+      : assignSingle(effectiveNames, baseStatuses, singleSize);
+    const baseShift1Set = new Set(baseResult.shift1);
+    const baseShift2Set = new Set(baseResult.shift2);
+    const validatedStatuses = { ...statuses };
+    effectiveNames.forEach((name) => {
+      const st = statuses[name];
+      if (st === "찾근") {
+        const invalid = mode === "2부제" ? baseShift2Set.has(name) : baseShift1Set.has(name);
+        if (invalid) validatedStatuses[name] = baseStatuses[name];
+      } else if (st === "조출" || st === "후출") {
+        // 기본 상태가 제외(휴무/당번 등)면 명시적 투입 → 검증 통과
+        if (!EXCLUDED_SET.has(baseStatuses[name] ?? "")) {
+          const hasOriginalNumber = mode === "2부제"
+            ? baseShift1Set.has(name) || baseShift2Set.has(name)
+            : baseShift1Set.has(name);
+          if (!hasOriginalNumber) validatedStatuses[name] = baseStatuses[name];
+        }
+      }
+    });
     return mode === "2부제"
-      ? assignDouble(effectiveNames, statuses, shift1Size, shift2Size, currentDaegeun, dateStatusOrders[currentDateKey] ?? [])
-      : assignSingle(effectiveNames, statuses, singleSize);
+      ? assignDouble(effectiveNames, validatedStatuses, shift1Size, shift2Size, currentDaegeun, dateStatusOrders[currentDateKey] ?? [])
+      : assignSingle(effectiveNames, validatedStatuses, singleSize);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveNames, dateStatuses, currentDateKey, selectedDate, dayOfWeek, customRosterMap, currentDaegeun, mode, shift1Size, shift2Size, singleSize, dateStatusOrders, holidayMap]);
 
@@ -2189,12 +2220,15 @@ export default function SchedulePage() {
           invalidStatusReasons[name] = mode === "2부제" ? "투번호 옴" : "번호 옴";
         }
       } else if (st === "조출" || st === "후출") {
-        const hasOriginalNumber = mode === "2부제"
-          ? baseShift1Set.has(name) || baseShift2Set.has(name)
-          : baseShift1Set.has(name);
-        if (!hasOriginalNumber) {
-          validatedStatuses[name] = baseStatuses[name];
-          invalidStatusReasons[name] = "번호 안옴";
+        // 기본 상태가 제외(휴무/당번 등)면 명시적 투입 → 검증 통과 (livePreview와 동일)
+        if (!EXCLUDED_SET.has(baseStatuses[name] ?? "")) {
+          const hasOriginalNumber = mode === "2부제"
+            ? baseShift1Set.has(name) || baseShift2Set.has(name)
+            : baseShift1Set.has(name);
+          if (!hasOriginalNumber) {
+            validatedStatuses[name] = baseStatuses[name];
+            invalidStatusReasons[name] = "번호 안옴";
+          }
         }
       }
     });
