@@ -538,19 +538,20 @@ function assignDouble(
   shift1Size: number,
   shift2Size: number,
   daegeunMap: Record<string, string> = {},  // 대근 유형 맵 (1부|2부|투라운드)
-  statusOrder: string[] = []                // 찾근/조출/후출 클릭 순서 (앞에 배치)
+  statusOrder: string[] = []                // 조출/후출/찾근 클릭 순서 (앞에 배치)
 ): DayResult {
-  const twoRound: string[] = [];   // 찾근 (1부+2부 투라운드)
-  const 조출List: string[] = [];   // 조출 (1부 앞 고정, 최대 6명)
-  const 후출List: string[] = [];   // 후출 (2부 뒤에서 3번째, 최대 6명)
-  const 대기List: string[] = [];   // 대기 (1부 출근대기 → spare1로 2부 첫번째 고정)
-  const 대근1부List: string[] = []; // 대근-1부: 1부만 근무 후 귀가
-  const 대근2부List: string[] = []; // 대근-2부: 2부만 근무
-  const vip1List: string[] = [];   // VIP 1부 전담
-  const vip2List: string[] = [];   // VIP 2부 전담
-  const vipBothList: string[] = []; // VIP 투근무 (1부+2부)
+  const daegeunTwoRound: string[] = []; // 대근-투라운드만 (1부+2부 고정 투근무)
+  const 찾근List: string[] = [];        // 찾근 신청자 (1부는 일반순번, 2부는 필요시 선발)
+  const 조출List: string[] = [];        // 조출 (1부 앞 고정, 최대 6명)
+  const 후출List: string[] = [];        // 후출 (2부 뒤에서 3번째, 최대 6명)
+  const 대기List: string[] = [];        // 대기 (1부 출근대기 → spare1로 2부 첫번째 고정)
+  const 대근1부List: string[] = [];     // 대근-1부: 1부만 근무 후 귀가
+  const 대근2부List: string[] = [];     // 대근-2부: 2부만 근무
+  const vip1List: string[] = [];        // VIP 1부 전담
+  const vip2List: string[] = [];        // VIP 2부 전담
+  const vipBothList: string[] = [];     // VIP 투근무 (1부+2부)
   const excluded: string[] = [];
-  const autoQueue: string[] = [];  // 일반 순번 대기열
+  const autoQueue: string[] = [];       // 일반 순번 대기열 (찾근 신청자 포함)
 
   // 클릭 순서 지정된 이름 먼저, 나머지는 roster 순서 fallback
   const orderSet = new Set(statusOrder);
@@ -558,11 +559,14 @@ function assignDouble(
 
   for (const name of order) {
     const s = statuses[name] ?? null;
-    if (s === "VIP1부")   { vip1List.push(name); }
+    if (s === "VIP1부")         { vip1List.push(name); }
     else if (s === "VIP2부")    { vip2List.push(name); }
     else if (s === "VIP투근무") { vipBothList.push(name); }
-    else if (s === "찾근")  { twoRound.push(name); }
-    else if (s === "대기") {
+    else if (s === "찾근") {
+      // ★ 찾근: 1부는 일반순번으로 배정 (고정 아님), 2부는 부족 시에만 우선 선발
+      찾근List.push(name);
+      autoQueue.push(name);
+    } else if (s === "대기") {
       대기List.push(name);
     } else if (s === "조출") {
       if (조출List.length < 6) 조출List.push(name); else autoQueue.push(name);
@@ -572,15 +576,16 @@ function assignDouble(
     else {
       // status null(정상근무) — 대근 유형 확인
       const dg = daegeunMap[name];
-      if (dg === "1부")           대근1부List.push(name);  // 1부만 출근
-      else if (dg === "2부")      대근2부List.push(name);  // 2부만 출근
-      else if (dg === "투라운드")  twoRound.push(name);    // 1부+2부 투라운드 대근
+      if (dg === "1부")           대근1부List.push(name);       // 1부만 출근
+      else if (dg === "2부")      대근2부List.push(name);       // 2부만 출근
+      else if (dg === "투라운드") daegeunTwoRound.push(name);  // 대근 투라운드: 고정 투근무
       else                        autoQueue.push(name);
     }
   }
 
-  // ── 1부 배치: VIP→ 찾근 → 조출 → 대근1부 → 일반순번 ── (대기자는 1부 미포함)
-  const fixed1 = [...vip1List, ...vipBothList, ...twoRound, ...조출List, ...대근1부List];
+  // ── 1부 배치: VIP → 대근투라운드 → 조출 → 대근1부 → 일반순번(찾근 포함) ──
+  // ★ 찾근은 fixed1에서 제외 → 자동 계산이 끝난 뒤 필요시에만 2부 선발
+  const fixed1 = [...vip1List, ...vipBothList, ...daegeunTwoRound, ...조출List, ...대근1부List];
   const avail1 = Math.max(0, shift1Size - fixed1.length);
   const shift1 = [...fixed1, ...autoQueue.slice(0, avail1)];
   // spare1: 명시적 대기자 우선, 없으면 autoQueue에서 순번상 다음번호
@@ -592,23 +597,30 @@ function assignDouble(
     : autoQueue.slice(avail1 + 1);
 
   // ── 2부 배치 ────────────────────────────────────────
-  // 순서: VIP → spare1(1부스페어) → 대근 → 일반순번 → 후출 → 순환보충(찾근+일반1부순번, 1부순서)
+  // 순서: VIP → spare1(1부스페어) → 대근 → 일반순번 → 후출 → 순환보충(찾근 우선, 1부순서)
   const shift1Regular = autoQueue.slice(0, avail1);
   // vip2List + vipBothList 는 일반 순번과 별개로 2부 앞에 고정
   const vip2Fixed = [...vip2List, ...vipBothList];
 
-  // 순환보충 후보: 찾근 + 일반1부순번 (조출·VIP·대근1부 제외), 1부 순서 그대로
-  // → 찾근과 순환보충을 분리하지 않고 1부 흐름 그대로 2부에 재투입
-  const circularQueue = [...shift1Regular.slice(0, 2), ...twoRound, ...shift1Regular.slice(2)];
+  // ★ 순환보충 후보: 찾근 신청자 우선(실제로 1부에 배정된 사람만) → 나머지 일반1부순번
+  // "자동 계산 후 부족 시 찾근에서 선발" 운영 규칙 구현
+  const 찾근Set = new Set(찾근List);
+  const 찾근InShift1 = shift1Regular.filter(n => 찾근Set.has(n));   // 1부에 배정된 찾근 신청자
+  const normalShift1 = shift1Regular.filter(n => !찾근Set.has(n));  // 찾근 아닌 일반 1부
+  const circularQueue = [...찾근InShift1, ...normalShift1];
 
   // 2부에서 normalFor2 + 순환보충이 채워야 할 총 자리 수
   const totalNeed2 = Math.max(0, shift2Size - vip2Fixed.length - spare1.length - 대근2부List.length - 후출List.length);
   const normalFor2 = remaining.slice(0, totalNeed2);
   const spare2fromRemaining = remaining.slice(totalNeed2);
 
-  // 인원 부족 시 circularQueue(찾근+일반순번) 앞번호부터 순환 보충
+  // 인원 부족 시 circularQueue(찾근 우선, 일반순번) 앞번호부터 순환 보충
   const extra2부Count = Math.max(0, totalNeed2 - normalFor2.length);
   const extra2부 = circularQueue.slice(0, extra2부Count);
+
+  // ★ 실제 투근무 목록: 대근투라운드 + 찾근 중 2부에 선발된 사람
+  const selectedChakgun = extra2부.filter(n => 찾근Set.has(n));
+  const twoRound = [...daegeunTwoRound, ...selectedChakgun];
 
   // ★ 2부 스페어: remaining 잔여 + 순환보충에서 못 들어간 사람
   const spare2fromShift1 = circularQueue.slice(extra2부Count);
@@ -638,7 +650,7 @@ function assignDouble(
       const firstSpareSet = new Set(firstSpares);
       const restSpares  = spare2.filter(n => !firstSpareSet.has(n)); // 화면용 spare2 순서는 유지, 다음날 큐에서만 우선권 분리
       const rest     = names.filter(n => !spare2Set.has(n) && !exclSet2.has(n));
-      const twoInRest = rest.filter(n => twoRoundSet.has(n));  // 찾근 (spare2 제외)
+      const twoInRest = rest.filter(n => twoRoundSet.has(n));  // 실제 투근무자 (spare2 제외)
       const normalRest = rest.filter(n => !twoRoundSet.has(n));
       const excls    = names.filter(n => exclSet2.has(n));
       nextDayQueue = [...firstSpares, ...twoInRest, ...restSpares, ...normalRest, ...excls];
@@ -666,7 +678,7 @@ function assignDouble(
   }
 
   // 대근 인원 통합 목록 (1부·2부·투라운드 — daegeunMap에 등록된 사람)
-  const daegeunList = [...대근1부List, ...대근2부List, ...twoRound.filter(n => daegeunMap[n] === "투라운드")];
+  const daegeunList = [...대근1부List, ...대근2부List, ...daegeunTwoRound];
   return { twoRound, shift1, spare1, shift2, spare2, spare2FromTemporaryWork, excluded, 조출List, 후출List, vip1List, vip2List, vipBothList, nextDayQueue, daegeunList };
 }
 
@@ -676,29 +688,35 @@ function assignSingle(
   statuses: Record<string, StatusType>,
   teamSize: number
 ): DayResult {
-  const twoRound: string[] = [];
-  const vipFixed: string[] = [];  // VIP (단부제: 앞에 고정)
+  const twoRound: string[] = [];        // 단부제에서는 항상 빈 배열 (투근무 없음)
+  const vipFixed: string[] = [];        // VIP (단부제: 앞에 고정)
+  const 조출List: string[] = [];        // 조출: shift1 앞쪽 배치 (번호 오는 사람 한정, 최대 6명)
+  const 후출List: string[] = [];        // 후출: shift1 뒤쪽 배치 (번호 오는 사람 한정, 최대 6명)
   const shift1: string[] = [];
   const spare2: string[] = [];
   const excluded: string[] = [];
-  const autoQueue: string[] = [];
+  const autoQueue: string[] = [];       // 찾근 신청자 포함 일반 순번
 
   for (const name of names) {
     const s = statuses[name] ?? null;
-    if (VIP_STATUSES.has(s)) { vipFixed.push(name); }
-    else if (s === "찾근") { twoRound.push(name); }
-    else if (EXCLUDED_SET.has(s ?? "")) { excluded.push(name); }
-    else { autoQueue.push(name); }
+    if (VIP_STATUSES.has(s))            { vipFixed.push(name); }
+    else if (s === "찾근")              { autoQueue.push(name); } // ★ 단부제: 찾근도 일반 순번
+    else if (s === "조출")              {
+      // buildValidatedResult 검증을 통과한 경우만 여기까지 옴 (번호 오는 사람 보장)
+      if (조출List.length < 6) 조출List.push(name); else autoQueue.push(name);
+    } else if (s === "후출") {
+      if (후출List.length < 6) 후출List.push(name); else autoQueue.push(name);
+    } else if (EXCLUDED_SET.has(s ?? "")) { excluded.push(name); }
+    else                                { autoQueue.push(name); }
   }
 
-  // VIP → 찾근 → 일반 순번
-  const avail = Math.max(0, teamSize - vipFixed.length - twoRound.length);
-  vipFixed.forEach(n => shift1.push(n));
-  twoRound.forEach(n => shift1.push(n));
-  autoQueue.forEach((n, i) => {
-    if (i < avail) shift1.push(n); else spare2.push(n);
-  });
-  const spare2FromTemporaryWork = spare2.filter(n => twoRound.includes(n));
+  // ★ 단부제 배정 순서: VIP → 조출(앞) → 일반순번(찾근 포함) → 후출(뒤)
+  const totalFixed = vipFixed.length + 조출List.length + 후출List.length;
+  const avail = Math.max(0, teamSize - totalFixed);
+  const assignedFromQueue = autoQueue.slice(0, avail);
+  shift1.push(...vipFixed, ...조출List, ...assignedFromQueue, ...후출List);
+  spare2.push(...autoQueue.slice(avail));
+  const spare2FromTemporaryWork: string[] = []; // 단부제: 투근무 없으므로 항상 빈 배열
 
   // 다음날 순번: spare2=0 이면 마지막 근무자 다음부터 회전
   let nextDayQueue: string[];
@@ -731,7 +749,7 @@ function assignSingle(
     }
   }
 
-  return { twoRound, shift1, spare1: [], shift2: [], spare2, spare2FromTemporaryWork, excluded, nextDayQueue, daegeunList: [] };
+  return { twoRound, shift1, spare1: [], shift2: [], spare2, spare2FromTemporaryWork, excluded, 조출List, 후출List, nextDayQueue, daegeunList: [] };
 }
 
 // ── 다음날 예상 순번 계산기 ───────────────────────────
@@ -1961,17 +1979,111 @@ export default function SchedulePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [names, currentDateKey, overrideStartByDate, viewYear, savedSpare2, assignmentData, queueStartName]);
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // buildValidatedResult: 타이밍 상태(조출/후출/찾근) 검증 후 최종 배정 결과 반환
+  // livePreview · assign() · recalculateFrom() · generateWeek() 모두 이 경로를 거침
+  // → 배정 경로 4개가 항상 동일한 결과를 보장하는 단일 진실 공급원
+  // ─────────────────────────────────────────────────────────────────────────
+  function buildValidatedResult(
+    namesList: string[],
+    savedDay: Record<string, StatusType>,
+    dateLabel: string,
+    dayIdx: number,
+    dgMap: Record<string, DaegeunType>,
+    statusOrder: string[]
+  ): { result: DayResult; invalidStatusReasons: Record<string, string> } {
+    const timingStatuses = new Set<StatusType>(["찾근", "조출", "후출"]);
+
+    // ① 전체 상태 (타이밍 포함)
+    const statuses: Record<string, StatusType> = {};
+    namesList.forEach((n) => {
+      statuses[n] = resolveStatus(n, dateLabel, dayIdx, savedDay, dgMap);
+    });
+
+    // ② 타이밍 제거 상태 (번호 유무 판정용)
+    const baseSavedDay: Record<string, StatusType> = {};
+    for (const [name, st] of Object.entries(savedDay)) {
+      if (!timingStatuses.has(st)) baseSavedDay[name] = st;
+    }
+    const baseStatuses: Record<string, StatusType> = {};
+    namesList.forEach((n) => {
+      baseStatuses[n] = resolveStatus(n, dateLabel, dayIdx, baseSavedDay, dgMap);
+    });
+
+    // ③ baseResult: 타이밍 상태로 인한 순서 클릭 제외, 나머지 수동 순서는 그대로 반영
+    const baseStatusOrder = statusOrder.filter(
+      (n) => !timingStatuses.has(savedDay[n] as StatusType)
+    );
+    const baseResult = mode === "2부제"
+      ? assignDouble(namesList, baseStatuses, shift1Size, shift2Size, dgMap, baseStatusOrder)
+      : assignSingle(namesList, baseStatuses, singleSize);
+
+    const baseShift1Set = new Set(baseResult.shift1);
+    const baseShift2Set = new Set(baseResult.shift2);
+
+    // ④ 검증: 스페어 조출/후출 무효화 · 2부 배정자 찾근 무효화
+    const validatedStatuses = { ...statuses };
+    const invalidStatusReasons: Record<string, string> = {};
+    namesList.forEach((name) => {
+      const st = statuses[name];
+      if (st === "찾근") {
+        const invalid = mode === "2부제" ? baseShift2Set.has(name) : baseShift1Set.has(name);
+        if (invalid) {
+          validatedStatuses[name] = baseStatuses[name];
+          invalidStatusReasons[name] = mode === "2부제" ? "투번호 옴" : "번호 옴";
+        }
+      } else if (st === "조출" || st === "후출") {
+        // 기본 상태가 제외(휴무/당번 등)면 명시적 투입 → 검증 통과
+        if (!EXCLUDED_SET.has(baseStatuses[name] ?? "")) {
+          const hasOriginalNumber = mode === "2부제"
+            ? baseShift1Set.has(name) || baseShift2Set.has(name)
+            : baseShift1Set.has(name);
+          if (!hasOriginalNumber) {
+            validatedStatuses[name] = baseStatuses[name];
+            invalidStatusReasons[name] = "번호 안옴";
+          }
+        }
+      }
+    });
+
+    // ⑤ 유효 순서 (무효 인원 제거)
+    const invalidNameSet = new Set(Object.keys(invalidStatusReasons));
+    const validatedStatusOrder = statusOrder.filter((n) => !invalidNameSet.has(n));
+
+    // ⑥ 최종 배정
+    const result = mode === "2부제"
+      ? assignDouble(namesList, validatedStatuses, shift1Size, shift2Size, dgMap, validatedStatusOrder)
+      : assignSingle(namesList, validatedStatuses, singleSize);
+
+    return { result, invalidStatusReasons };
+  }
+
   // ── 실시간 배정 미리보기 ──────────────────────────
-  // generateWeek/recalculateFrom과 동일한 패턴: dateStatuses → isAutoOff 순으로 적용
+  // buildValidatedResult를 통해 assign() · recalculateFrom() · generateWeek()와 동일한 경로
   const livePreview = useMemo(() => {
     if (effectiveNames.length === 0) return null;
     const savedDay = currentDateKey ? (dateStatuses[currentDateKey] ?? {}) : {};
     const dayIdx = selectedDate?.dayIdx ?? dayOfWeek;
-    // assign()과 동일한 검증 로직 적용 → 배정 전 미리보기와 배정 결과가 항상 일치
-    const statuses: Record<string, StatusType> = {};
-    effectiveNames.forEach((n) => {
-      statuses[n] = resolveStatus(n, currentDateKey, dayIdx, savedDay, currentDaegeun);
-    });
+    const { result } = buildValidatedResult(
+      effectiveNames,
+      savedDay,
+      currentDateKey,
+      dayIdx,
+      currentDaegeun,
+      dateStatusOrders[currentDateKey] ?? []
+    );
+    return result;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveNames, dateStatuses, currentDateKey, selectedDate, dayOfWeek, customRosterMap, currentDaegeun, mode, shift1Size, shift2Size, singleSize, dateStatusOrders, holidayMap, sickLeave]);
+
+  // ── 선택창 필터용 기본 배정 결과 ──────────────────────────────────────────
+  // 타이밍 상태(조출/후출/찾근) 없이 순수 자동 배정한 결과
+  // 조출/후출 선택창: 번호 오는 사람만 표시
+  // 찾근 선택창: 스페어도 표시, 휴무·병가만 제외
+  const basePreview = useMemo(() => {
+    if (effectiveNames.length === 0) return null;
+    const savedDay = currentDateKey ? (dateStatuses[currentDateKey] ?? {}) : {};
+    const dayIdx = selectedDate?.dayIdx ?? dayOfWeek;
     const timingStatuses = new Set<StatusType>(["찾근", "조출", "후출"]);
     const baseSavedDay: Record<string, StatusType> = {};
     for (const [name, st] of Object.entries(savedDay)) {
@@ -1981,36 +2093,13 @@ export default function SchedulePage() {
     effectiveNames.forEach((n) => {
       baseStatuses[n] = resolveStatus(n, currentDateKey, dayIdx, baseSavedDay, currentDaegeun);
     });
-    // 번호 유무 판정용 baseResult: 타이밍 상태(조출/후출/찾근)로 인한 순서 클릭은 제외하고
-    // 나머지 수동 순서(휴무해제·당번 등)는 그대로 반영 → 실제 배정과 동일한 기준으로 판단
     const baseStatusOrder = (dateStatusOrders[currentDateKey] ?? [])
       .filter(n => !timingStatuses.has(savedDay[n] as StatusType));
-    const baseResult = mode === "2부제"
+    return mode === "2부제"
       ? assignDouble(effectiveNames, baseStatuses, shift1Size, shift2Size, currentDaegeun, baseStatusOrder)
       : assignSingle(effectiveNames, baseStatuses, singleSize);
-    const baseShift1Set = new Set(baseResult.shift1);
-    const baseShift2Set = new Set(baseResult.shift2);
-    const validatedStatuses = { ...statuses };
-    effectiveNames.forEach((name) => {
-      const st = statuses[name];
-      if (st === "찾근") {
-        const invalid = mode === "2부제" ? baseShift2Set.has(name) : baseShift1Set.has(name);
-        if (invalid) validatedStatuses[name] = baseStatuses[name];
-      } else if (st === "조출" || st === "후출") {
-        // 기본 상태가 제외(휴무/당번 등)면 명시적 투입 → 검증 통과
-        if (!EXCLUDED_SET.has(baseStatuses[name] ?? "")) {
-          const hasOriginalNumber = mode === "2부제"
-            ? baseShift1Set.has(name) || baseShift2Set.has(name)
-            : baseShift1Set.has(name);
-          if (!hasOriginalNumber) validatedStatuses[name] = baseStatuses[name];
-        }
-      }
-    });
-    return mode === "2부제"
-      ? assignDouble(effectiveNames, validatedStatuses, shift1Size, shift2Size, currentDaegeun, dateStatusOrders[currentDateKey] ?? [])
-      : assignSingle(effectiveNames, validatedStatuses, singleSize);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveNames, dateStatuses, currentDateKey, selectedDate, dayOfWeek, customRosterMap, currentDaegeun, mode, shift1Size, shift2Size, singleSize, dateStatusOrders, holidayMap, sickLeave]);
+  }, [effectiveNames, dateStatuses, currentDateKey, selectedDate, dayOfWeek, currentDaegeun, mode, shift1Size, shift2Size, singleSize, dateStatusOrders, holidayMap, sickLeave]);
 
   // 이름 → 배정 카테고리 맵 (live)
   const liveCategoryMap = useMemo<Record<string, "1부" | "1부스페어" | "2부" | "2부스페어" | "스페어" | "단부" | "찾근" | "제외">>(() => {
@@ -2168,17 +2257,16 @@ export default function SchedulePage() {
       if (!updatedAssignment[day.dateLabel]) break;
 
       const savedDay = dateStatuses[day.dateLabel] ?? {};
-      const statuses: Record<string, StatusType> = {};
       const dgMap = dateDaegeun[day.dateLabel] ?? {};
-      currentNames.forEach((n) => {
-        statuses[n] = resolveStatus(n, day.dateLabel, day.dayIdx, savedDay, dgMap);
-      });
-
-      const s1 = shift1Size, s2 = shift2Size, ss = singleSize;
-
-      const result = mode === "2부제"
-        ? assignDouble(currentNames, statuses, s1, s2, dgMap, dateStatusOrders[day.dateLabel] ?? [])
-        : assignSingle(currentNames, statuses, ss);
+      // buildValidatedResult: livePreview · assign() · generateWeek()와 동일한 경로
+      const { result } = buildValidatedResult(
+        currentNames,
+        savedDay,
+        day.dateLabel,
+        day.dayIdx,
+        dgMap,
+        dateStatusOrders[day.dateLabel] ?? []
+      );
 
       updatedAssignment[day.dateLabel] = result;
       if (result.spare2.length > 0) updatedSpare2[day.dateLabel] = result.spare2;
@@ -2192,59 +2280,17 @@ export default function SchedulePage() {
 
   function assign() {
     const en = effectiveNames.length > 0 ? effectiveNames : names;
-    // generateWeek/recalculateFrom과 동일한 패턴으로 통일
     const savedDay = currentDateKey ? (dateStatuses[currentDateKey] ?? {}) : {};
     const dayIdx = selectedDate?.dayIdx ?? dayOfWeek;
-    const statuses: Record<string, StatusType> = {};
-    en.forEach((n) => {
-      statuses[n] = resolveStatus(n, currentDateKey, dayIdx, savedDay, currentDaegeun);
-    });
-    const timingStatuses = new Set<StatusType>(["찾근", "조출", "후출"]);
-    const baseSavedDay: Record<string, StatusType> = {};
-    for (const [name, st] of Object.entries(savedDay)) {
-      if (!timingStatuses.has(st)) baseSavedDay[name] = st;
-    }
-    const baseStatuses: Record<string, StatusType> = {};
-    en.forEach((n) => {
-      baseStatuses[n] = resolveStatus(n, currentDateKey, dayIdx, baseSavedDay, currentDaegeun);
-    });
-    // 번호 유무 판정용 baseResult: 타이밍 상태(조출/후출/찾근)로 인한 순서 클릭은 제외하고
-    // 나머지 수동 순서(휴무해제·당번 등)는 그대로 반영 → livePreview와 동일한 기준 (sickLeave도 반영)
-    const baseStatusOrder = (dateStatusOrders[currentDateKey] ?? [])
-      .filter(n => !timingStatuses.has(savedDay[n] as StatusType));
-    const baseResult = mode === "2부제"
-      ? assignDouble(en, baseStatuses, shift1Size, shift2Size, currentDaegeun, baseStatusOrder)
-      : assignSingle(en, baseStatuses, singleSize);
-    const baseShift1Set = new Set(baseResult.shift1);
-    const baseShift2Set = new Set(baseResult.shift2);
-    const validatedStatuses = { ...statuses };
-    const invalidStatusReasons: Record<string, string> = {};
-    en.forEach((name) => {
-      const st = statuses[name];
-      if (st === "찾근") {
-        const invalid = mode === "2부제" ? baseShift2Set.has(name) : baseShift1Set.has(name);
-        if (invalid) {
-          validatedStatuses[name] = baseStatuses[name];
-          invalidStatusReasons[name] = mode === "2부제" ? "투번호 옴" : "번호 옴";
-        }
-      } else if (st === "조출" || st === "후출") {
-        // 기본 상태가 제외(휴무/당번 등)면 명시적 투입 → 검증 통과 (livePreview와 동일)
-        if (!EXCLUDED_SET.has(baseStatuses[name] ?? "")) {
-          const hasOriginalNumber = mode === "2부제"
-            ? baseShift1Set.has(name) || baseShift2Set.has(name)
-            : baseShift1Set.has(name);
-          if (!hasOriginalNumber) {
-            validatedStatuses[name] = baseStatuses[name];
-            invalidStatusReasons[name] = "번호 안옴";
-          }
-        }
-      }
-    });
-    const invalidNameSet = new Set(Object.keys(invalidStatusReasons));
-    const validatedStatusOrder = (dateStatusOrders[currentDateKey] ?? []).filter(n => !invalidNameSet.has(n));
-    const result = mode === "2부제"
-      ? assignDouble(en, validatedStatuses, shift1Size, shift2Size, currentDaegeun, validatedStatusOrder)
-      : assignSingle(en, validatedStatuses, singleSize);
+    // buildValidatedResult: livePreview · recalculateFrom · generateWeek와 동일한 경로
+    const { result, invalidStatusReasons } = buildValidatedResult(
+      en,
+      savedDay,
+      currentDateKey,
+      dayIdx,
+      currentDaegeun,
+      dateStatusOrders[currentDateKey] ?? []
+    );
     if (Object.keys(invalidStatusReasons).length > 0) {
       result.invalidStatusReasons = invalidStatusReasons;
     }
@@ -2383,19 +2429,17 @@ export default function SchedulePage() {
       const dayStartName = prevSpare2First ?? getStartNameForDate(dateLabel);
       const dayNames = dayStartName ? rotateNames([...names], dayStartName) : [...names];
 
-      // ── 배정 계산: 항상 해당 날짜의 최신 dateStatuses 기준으로 재계산 ──
+      // ── 배정 계산: buildValidatedResult → livePreview · assign() · recalculateFrom()와 동일 경로 ──
       const savedDay = dateStatuses[dateLabel] ?? {};
-      const statuses: Record<string, StatusType> = {};
       const dgMap = dateDaegeun[dateLabel] ?? {};
-      dayNames.forEach((n) => {
-        statuses[n] = resolveStatus(n, dateLabel, dayIdx, savedDay, dgMap);
-      });
-
-      const s1 = shift1Size, s2 = shift2Size, ss = singleSize;
-
-      const result = mode === "2부제"
-        ? assignDouble(dayNames, statuses, s1, s2, dateDaegeun[dateLabel] ?? {}, dateStatusOrders[dateLabel] ?? [])
-        : assignSingle(dayNames, statuses, ss);
+      const { result } = buildValidatedResult(
+        dayNames,
+        savedDay,
+        dateLabel,
+        dayIdx,
+        dgMap,
+        dateStatusOrders[dateLabel] ?? []
+      );
 
       results.push({ day: dateLabel, result, skipped: false });
       newAssignments[dateLabel] = result;
@@ -3703,7 +3747,21 @@ export default function SchedulePage() {
             })()
           : _filtered;
 
-        const listNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
+        // ★ 5순위: 선택창 필터
+        // 조출/후출: 번호 오는 사람(basePreview shift1/shift2)만 표시 + 이미 선택된 사람 포함
+        // 찾근: 휴무·병가(EXCLUDED_SET) 제외, 스페어는 표시
+        const allNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
+        const listNames = (() => {
+          const st = modalStatus as StatusType;
+          if ((st === "조출" || st === "후출") && basePreview) {
+            const numberedSet = new Set([...(basePreview.shift1 ?? []), ...(basePreview.shift2 ?? [])]);
+            return allNames.filter(n => numberedSet.has(n) || effectiveStatus(n) === st);
+          }
+          if (st === "찾근") {
+            return allNames.filter(n => !EXCLUDED_SET.has(effectiveStatus(n) ?? ""));
+          }
+          return allNames;
+        })();
         const query = modalSearch.trim().toLowerCase();
         const filteredNames = listNames.filter(n =>
           !query || n.toLowerCase().includes(query) ||
