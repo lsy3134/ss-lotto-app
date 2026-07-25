@@ -2021,18 +2021,18 @@ export default function SchedulePage() {
     const baseShift1Set = new Set(baseResult.shift1);
     const baseShift2Set = new Set(baseResult.shift2);
 
-    // ④ 검증: 스페어 조출/후출 무효화 · 2부 배정자 찾근 무효화
+    // ④ 검증: 스페어 조출/후출만 무효화
+    //    ★ 찾근은 사전 무효화 없음:
+    //       baseResult(타이밍 순서 전부 제거) 기준 판정과
+    //       finalResult(유효 찾근의 순서 우선권 포함) 기준 배정이 달라서
+    //       검증 결과와 실제 배정 위치가 불일치하는 버그 발생
+    //    → assignDouble이 한 번에 처리: 실제 2부에 배정된 사람만 twoRound에 포함,
+    //       spare2로 밀린 사람은 자동으로 찾근 미적용 (라벨 없음)
     const validatedStatuses = { ...statuses };
     const invalidStatusReasons: Record<string, string> = {};
     namesList.forEach((name) => {
       const st = statuses[name];
-      if (st === "찾근") {
-        const invalid = mode === "2부제" ? baseShift2Set.has(name) : baseShift1Set.has(name);
-        if (invalid) {
-          validatedStatuses[name] = baseStatuses[name];
-          invalidStatusReasons[name] = mode === "2부제" ? "투번호 옴" : "번호 옴";
-        }
-      } else if (st === "조출" || st === "후출") {
+      if (st === "조출" || st === "후출") {
         // 기본 상태가 제외(휴무/당번 등)면 명시적 투입 → 검증 통과
         if (!EXCLUDED_SET.has(baseStatuses[name] ?? "")) {
           const hasOriginalNumber = mode === "2부제"
