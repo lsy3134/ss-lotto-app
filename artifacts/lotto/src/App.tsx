@@ -884,7 +884,14 @@ function LottoPage() {
 
   useEffect(() => {
     if (!isAdmin) { setLocation(`${base}/`); return; }
-    async function init() { await loadExcel(); loadLatest(); }
+    async function init() {
+      // ① xlsx 먼저 로드 (pastWinners · allDraws 채움, stats는 아직 확정 X)
+      await loadExcel();
+      // ② 수동 저장 번호 추가 (pastWinners로 중복 방지)
+      loadLatest();
+      // ③ xlsx + 수동 번호 전부 합쳐진 최종 상태로 stats 한 번에 갱신
+      setStats(computeLottoStats(allDraws.current));
+    }
     init();
   }, [isAdmin]);
 
@@ -899,15 +906,21 @@ function LottoPage() {
         if (!Array.isArray(row)) return;
         const nums = (row as unknown[]).slice(2, 8)
           .map(Number).filter((v) => Number.isInteger(v) && v >= 1 && v <= 45).sort((a, b) => a - b);
-        if (nums.length === 6) { pastWinners.current.add(nums.join(",")); allDraws.current.push(nums); }
+        // pastWinners 로 중복 방지 (동일 조합을 두 번 넣지 않음)
+        const key = nums.join(",");
+        if (nums.length === 6 && !pastWinners.current.has(key)) {
+          pastWinners.current.add(key);
+          allDraws.current.push(nums);
+        }
       });
-      setStats(computeLottoStats(allDraws.current));
+      // ★ stats는 init() 맨 끝에서 수동 번호까지 합친 뒤 한 번만 계산하므로 여기서는 생략
     } catch (e) {
       console.warn("lotto.xlsx 로드 실패 — 기본 모드로 실행:", e);
     }
   }
 
   function loadLatest() {
+    // lotto_userRegistered + 구버전 latestLotto 키 통합, 중복 없이 allDraws 앞에 추가
     const list: string[] = (() => {
       try { return JSON.parse(localStorage.getItem("lotto_userRegistered") ?? "[]") as string[]; } catch { return []; }
     })();
@@ -915,6 +928,7 @@ function LottoPage() {
     if (legacy && !list.includes(legacy)) list.unshift(legacy);
     list.forEach(key => {
       const arr = key.split(",").map(Number);
+      // pastWinners 에 없는 경우만 추가 → xlsx 와 수동 번호 간 중복 방지
       if (arr.length === 6 && !pastWinners.current.has(key)) {
         pastWinners.current.add(key);
         allDraws.current.unshift(arr);
@@ -928,14 +942,20 @@ function LottoPage() {
     nums.splice(6);
     const key = nums.join(",");
     if (pastWinners.current.has(key)) { alert("이미 등록된 숫자입니다."); return; }
-    pastWinners.current.add(key); allDraws.current.unshift(nums);
+    // allDraws · pastWinners 업데이트
+    pastWinners.current.add(key);
+    allDraws.current.unshift(nums);
+    // localStorage 저장
     const list: string[] = (() => {
       try { return JSON.parse(localStorage.getItem("lotto_userRegistered") ?? "[]") as string[]; } catch { return []; }
     })();
     if (!list.includes(key)) list.unshift(key);
     localStorage.setItem("lotto_userRegistered", JSON.stringify(list));
     localStorage.setItem("latestLotto", key);
-    setInput(""); alert("추가 완료");
+    // ★ 추가 직후 stats 즉시 재계산 → 이번 번호부터 추천 통계에 반영
+    setStats(computeLottoStats(allDraws.current));
+    setInput("");
+    alert("추가 완료. 통계가 즉시 갱신되었습니다.");
   }
 
   function rand() { return Math.floor(Math.random() * 45) + 1; }
