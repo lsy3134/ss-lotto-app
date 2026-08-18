@@ -3735,9 +3735,32 @@ export default function SchedulePage() {
           ? currentVipMembers.map(m => m.name)
           : names.filter(n => effectiveStatus(n) === modalStatus as StatusType);
         // 클릭 순서(dateStatusOrders) 우선 → 나머지는 기존 순서 유지
-        // 모든 상태(휴무/병가/당번/대기/찾근/조출/후출) 동일하게 적용
+        // ★ 휴무: holidayMap 순서를 최우선 source of truth로 사용
         const selectedNames = !isVip
           ? (() => {
+              if (modalStatus === "휴무") {
+                const dk = currentDateKey ? currentDateKey.slice(0, 5) : "";
+                const excelOrder = holidayMap[dk] ?? [];
+                // normalize 매핑: Excel 이름 → 실제 roster 이름
+                const filteredByNorm = new Map(_filtered.map(n => [normalize(n), n]));
+                const excelNormSet = new Set(excelOrder.map(n => normalize(n)));
+                // 1. Excel 순서 유지 (실제 휴무 상태인 사람만 추출)
+                const excelPart = excelOrder
+                  .map(en => filteredByNorm.get(normalize(en)))
+                  .filter((n): n is string => n !== undefined);
+                const excelPartNormSet = new Set(excelPart.map(n => normalize(n)));
+                // 2. 수동 추가 (dateStatusOrders에 있고 Excel에 없는 사람, 클릭 순서 유지)
+                const manualOrder = dateStatusOrders[currentDateKey] ?? [];
+                const manualPart = manualOrder.filter(
+                  n => _filtered.includes(n) && !excelNormSet.has(normalize(n))
+                );
+                const manualPartNormSet = new Set(manualPart.map(n => normalize(n)));
+                // 3. 그 외 예외 케이스 (Excel·수동 모두 아닌 경우)
+                const rest = _filtered.filter(
+                  n => !excelPartNormSet.has(normalize(n)) && !manualPartNormSet.has(normalize(n))
+                );
+                return [...excelPart, ...manualPart, ...rest];
+              }
               const order = dateStatusOrders[currentDateKey] ?? [];
               const orderSet = new Set(order);
               return [
@@ -3750,6 +3773,7 @@ export default function SchedulePage() {
         // ★ 5순위: 선택창 필터
         // 조출/후출: 번호 오는 사람(basePreview shift1/shift2)만 표시 + 이미 선택된 사람 포함
         // 찾근: 휴무·병가(EXCLUDED_SET) 제외, 스페어는 표시
+        // 휴무: holidayMap 순서를 앞에, 나머지 roster 순서로
         const allNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
         const listNames = (() => {
           const st = modalStatus as StatusType;
@@ -3759,6 +3783,19 @@ export default function SchedulePage() {
           }
           if (st === "찾근") {
             return allNames.filter(n => !EXCLUDED_SET.has(effectiveStatus(n) ?? ""));
+          }
+          if (st === "휴무") {
+            const dk = currentDateKey ? currentDateKey.slice(0, 5) : "";
+            const excelOrder = holidayMap[dk] ?? [];
+            const allNamesNormMap = new Map(allNames.map(n => [normalize(n), n]));
+            const excelNormSet = new Set(excelOrder.map(n => normalize(n)));
+            // Excel 이름을 roster 이름으로 매핑 (roster에 없는 사람은 제외)
+            const excelPart = excelOrder
+              .map(en => allNamesNormMap.get(normalize(en)))
+              .filter((n): n is string => n !== undefined);
+            // Excel에 없는 roster 나머지 (기존 순서 유지)
+            const rest = allNames.filter(n => !excelNormSet.has(normalize(n)));
+            return [...excelPart, ...rest];
           }
           return allNames;
         })();
@@ -4056,7 +4093,80 @@ export default function SchedulePage() {
                         </span>
                       );
                     })
+                  ) : modalStatus === "휴무" ? (
+                    // ★ 휴무: selectedNames(holidayMap) 순서 그대로 flat 렌더 — 그룹 재정렬 없음
+                    <>
+                      <div style={{ width: "100%", fontSize: "0.72rem", color: "#aaa", marginBottom: "4px", paddingLeft: "2px" }}>
+                        ↕ 드래그해서 순서 변경
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                        {selectedNames.map((n, idx) => {
+                          const grp = getGroup(n) as "하우스" | "주말" | "주중";
+                          const gs = GROUP_STYLE[grp];
+                          const isDragSrc = chipDragRef.current.fromIdx === idx;
+                          const isDragOver = chipDragOver === idx;
+                          return (
+                            <div
+                              key={n}
+                              data-chip-index={String(idx)}
+                              draggable
+                              onDragStart={() => { chipDragRef.current.fromIdx = idx; chipDragRef.current.didDrag = false; }}
+                              onDragOver={(e) => { e.preventDefault(); if (chipDragOver !== idx) setChipDragOver(idx); }}
+                              onDragLeave={() => setChipDragOver(null)}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                if (chipDragRef.current.fromIdx !== null) {
+                                  reorderSelectedChips(chipDragRef.current.fromIdx, idx, selectedNames);
+                                  chipDragRef.current.didDrag = true;
+                                }
+                                chipDragRef.current.fromIdx = null;
+                                setChipDragOver(null);
+                              }}
+                              onDragEnd={() => { chipDragRef.current.fromIdx = null; setChipDragOver(null); }}
+                              onTouchStart={() => { chipDragRef.current.fromIdx = idx; chipDragRef.current.didDrag = false; }}
+                              onTouchMove={(e) => {
+                                const touch = e.touches[0];
+                                const el = document.elementFromPoint(touch.clientX, touch.clientY);
+                                const chip = (el?.closest?.("[data-chip-index]")) as HTMLElement | null;
+                                if (chip) {
+                                  const i = parseInt(chip.dataset.chipIndex ?? "-1");
+                                  if (i >= 0 && chipDragOver !== i) setChipDragOver(i);
+                                }
+                              }}
+                              onTouchEnd={() => {
+                                const from = chipDragRef.current.fromIdx;
+                                const to = chipDragOver;
+                                if (from !== null && to !== null && from !== to) {
+                                  reorderSelectedChips(from, to, selectedNames);
+                                  chipDragRef.current.didDrag = true;
+                                }
+                                chipDragRef.current.fromIdx = null;
+                                setChipDragOver(null);
+                              }}
+                              onClick={() => {
+                                if (chipDragRef.current.didDrag) { chipDragRef.current.didDrag = false; return; }
+                                toggleStatus(n, modalStatus as StatusType);
+                              }}
+                              style={{
+                                display: "inline-flex", alignItems: "center", gap: "5px",
+                                padding: "5px 10px", borderRadius: "999px", background: "#fff",
+                                border: `1.5px solid ${isDragOver ? gs.color : gs.color + "55"}`,
+                                fontSize: "0.83rem", fontWeight: 700,
+                                cursor: "grab", userSelect: "none", touchAction: "none",
+                                opacity: isDragSrc ? 0.4 : 1,
+                                boxShadow: isDragOver ? `0 0 0 2.5px ${gs.color}88` : "none",
+                                transition: "box-shadow 0.1s, opacity 0.1s",
+                              }}>
+                              <span style={{ color: gs.color, fontSize: "0.65rem", lineHeight: 1 }}>●</span>
+                              <span style={{ color: "#1a2035" }}>{n}</span>
+                              <span style={{ color: "#9aa3b5", fontWeight: 800, fontSize: "0.85rem", lineHeight: 1 }}>×</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
                   ) : (
+                    // 기타 상태: 그룹(하우스/주말/주중)별 chip (기존 동작 유지)
                     <>
                       <div style={{ width: "100%", fontSize: "0.72rem", color: "#aaa", marginBottom: "4px", paddingLeft: "2px" }}>
                         ↕ 드래그해서 순서 변경 (그룹 내)
