@@ -3741,21 +3741,39 @@ export default function SchedulePage() {
               if (modalStatus === "휴무") {
                 const dk = currentDateKey ? currentDateKey.slice(0, 5) : "";
                 const excelOrder = holidayMap[dk] ?? [];
-                // normalize 매핑: Excel 이름 → 실제 roster 이름
-                const filteredByNorm = new Map(_filtered.map(n => [normalize(n), n]));
                 const excelNormSet = new Set(excelOrder.map(n => normalize(n)));
-                // 1. Excel 순서 유지 (실제 휴무 상태인 사람만 추출)
+                const filteredByNorm = new Map(_filtered.map(n => [normalize(n), n]));
+                const filteredNormSet = new Set(_filtered.map(n => normalize(n)));
+                const savedOrder = dateStatusOrders[currentDateKey] ?? [];
+
+                // ── 드래그 발생 여부 판별 ──
+                // reorderSelectedChips는 selectedNames 전체(Excel 포함)를 dateStatusOrders에 저장한다.
+                // 드래그 전: Excel 휴무자는 holidayMap으로만 상태 부여 → dateStatusOrders에 없음.
+                // 드래그 후: reorderSelectedChips가 Excel 휴무자를 포함한 전체 배열을 저장.
+                // → savedOrder에 현재 휴무 상태인 Excel 인원이 있으면 드래그가 발생한 것.
+                const hasBeenReordered = savedOrder.some(
+                  n => excelNormSet.has(normalize(n)) && filteredNormSet.has(normalize(n))
+                );
+
+                if (hasBeenReordered) {
+                  // 드래그 이후: savedOrder를 primary로 사용 (실제 휴무 상태인 사람만 유지)
+                  const savedNormSet = new Set(savedOrder.map(n => normalize(n)));
+                  const ordered = savedOrder.filter(n => filteredNormSet.has(normalize(n)));
+                  // savedOrder에 없는 새로 추가된 사람 (예외 케이스)
+                  const rest = _filtered.filter(n => !savedNormSet.has(normalize(n)));
+                  return [...ordered, ...rest];
+                }
+
+                // 드래그 없음: Excel 순서 먼저, 수동 클릭 추가자, 기타 순
                 const excelPart = excelOrder
                   .map(en => filteredByNorm.get(normalize(en)))
                   .filter((n): n is string => n !== undefined);
                 const excelPartNormSet = new Set(excelPart.map(n => normalize(n)));
-                // 2. 수동 추가 (dateStatusOrders에 있고 Excel에 없는 사람, 클릭 순서 유지)
-                const manualOrder = dateStatusOrders[currentDateKey] ?? [];
-                const manualPart = manualOrder.filter(
+                // 수동 클릭 추가자 (Excel에 없는 사람, 클릭 순서 유지)
+                const manualPart = savedOrder.filter(
                   n => _filtered.includes(n) && !excelNormSet.has(normalize(n))
                 );
                 const manualPartNormSet = new Set(manualPart.map(n => normalize(n)));
-                // 3. 그 외 예외 케이스 (Excel·수동 모두 아닌 경우)
                 const rest = _filtered.filter(
                   n => !excelPartNormSet.has(normalize(n)) && !manualPartNormSet.has(normalize(n))
                 );
