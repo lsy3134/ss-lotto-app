@@ -3828,19 +3828,12 @@ export default function SchedulePage() {
           : _filtered;
 
         // ★ 5순위: 선택창 필터
-        // 조출/후출: 번호 오는 사람(basePreview shift1/shift2)만 표시 + 이미 선택된 사람 포함
-        // 찾근: 휴무·병가(EXCLUDED_SET) 제외, 스페어는 표시
+        // 조출/후출/찾근: 요청은 누구나 가능, 성립 여부는 BASE 계산 후 판정
         // 휴무: holidayMap 순서를 앞에, 나머지 roster 순서로
         const allNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
         const listNames = (() => {
           const st = modalStatus as StatusType;
-          if ((st === "조출" || st === "후출") && basePreview) {
-            const numberedSet = new Set([...(basePreview.shift1 ?? []), ...(basePreview.shift2 ?? [])]);
-            return allNames.filter(n => numberedSet.has(n) || effectiveStatus(n) === st);
-          }
-          if (st === "찾근") {
-            return allNames.filter(n => !EXCLUDED_SET.has(effectiveStatus(n) ?? ""));
-          }
+          if (st === "조출" || st === "후출" || st === "찾근") return allNames;
           if (st === "휴무") {
             const dk = currentDateKey ? currentDateKey.slice(0, 5) : "";
             const excelOrder = holidayMap[dk] ?? [];
@@ -5040,8 +5033,8 @@ export default function SchedulePage() {
                         icon: "⬆", color: "#ff6b35", bg: "#fff3ee",
                         label: "조출", sub: `1부 앞배치`,
                         count: cho현재수, max: 6,
-                        disabled: !cho가능,
-                        hint: !cho가능 ? "1부 6팀+" : ""
+                        disabled: false,
+                        hint: ""
                       },
                       {
                         status: "후출" as StatusType,
@@ -5054,8 +5047,8 @@ export default function SchedulePage() {
                         icon: "🔄", color: "#00838f", bg: "#e0faf9",
                         label: "찾근", sub: `1+2부 투라운드`,
                         count: checkedCounts.찾근 ?? 0, max: null,
-                        disabled: !cho가능,
-                        hint: !cho가능 ? "1부 6팀+" : ""
+                        disabled: false,
+                        hint: ""
                       },
                     ].map(({ status, icon, color, bg, label, sub, count, max, disabled, hint }) => (
                       <button key={status}
@@ -5671,7 +5664,7 @@ export default function SchedulePage() {
                         ).map((btn) => {
                           const active = effS === btn;
                           const isAutoActive = active && isAutoHumu;
-                          const disabled = (btn === "조출" && !cho가능 && effS !== "조출");
+                           const disabled = false;
                           const col = active ? STATUS_COLOR[btn!] : null;
                           const maxReached =
                             (btn === "조출" && cho현재수 >= 6 && effS !== "조출") ||
@@ -5680,8 +5673,7 @@ export default function SchedulePage() {
                             <button key={btn} disabled={disabled || maxReached}
                               onClick={() => toggleStatus(name, btn)}
                               title={
-                                btn === "조출" && !cho가능 ? "1부 6팀 이상일 때만 사용 가능" :
-                                btn === "조출" && maxReached ? "조출 최대 6명" :
+                                 btn === "조출" && maxReached ? "조출 최대 6명" :
                                 btn === "후출" && maxReached ? "후출 최대 6명" : ""
                               }
                               style={{

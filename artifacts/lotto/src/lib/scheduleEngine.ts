@@ -133,6 +133,8 @@ function allocateDouble(
   input: ScheduleEngineInput,
   forceShift1: Set<string> = new Set(),
   forceShift2: Set<string> = new Set(),
+  excludeFromShift1: Set<string> = new Set(),
+  excludeFromShift2: Set<string> = new Set(),
 ): Allocation {
   const queue = input.canonicalQueue;
   const s1Capacity = Math.max(0, input.shift1Size);
@@ -149,20 +151,20 @@ function allocateDouble(
   const waiting = queue.filter((n) => !excludedSet.has(n) && statusOf(n) === "대기");
   const dedicated2 = new Set([...vip2, ...dg2]);
   const fixed1 = unique([...vip1, ...vipBoth, ...dg1, ...dgBoth, ...canonicalSort(forceShift1, queue)])
-    .filter((n) => !excludedSet.has(n) && !dedicated2.has(n)).slice(0, s1Capacity);
+    .filter((n) => !excludedSet.has(n) && !dedicated2.has(n) && !excludeFromShift1.has(n)).slice(0, s1Capacity);
   const fixed1Set = new Set(fixed1);
   const waitingSet = new Set(waiting);
-  const normal1Candidates = queue.filter((n) => !excludedSet.has(n) && !fixed1Set.has(n) && !dedicated2.has(n) && !waitingSet.has(n));
+  const normal1Candidates = queue.filter((n) => !excludedSet.has(n) && !fixed1Set.has(n) && !dedicated2.has(n) && !waitingSet.has(n) && !excludeFromShift1.has(n));
   const normal1Selected = normal1Candidates.slice(0, Math.max(0, s1Capacity - fixed1.length));
   const shift1Membership = unique([...fixed1, ...normal1Selected]);
   const shift1Set = new Set(shift1Membership);
   const shift1Spare = [...waiting, ...queue.filter((n) => !excludedSet.has(n) && !shift1Set.has(n) && !waitingSet.has(n))].slice(0, 1);
 
   const fixed2 = unique([...vip2, ...vipBoth, ...dg2, ...dgBoth, ...canonicalSort(forceShift2, queue), ...shift1Spare])
-    .filter((n) => !excludedSet.has(n)).slice(0, s2Capacity);
+    .filter((n) => !excludedSet.has(n) && !excludeFromShift2.has(n)).slice(0, s2Capacity);
   const fixed2Set = new Set(fixed2);
   const regularCandidateOrder = rotateAfter(queue, shift1Spare[0])
-    .filter((n) => !excludedSet.has(n) && !fixed2Set.has(n));
+    .filter((n) => !excludedSet.has(n) && !fixed2Set.has(n) && !excludeFromShift2.has(n));
   const regularSelected = regularCandidateOrder.slice(0, Math.max(0, s2Capacity - fixed2.length));
   const shift2Membership = unique([...fixed2, ...regularSelected]);
   const shift2Set = new Set(shift2Membership);
@@ -218,47 +220,85 @@ export function calculateSchedule(input: ScheduleEngineInput): { base: ScheduleE
   const invalidStatusReasons: Record<string, string> = {};
   const force1 = new Set<string>();
   const force2 = new Set<string>();
-  const appliedFinding: string[] = [];
+  const exclude1 = new Set<string>();
+  const exclude2 = new Set<string>();
+  let appliedFinding: string[] = [];
   let free1 = Math.max(0, input.shift1Size - fixedCount(allocationInput, 1));
   let free2 = Math.max(0, (input.shift2Size ?? 0) - fixedCount(allocationInput, 2) - baseAllocation.shift1Spare.length);
+  const normalTwoRoundDay = input.mode === "2부제" && baseAllocation.normalBothMembership.length > 0;
+  const baseS1 = new Set(baseAllocation.shift1Membership);
+  const baseS2 = new Set(baseAllocation.shift2Membership);
+  const baseNumbered = new Set([...baseS1, ...baseS2]);
   const baseBoth = new Set(baseAllocation.bothMembership);
-  const baseS2Spares = new Set(baseAllocation.shift2SpareQueue.slice(0, 2));
+  const appliedEarly = requestedEarly.filter((name) => {
+    const valid = baseNumbered.has(name);
+    if (!valid) invalidStatusReasons[name] = "조출 미성립 · 번호 안옴";
+    else if (input.mode === "2부제") {
+      force1.add(name);
+      exclude2.add(name);
+    }
+    return valid;
+  });
+  const appliedLate = requestedLate.filter((name) => {
+    const valid = baseNumbered.has(name);
+    if (!valid) invalidStatusReasons[name] = "후출 미성립 · 번호 안옴";
+    else if (input.mode === "2부제") {
+      force2.add(name);
+      exclude1.add(name);
+    }
+    return valid;
+  });
 
   for (const name of requestedFinding) {
     if (baseAllocation.excluded.includes(name)) {
       invalidStatusReasons[name] = `찾근 미성립 · ${input.statuses[name] === "병가" ? "병가" : "근무 제외"}`;
     } else if (input.mode === "단부제") {
-      if (!baseAllocation.shift2SpareQueue.includes(name)) invalidStatusReasons[name] = "찾근 미성립 · 스페어 아님";
+      if (baseS1.has(name)) invalidStatusReasons[name] = "찾근 미성립 · 번호 옴";
       else if (free1 <= 0) invalidStatusReasons[name] = "찾근 미성립 · VIP/대근 근무로 정원 초과";
       else { force1.add(name); appliedFinding.push(name); free1--; }
-    } else if (baseBoth.has(name)) {
-      invalidStatusReasons[name] = "찾근 미성립 · 이미 투순번";
-    } else if (baseAllocation.shift1Spare.includes(name)) {
-      if (free1 <= 0) invalidStatusReasons[name] = "찾근 미성립 · VIP/대근 근무로 정원 초과";
-      else { force1.add(name); force2.add(name); appliedFinding.push(name); free1--; }
-    } else if (baseS2Spares.has(name)) {
-      if (free2 <= 0) invalidStatusReasons[name] = "찾근 미성립 · VIP/대근 근무로 정원 초과";
-      else { force2.add(name); appliedFinding.push(name); free2--; }
+    } else if (normalTwoRoundDay) {
+      if (baseBoth.has(name)) {
+        invalidStatusReasons[name] = "찾근 미성립 · 이미 투번호 옴";
+      } else if (baseS1.has(name)) {
+        if (free2 <= 0) invalidStatusReasons[name] = "찾근 미성립 · VIP/대근 근무로 정원 초과";
+        else { force2.add(name); appliedFinding.push(name); free2--; }
+      } else if (baseS2.has(name)) {
+        if (free1 <= 0) invalidStatusReasons[name] = "찾근 미성립 · VIP/대근 근무로 정원 초과";
+        else { force1.add(name); appliedFinding.push(name); free1--; }
+      } else if (free2 <= 0) {
+        invalidStatusReasons[name] = "찾근 미성립 · VIP/대근 근무로 정원 초과";
+      } else {
+        force2.add(name); appliedFinding.push(name); free2--;
+      }
+    } else if (baseS1.has(name) || baseS2.has(name)) {
+      invalidStatusReasons[name] = "찾근 미성립 · 번호 옴";
+    } else if (free2 <= 0) {
+      invalidStatusReasons[name] = "찾근 미성립 · VIP/대근 근무로 정원 초과";
     } else {
-      invalidStatusReasons[name] = "찾근 미성립 · 스페어 아님";
+      force2.add(name); appliedFinding.push(name); free2--;
     }
   }
 
-  const finalAllocation = input.mode === "2부제"
-    ? allocateDouble(allocationInput, force1, force2)
+  let finalAllocation = input.mode === "2부제"
+    ? allocateDouble(allocationInput, force1, force2, exclude1, exclude2)
     : allocateSingle(allocationInput, force1);
+  const failedFinding = appliedFinding.filter((name) =>
+    (force1.has(name) && !finalAllocation.shift1Membership.includes(name)) ||
+    (force2.has(name) && !finalAllocation.shift2Membership.includes(name))
+  );
+  if (failedFinding.length > 0) {
+    failedFinding.forEach((name) => {
+      force1.delete(name);
+      force2.delete(name);
+      invalidStatusReasons[name] = "찾근 미성립 · VIP/대근 근무로 정원 초과";
+    });
+    appliedFinding = appliedFinding.filter((name) => !failedFinding.includes(name));
+    finalAllocation = input.mode === "2부제"
+      ? allocateDouble(allocationInput, force1, force2, exclude1, exclude2)
+      : allocateSingle(allocationInput, force1);
+  }
   const finalS1 = new Set(finalAllocation.shift1Membership);
   const finalS2 = new Set(finalAllocation.shift2Membership);
-  const appliedEarly = requestedEarly.filter((name) => {
-    const valid = finalS1.has(name) && !finalAllocation.excluded.includes(name);
-    if (!valid) invalidStatusReasons[name] = `조출 미성립 · ${finalAllocation.excluded.includes(name) ? "휴무/병가/제외" : "1부 근무 순번 아님"}`;
-    return valid;
-  });
-  const appliedLate = requestedLate.filter((name) => {
-    const valid = input.mode === "2부제" ? finalS2.has(name) : finalS1.has(name);
-    if (!valid) invalidStatusReasons[name] = `후출 미성립 · ${finalAllocation.excluded.includes(name) ? "휴무/병가/제외" : input.mode === "2부제" ? "2부 근무 순번 아님" : "근무 순번 아님"}`;
-    return valid;
-  });
 
   let shift1DisplayOrder = queue.filter((n) => finalS1.has(n));
   let shift2DisplayOrder = queue.filter((n) => finalS2.has(n));

@@ -34,12 +34,15 @@ test("2부 스페어 찾근은 정원을 유지하며 정상 마지막 근무자
 });
 
 test("1부 스페어 찾근은 FINAL을 다시 계산한다", () => {
-  const requested = statuses({ E: "찾근" });
-  const { final } = calculateSchedule(doubleInput({ statuses: requested, baseStatuses: statuses() }));
-  assert.ok(final.shift1Membership.includes("E"));
-  assert.ok(final.shift2Membership.includes("E"));
-  assert.deepEqual(final.shift1Spare, ["D"]);
-  assert.deepEqual(final.appliedFinding, ["E"]);
+  const requested = statuses({ I: "찾근" });
+  const { base, final } = calculateSchedule(doubleInput({
+    shift1Size: 8, shift2Size: 8, statuses: requested, baseStatuses: statuses(),
+  }));
+  assert.deepEqual(base.shift1Spare, ["I"]);
+  assert.ok(base.shift2Membership.includes("I"));
+  assert.ok(final.shift1Membership.includes("I"));
+  assert.ok(final.shift2Membership.includes("I"));
+  assert.deepEqual(final.appliedFinding, ["I"]);
 });
 
 test("단부제 찾근과 뒤에서 3번째 후출 위치", () => {
@@ -58,9 +61,9 @@ test("단부제 찾근과 뒤에서 3번째 후출 위치", () => {
 test("미성립 요청은 일반 순번으로 복귀하고 이유를 남긴다", () => {
   const requested = statuses({ A: "찾근", K: "조출", J: "후출" });
   const { final } = calculateSchedule(doubleInput({ statuses: requested, baseStatuses: statuses() }));
-  assert.equal(final.invalidStatusReasons.A, "찾근 미성립 · 스페어 아님");
-  assert.match(final.invalidStatusReasons.K, /1부 근무 순번 아님/);
-  assert.match(final.invalidStatusReasons.J, /2부 근무 순번 아님/);
+  assert.equal(final.invalidStatusReasons.A, "찾근 미성립 · 번호 옴");
+  assert.equal(final.invalidStatusReasons.K, "조출 미성립 · 번호 안옴");
+  assert.equal(final.invalidStatusReasons.J, "후출 미성립 · 번호 안옴");
   assert.ok(final.shift1Membership.includes("A"));
 });
 
@@ -84,10 +87,10 @@ test("조출은 투스페어 최대 4번째 뒤에 표시되고 투스페어에�
     canonicalQueue: bigQueue, mode: "2부제", shift1Size: 30, shift2Size: 30,
     statuses: requested, baseStatuses, daegeun: {},
   });
-  assert.deepEqual(final.normalBothMembership, bigQueue.slice(0, 20));
-  assert.deepEqual(final.twoSpareQueue.slice(0, 4), ["21", "22", "23", "24"]);
+  assert.deepEqual(final.normalBothMembership, [...bigQueue.slice(0, 4), ...bigQueue.slice(5, 21)]);
+  assert.deepEqual(final.twoSpareQueue.slice(0, 4), ["22", "23", "24", "25"]);
   assert.ok(!final.twoSpareQueue.includes("5"));
-  const anchor = final.shift1DisplayOrder.indexOf("24");
+  const anchor = final.shift1DisplayOrder.indexOf("25");
   assert.equal(final.shift1DisplayOrder[anchor + 1], "5");
 });
 
@@ -117,11 +120,188 @@ test("2부제 후출은 찾근 배치 후 원번 마지막으로 이동한다", 
 });
 
 test("VIP/대근이 정원을 채우면 찾근은 미성립한다", () => {
-  const base = statuses({ A: "VIP1부", B: "VIP1부", C: "VIP1부", D: "VIP1부" });
-  const requested = { ...base, E: "찾근" as const };
+  const base = statuses({ A: "VIP2부", B: "VIP2부", C: "VIP2부", D: "VIP2부" });
+  const requested = { ...base, I: "찾근" as const };
   const { final } = calculateSchedule(doubleInput({ statuses: requested, baseStatuses: base }));
-  assert.equal(final.invalidStatusReasons.E, "찾근 미성립 · VIP/대근 근무로 정원 초과");
-  assert.ok(!final.appliedFinding.includes("E"));
+  assert.equal(final.invalidStatusReasons.I, "찾근 미성립 · VIP/대근 근무로 정원 초과");
+  assert.ok(!final.appliedFinding.includes("I"));
+});
+
+test("투라운드 날 1부만 근무하는 원번자는 찾근으로 2부에 들어간다", () => {
+  const requested = statuses({ E: "찾근" });
+  const { base, final } = calculateSchedule(doubleInput({
+    shift1Size: 8, shift2Size: 8, statuses: requested, baseStatuses: statuses(),
+  }));
+  assert.ok(base.normalBothMembership.length > 0);
+  assert.ok(base.shift1Membership.includes("E"));
+  assert.ok(!base.shift2Membership.includes("E"));
+  assert.ok(final.shift2Membership.includes("E"));
+  assert.deepEqual(final.appliedFinding, ["E"]);
+});
+
+test("투라운드 날 2부만 근무하는 원번자는 찾근으로 1부에 들어간다", () => {
+  const requested = statuses({ J: "찾근" });
+  const { base, final } = calculateSchedule(doubleInput({
+    shift1Size: 8, shift2Size: 8, statuses: requested, baseStatuses: statuses(),
+  }));
+  assert.ok(base.normalBothMembership.length > 0);
+  assert.ok(!base.shift1Membership.includes("J"));
+  assert.ok(base.shift2Membership.includes("J"));
+  assert.ok(final.shift1Membership.includes("J"));
+  assert.deepEqual(final.appliedFinding, ["J"]);
+});
+
+test("투라운드 날 정상 투스페어는 찾근이 성립한다", () => {
+  const requested = statuses({ F: "찾근" });
+  const { base, final } = calculateSchedule(doubleInput({
+    shift1Size: 8, shift2Size: 8, statuses: requested, baseStatuses: statuses(),
+  }));
+  assert.ok(base.twoSpareQueue.includes("F"));
+  assert.ok(final.shift2Membership.includes("F"));
+  assert.ok(final.appliedFinding.includes("F"));
+});
+
+test("투라운드 날 이미 정상 투근무자는 찾근이 미성립한다", () => {
+  const requested = statuses({ A: "찾근" });
+  const { final } = calculateSchedule(doubleInput({
+    shift1Size: 8, shift2Size: 8, statuses: requested, baseStatuses: statuses(),
+  }));
+  assert.equal(final.invalidStatusReasons.A, "찾근 미성립 · 이미 투번호 옴");
+  assert.ok(!final.appliedFinding.includes("A"));
+});
+
+test("원번만 도는 날 원번 근무자는 찾근이 미성립한다", () => {
+  const requested = statuses({ A: "찾근" });
+  const { base, final } = calculateSchedule(doubleInput({ statuses: requested, baseStatuses: statuses() }));
+  assert.equal(base.normalBothMembership.length, 0);
+  assert.equal(final.invalidStatusReasons.A, "찾근 미성립 · 번호 옴");
+});
+
+test("원번만 도는 날 원번 미근무자는 찾근이 성립한다", () => {
+  const requested = statuses({ I: "찾근" });
+  const { base, final } = calculateSchedule(doubleInput({ statuses: requested, baseStatuses: statuses() }));
+  assert.equal(base.normalBothMembership.length, 0);
+  assert.ok(!base.shift1Membership.includes("I") && !base.shift2Membership.includes("I"));
+  assert.ok(final.shift2Membership.includes("I"));
+  assert.ok(final.appliedFinding.includes("I"));
+});
+
+test("함은진 회귀: 투라운드 날 1부 원번이지만 투근무가 아니면 찾근이 성립한다", () => {
+  const regressionQueue = ["정상투1", "정상투2", "정상투3", "정상투4", "함은진", "F", "G", "H", "I", "J", "K", "L"];
+  const baseStatuses = Object.fromEntries(regressionQueue.map((name) => [name, null]));
+  const requested = { ...baseStatuses, 함은진: "찾근" as const };
+  const { base, final } = calculateSchedule({
+    canonicalQueue: regressionQueue, mode: "2부제", shift1Size: 8, shift2Size: 8,
+    statuses: requested, baseStatuses, daegeun: {},
+  });
+  assert.ok(base.shift1Membership.includes("함은진"));
+  assert.ok(!base.shift2Membership.includes("함은진"));
+  assert.ok(base.normalBothMembership.length > 0);
+  assert.ok(final.shift2Membership.includes("함은진"));
+  assert.ok(final.appliedFinding.includes("함은진"));
+  assert.equal(final.invalidStatusReasons.함은진, undefined);
+});
+
+test("투라운드 날 복수 찾근은 canonical 상대 순서로 성립한다", () => {
+  const requested = statuses({ G: "찾근", E: "찾근" });
+  const { final } = calculateSchedule(doubleInput({
+    shift1Size: 8, shift2Size: 8, statuses: requested, baseStatuses: statuses(),
+  }));
+  assert.deepEqual(final.appliedFinding, ["E", "G"]);
+  assert.ok(final.shift2Membership.includes("E"));
+  assert.ok(final.shift2Membership.includes("G"));
+});
+
+test("팀 수 변경 후 같은 찾근 요청의 성립 여부를 BASE부터 다시 판정한다", () => {
+  const requested = statuses({ E: "찾근" });
+  const noRound = calculateSchedule(doubleInput({ statuses: requested, baseStatuses: statuses() })).final;
+  const twoRound = calculateSchedule(doubleInput({
+    shift1Size: 8, shift2Size: 8, statuses: requested, baseStatuses: statuses(),
+  })).final;
+  assert.equal(noRound.invalidStatusReasons.E, "찾근 미성립 · 번호 옴");
+  assert.ok(twoRound.appliedFinding.includes("E"));
+  assert.equal(twoRound.invalidStatusReasons.E, undefined);
+});
+
+test("조출은 FINAL이 아니라 BASE에서 번호가 오는지로 판정한다", () => {
+  const requested = statuses({ A: "조출", I: "찾근" });
+  const { base, final } = calculateSchedule(doubleInput({ statuses: requested, baseStatuses: statuses() }));
+  assert.ok(base.shift1Membership.includes("A"));
+  assert.ok(final.appliedEarly.includes("A"));
+  assert.equal(final.invalidStatusReasons.A, undefined);
+});
+
+test("BASE에서 번호가 안 오는 조출 요청은 구체적인 이유와 함께 미성립한다", () => {
+  const requested = statuses({ I: "조출" });
+  const { final } = calculateSchedule(doubleInput({ statuses: requested, baseStatuses: statuses() }));
+  assert.ok(!final.appliedEarly.includes("I"));
+  assert.equal(final.invalidStatusReasons.I, "조출 미성립 · 번호 안옴");
+});
+
+test("2부제 후출은 어느 부든 BASE에서 번호가 오면 성립한다", () => {
+  const requested = statuses({ A: "후출" });
+  const { base, final } = calculateSchedule(doubleInput({ statuses: requested, baseStatuses: statuses() }));
+  assert.ok(base.shift1Membership.includes("A"));
+  assert.ok(!base.shift2Membership.includes("A"));
+  assert.ok(final.appliedLate.includes("A"));
+  assert.equal(final.invalidStatusReasons.A, undefined);
+});
+
+test("BASE에서 번호가 안 오는 후출 요청은 구체적인 이유와 함께 미성립한다", () => {
+  const requested = statuses({ I: "후출" });
+  const { final } = calculateSchedule(doubleInput({ statuses: requested, baseStatuses: statuses() }));
+  assert.ok(!final.appliedLate.includes("I"));
+  assert.equal(final.invalidStatusReasons.I, "후출 미성립 · 번호 안옴");
+});
+
+test("BASE 2부 전용 근무자는 조출 후 FINAL 1부에만 근무한다", () => {
+  const requested = statuses({ E: "조출" });
+  const { base, final } = calculateSchedule(doubleInput({ statuses: requested, baseStatuses: statuses() }));
+  assert.ok(!base.shift1Membership.includes("E"));
+  assert.ok(base.shift2Membership.includes("E"));
+  assert.ok(final.shift1Membership.includes("E"));
+  assert.ok(!final.shift2Membership.includes("E"));
+  assert.ok(!final.bothMembership.includes("E"));
+});
+
+test("BASE 투근무자는 조출 후 FINAL 1부에만 근무한다", () => {
+  const requested = statuses({ A: "조출" });
+  const { base, final } = calculateSchedule(doubleInput({
+    shift1Size: 8, shift2Size: 8, statuses: requested, baseStatuses: statuses(),
+  }));
+  assert.ok(base.bothMembership.includes("A"));
+  assert.ok(final.shift1Membership.includes("A"));
+  assert.ok(!final.shift2Membership.includes("A"));
+  assert.ok(!final.bothMembership.includes("A"));
+});
+
+test("BASE 1부 전용 근무자는 후출 후 FINAL 2부에만 근무한다", () => {
+  const requested = statuses({ A: "후출" });
+  const { base, final } = calculateSchedule(doubleInput({ statuses: requested, baseStatuses: statuses() }));
+  assert.ok(base.shift1Membership.includes("A"));
+  assert.ok(!base.shift2Membership.includes("A"));
+  assert.ok(!final.shift1Membership.includes("A"));
+  assert.ok(final.shift2Membership.includes("A"));
+  assert.ok(!final.bothMembership.includes("A"));
+});
+
+test("BASE 투근무자는 후출 후 FINAL 2부에만 근무한다", () => {
+  const requested = statuses({ A: "후출" });
+  const { base, final } = calculateSchedule(doubleInput({
+    shift1Size: 8, shift2Size: 8, statuses: requested, baseStatuses: statuses(),
+  }));
+  assert.ok(base.bothMembership.includes("A"));
+  assert.ok(!final.shift1Membership.includes("A"));
+  assert.ok(final.shift2Membership.includes("A"));
+  assert.ok(!final.bothMembership.includes("A"));
+});
+
+test("조출·후출 FINAL 재계산 뒤에도 2부 스페어와 다음날 1·2번은 같은 기존 계산식을 따른다", () => {
+  const requested = statuses({ A: "후출", E: "조출" });
+  const { final } = calculateSchedule(doubleInput({ statuses: requested, baseStatuses: statuses() }));
+  assert.deepEqual(final.nextDayQueue.slice(0, 2), final.shift2SpareQueue.slice(0, 2));
+  assert.equal(final.shift1Membership.length, 4);
+  assert.equal(final.shift2Membership.length, 4);
 });
 
 test("VIP/대근 강제 좌석과 병가 차단을 BASE에 반영한다", () => {
