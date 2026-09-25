@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 import { ROSTER, isAutoOff, type GroupType, type PersonData } from "../data/roster";
 import { createWorker } from "tesseract.js";
 import { useAuth } from "../App";
+import { calculateSchedule, type ScheduleEngineResult } from "../lib/scheduleEngine";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -133,6 +134,38 @@ interface DayResult {
   nextDayQueue?: string[];
   // 대근 인원 목록 (1부·2부·투라운드 통합, bold 표시용)
   daegeunList?: string[];
+  findingList?: string[];
+  normalBothMembership?: string[];
+  twoSpareQueue?: string[];
+  shift2SpareQueue?: string[];
+  shift1DisplayOrder?: string[];
+  shift2DisplayOrder?: string[];
+}
+
+function engineResultToDayResult(result: ScheduleEngineResult): DayResult {
+  return {
+    twoRound: result.bothMembership,
+    shift1: result.shift1DisplayOrder,
+    spare1: result.shift1Spare.slice(0, 1),
+    shift2: result.shift2DisplayOrder,
+    spare2: result.shift2SpareQueue.slice(0, 2),
+    spare2FromTemporaryWork: [],
+    excluded: result.excluded,
+    invalidStatusReasons: result.invalidStatusReasons,
+    조출List: result.appliedEarly,
+    후출List: result.appliedLate,
+    findingList: result.appliedFinding,
+    vip1List: result.vip1,
+    vip2List: result.vip2,
+    vipBothList: result.vipBoth,
+    nextDayQueue: result.nextDayQueue,
+    daegeunList: result.daegeunNames,
+    normalBothMembership: result.normalBothMembership,
+    twoSpareQueue: result.twoSpareQueue,
+    shift2SpareQueue: result.shift2SpareQueue,
+    shift1DisplayOrder: result.shift1DisplayOrder,
+    shift2DisplayOrder: result.shift2DisplayOrder,
+  };
 }
 
 function getPrioritySpares(result?: Pick<DayResult, "spare2" | "spare2FromTemporaryWork"> | null): string[] {
@@ -1354,6 +1387,12 @@ export default function SchedulePage() {
 
   function setDaegeunForDate(name: string, type: DaegeunType) {
     if (!currentDateKey) return;
+    const group = getGroup(name);
+    if (group !== "주중" && group !== "주말") {
+      alert("대근은 주중반·주말반만 지정할 수 있습니다.");
+      setDaegeunModal(null);
+      return;
+    }
     setDateDaegeun(prev => ({
       ...prev,
       [currentDateKey]: { ...(prev[currentDateKey] ?? {}), [name]: type },
@@ -1557,10 +1596,14 @@ export default function SchedulePage() {
   ): StatusType {
     if (sickLeave[name]) return "병가";
     const override = savedDay[name] as StatusType | undefined;
-    // 비휴무 명시 override (당번/조출/후출/찾근 등) → 그대로 반환
+    const group = getGroup(name);
+    const validDaegeun = (group === "주중" || group === "주말") && !!daegeunMap[name];
+    // VIP는 휴무보다 우선하되 병가에는 앞서지 않는다.
+    if (VIP_STATUSES.has(override ?? null)) return override ?? null;
+    // 주중/주말 대근은 휴무·당번보다 우선한다. 하우스는 대근 대상이 아니다.
+    if (validDaegeun && (override === "휴무" || override === "휴무해제" || override === "당번" || !override)) return null;
+    // 비휴무 명시 override (조출/후출/찾근/당번 등) → 그대로 반환
     if (override && override !== "휴무" && override !== "휴무해제") return override;
-    // 대근 지정: 엑셀 휴무보다 우선 (주말반 등 대근 출근 허용)
-    if (daegeunMap[name]) return null;
     // 휴무 판단: 해제 > 추가 > 엑셀 > 자동규칙
     if (override === "휴무해제") return null;
     if (override === "휴무") return "휴무";
@@ -1617,6 +1660,11 @@ export default function SchedulePage() {
 
   // 상태 토글
   function toggleStatus(name: string, btn: StatusType) {
+    const storedStatus = manualStatuses[name] ?? null;
+    if (storedStatus && storedStatus !== btn) {
+      const nextLabel = btn ?? "일반";
+      if (!confirm(`${name}님은 현재 '${storedStatus}'으로 지정되어 있습니다. '${nextLabel}'로 변경할까요?`)) return;
+    }
     if (btn === "병가") {
       const cur = effectiveStatus(name);
       if (cur === "병가") {
@@ -1971,6 +2019,20 @@ export default function SchedulePage() {
     return queueStartName;
   }
 
+  function getPreviousDayResult(dateLabel: string): DayResult | null {
+    const match = dateLabel.match(/^(\d{2})\.(\d{2})/);
+    if (!match) return null;
+    const previous = new Date(viewYear, Number(match[1]) - 1, Number(match[2]) - 1);
+    const previousKey = makeDateKey(previous);
+    if (assignmentData[previousKey]) return assignmentData[previousKey];
+    const legacySpares = savedSpare2[previousKey];
+    if (!legacySpares?.length) return null;
+    return {
+      twoRound: [], shift1: [], spare1: [], shift2: [],
+      spare2: legacySpares, excluded: [], nextDayQueue: [],
+    };
+  }
+
   const effectiveNames = useMemo(() => {
     if (names.length === 0) return [];
     const startName = getStartNameForDate(currentDateKey);
@@ -1990,72 +2052,41 @@ export default function SchedulePage() {
     dateLabel: string,
     dayIdx: number,
     dgMap: Record<string, DaegeunType>,
-    statusOrder: string[]
+    _statusOrder: string[],
+    previousResult?: DayResult | null
   ): { result: DayResult; invalidStatusReasons: Record<string, string> } {
-    const timingStatuses = new Set<StatusType>(["찾근", "조출", "후출"]);
-
-    // ① 전체 상태 (타이밍 포함)
     const statuses: Record<string, StatusType> = {};
     namesList.forEach((n) => {
       statuses[n] = resolveStatus(n, dateLabel, dayIdx, savedDay, dgMap);
     });
-
-    // ② 타이밍 제거 상태 (번호 유무 판정용)
-    const baseSavedDay: Record<string, StatusType> = {};
-    for (const [name, st] of Object.entries(savedDay)) {
-      if (!timingStatuses.has(st)) baseSavedDay[name] = st;
-    }
+    const baseSavedDay = Object.fromEntries(
+      Object.entries(savedDay).filter(([, status]) => status !== "찾근" && status !== "조출" && status !== "후출")
+    ) as Record<string, StatusType>;
     const baseStatuses: Record<string, StatusType> = {};
     namesList.forEach((n) => {
       baseStatuses[n] = resolveStatus(n, dateLabel, dayIdx, baseSavedDay, dgMap);
     });
-
-    // ③ baseResult: 타이밍 상태로 인한 순서 클릭 제외, 나머지 수동 순서는 그대로 반영
-    const baseStatusOrder = statusOrder.filter(
-      (n) => !timingStatuses.has(savedDay[n] as StatusType)
-    );
-    const baseResult = mode === "2부제"
-      ? assignDouble(namesList, baseStatuses, shift1Size, shift2Size, dgMap, baseStatusOrder)
-      : assignSingle(namesList, baseStatuses, singleSize);
-
-    const baseShift1Set = new Set(baseResult.shift1);
-    const baseShift2Set = new Set(baseResult.shift2);
-
-    // ④ 검증: 스페어 조출/후출만 무효화
-    //    ★ 찾근은 사전 무효화 없음:
-    //       baseResult(타이밍 순서 전부 제거) 기준 판정과
-    //       finalResult(유효 찾근의 순서 우선권 포함) 기준 배정이 달라서
-    //       검증 결과와 실제 배정 위치가 불일치하는 버그 발생
-    //    → assignDouble이 한 번에 처리: 실제 2부에 배정된 사람만 twoRound에 포함,
-    //       spare2로 밀린 사람은 자동으로 찾근 미적용 (라벨 없음)
-    const validatedStatuses = { ...statuses };
-    const invalidStatusReasons: Record<string, string> = {};
-    namesList.forEach((name) => {
-      const st = statuses[name];
-      if (st === "조출" || st === "후출") {
-        // 기본 상태가 제외(휴무/당번 등)면 명시적 투입 → 검증 통과
-        if (!EXCLUDED_SET.has(baseStatuses[name] ?? "")) {
-          const hasOriginalNumber = mode === "2부제"
-            ? baseShift1Set.has(name) || baseShift2Set.has(name)
-            : baseShift1Set.has(name);
-          if (!hasOriginalNumber) {
-            validatedStatuses[name] = baseStatuses[name];
-            invalidStatusReasons[name] = "번호 안옴";
-          }
-        }
-      }
+    const eligibleDaegeun = Object.fromEntries(
+      Object.entries(dgMap).filter(([name]) => {
+        const group = getGroup(name);
+        return group === "주중" || group === "주말";
+      })
+    ) as Record<string, DaegeunType>;
+    const previousSpares = previousResult ? getPrioritySpares(previousResult) : [];
+    const engine = calculateSchedule({
+      canonicalQueue: namesList,
+      mode,
+      shift1Size: mode === "2부제" ? shift1Size : singleSize,
+      shift2Size: mode === "2부제" ? shift2Size : 0,
+      statuses,
+      baseStatuses,
+      requests: savedDay,
+      daegeun: eligibleDaegeun,
+      previousSpare1: previousSpares[0],
+      previousSpare2: previousSpares[1],
     });
-
-    // ⑤ 유효 순서 (무효 인원 제거)
-    const invalidNameSet = new Set(Object.keys(invalidStatusReasons));
-    const validatedStatusOrder = statusOrder.filter((n) => !invalidNameSet.has(n));
-
-    // ⑥ 최종 배정
-    const result = mode === "2부제"
-      ? assignDouble(namesList, validatedStatuses, shift1Size, shift2Size, dgMap, validatedStatusOrder)
-      : assignSingle(namesList, validatedStatuses, singleSize);
-
-    return { result, invalidStatusReasons };
+    const result = engineResultToDayResult(engine.final);
+    return { result, invalidStatusReasons: engine.final.invalidStatusReasons };
   }
 
   // ── 실시간 배정 미리보기 ──────────────────────────
@@ -2070,7 +2101,8 @@ export default function SchedulePage() {
       currentDateKey,
       dayIdx,
       currentDaegeun,
-      dateStatusOrders[currentDateKey] ?? []
+      dateStatusOrders[currentDateKey] ?? [],
+      getPreviousDayResult(currentDateKey)
     );
     return result;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2089,15 +2121,15 @@ export default function SchedulePage() {
     for (const [name, st] of Object.entries(savedDay)) {
       if (!timingStatuses.has(st)) baseSavedDay[name] = st;
     }
-    const baseStatuses: Record<string, StatusType> = {};
-    effectiveNames.forEach((n) => {
-      baseStatuses[n] = resolveStatus(n, currentDateKey, dayIdx, baseSavedDay, currentDaegeun);
-    });
-    const baseStatusOrder = (dateStatusOrders[currentDateKey] ?? [])
-      .filter(n => !timingStatuses.has(savedDay[n] as StatusType));
-    return mode === "2부제"
-      ? assignDouble(effectiveNames, baseStatuses, shift1Size, shift2Size, currentDaegeun, baseStatusOrder)
-      : assignSingle(effectiveNames, baseStatuses, singleSize);
+    return buildValidatedResult(
+      effectiveNames,
+      baseSavedDay,
+      currentDateKey,
+      dayIdx,
+      currentDaegeun,
+      [],
+      getPreviousDayResult(currentDateKey)
+    ).result;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveNames, dateStatuses, currentDateKey, selectedDate, dayOfWeek, currentDaegeun, mode, shift1Size, shift2Size, singleSize, dateStatusOrders, holidayMap, sickLeave]);
 
@@ -2214,6 +2246,7 @@ export default function SchedulePage() {
 
   // ── 공통: currentNames 하루 전진 (컴포넌트 레벨) ──
   function advanceNames(result: DayResult, curNames: string[]): string[] {
+    if (result.nextDayQueue?.length) return [...result.nextDayQueue];
     const nextSpares = getPrioritySpares(result);
     const nextSpareSet = new Set(nextSpares);
     let nextRest = curNames.filter(n => !nextSpareSet.has(n));
@@ -2247,6 +2280,7 @@ export default function SchedulePage() {
     if (startSpares.length === 0) return { updatedAssignment: baseAssignment, updatedSpare2: baseSpare2, count: 0 };
 
     let currentNames = rotateNames([...names], startSpares[0]);
+    let previousResult: DayResult | null = baseAssignment[startDateLabel] ?? null;
     const updatedAssignment = { ...baseAssignment };
     const updatedSpare2 = { ...baseSpare2 };
     let count = 0;
@@ -2265,13 +2299,15 @@ export default function SchedulePage() {
         day.dateLabel,
         day.dayIdx,
         dgMap,
-        dateStatusOrders[day.dateLabel] ?? []
+        dateStatusOrders[day.dateLabel] ?? [],
+        previousResult
       );
 
       updatedAssignment[day.dateLabel] = result;
       if (result.spare2.length > 0) updatedSpare2[day.dateLabel] = result.spare2;
 
       currentNames = advanceNames(result, currentNames);
+      previousResult = result;
       count++;
     }
 
@@ -2289,7 +2325,8 @@ export default function SchedulePage() {
       currentDateKey,
       dayIdx,
       currentDaegeun,
-      dateStatusOrders[currentDateKey] ?? []
+      dateStatusOrders[currentDateKey] ?? [],
+      getPreviousDayResult(currentDateKey)
     );
     if (Object.keys(invalidStatusReasons).length > 0) {
       result.invalidStatusReasons = invalidStatusReasons;
@@ -2425,9 +2462,10 @@ export default function SchedulePage() {
       // ── 시작 이름: 루프 내 직전 결과 우선 스페어[0] 우선 → getStartNameForDate → fallback ──
       // 직전 날짜를 이번 루프에서 방금 계산했다면 state 우회하여 직접 사용
       const prevLoopResult = results.length > 0 ? results[results.length - 1].result : null;
-      const prevSpare2First = prevLoopResult ? (getPrioritySpares(prevLoopResult)[0] ?? null) : null;
-      const dayStartName = prevSpare2First ?? getStartNameForDate(dateLabel);
-      const dayNames = dayStartName ? rotateNames([...names], dayStartName) : [...names];
+      const dayStartName = getStartNameForDate(dateLabel);
+      const dayNames = prevLoopResult?.nextDayQueue?.length
+        ? [...prevLoopResult.nextDayQueue]
+        : dayStartName ? rotateNames([...names], dayStartName) : [...names];
 
       // ── 배정 계산: buildValidatedResult → livePreview · assign() · recalculateFrom()와 동일 경로 ──
       const savedDay = dateStatuses[dateLabel] ?? {};
@@ -2438,7 +2476,8 @@ export default function SchedulePage() {
         dateLabel,
         dayIdx,
         dgMap,
-        dateStatusOrders[dateLabel] ?? []
+        dateStatusOrders[dateLabel] ?? [],
+        prevLoopResult ?? getPreviousDayResult(dateLabel)
       );
 
       results.push({ day: dateLabel, result, skipped: false });
@@ -3929,7 +3968,7 @@ export default function SchedulePage() {
                               if (active) {
                                 clearStatus(name);
                               } else {
-                                setManualStatuses(prev => ({ ...prev, [name]: st }));
+                                toggleStatus(name, st);
                               }
                               setVipSubPicking(null);
                             }}
@@ -3964,12 +4003,8 @@ export default function SchedulePage() {
               const isSelected = effS === st;
               const isDifferent = effS !== null && effS !== st && !VIP_STATUSES.has(effS);
               const isVipDiff = VIP_STATUSES.has(effS);
-              const isDisabled = (() => {
-                if (isSelected) return false;
-                if (st === "조출") return !cho가능 || cho현재수 >= 6;
-                if (st === "후출") return hu현재수 >= 6;
-                return false;
-              })();
+              // 요청은 항상 선택 가능하며, 성립 여부는 FINAL 계산에서 판정한다.
+              const isDisabled = false;
               items.push(
                 <div key={name}
                   onClick={() => !isDisabled && toggleStatus(name, st)}
@@ -4936,7 +4971,7 @@ export default function SchedulePage() {
                                   if (active) {
                                     clearStatus(name);
                                   } else {
-                                    setManualStatuses(prev => ({ ...prev, [name]: st }));
+                                    toggleStatus(name, st);
                                   }
                                 }}
                                 style={{
@@ -5771,6 +5806,7 @@ function DayResultView({ result, mode, compact = false }: {
   const cats = mode === "2부제" ? CATS_DOUBLE : CATS_SINGLE;
   const 조출Set  = new Set(result.조출List ?? []);
   const 후출Set  = new Set(result.후출List ?? []);
+  const findingSet = new Set(result.findingList ?? []);
   const spare1Set = new Set(result.spare1 ?? []); // 1부스페어는 shift2 앞에 이미 배정 → 중복 제거용
   // 대근 인원 set (1부·2부·투라운드) — 배정 결과에서 bold 표시용
   const daegeunSet = new Set(result.daegeunList ?? []);
@@ -5783,9 +5819,10 @@ function DayResultView({ result, mode, compact = false }: {
         const dot = grp ? GROUP_DOT[grp] : null;
         const invalidReason = result.invalidStatusReasons?.[n];
         return (
-          <span key={n} style={{ fontWeight: daegeunSet.has(n) ? 800 : undefined }}>
+          <span key={n} style={{ fontWeight: (daegeunSet.has(n) || findingSet.has(n)) ? 800 : undefined, color: findingSet.has(n) ? "#1d4ed8" : undefined }}>
             {i > 0 && "  ·  "}
             {n}
+            {findingSet.has(n) && " [찾근]"}
             {invalidReason && ` (${invalidReason})`}
             {dot && <span style={{ color: dot, marginLeft: "2px", fontSize: "0.65rem" }}>●</span>}
           </span>
@@ -5800,7 +5837,8 @@ function DayResultView({ result, mode, compact = false }: {
           const isSpare1 = (key === "shift2") && spare1Set.has(n);
           const isTwoR   = key === "twoRound";
           const isDaegeun = daegeunSet.has(n); // 대근 인원 (bold 강조)
-          const suffix   = isCho ? " [조출]" : isHu ? " [후출]" : isSpare1 ? " [1부스페어]" : "";
+          const isFinding = findingSet.has(n);
+          const suffix   = isFinding ? " [찾근]" : isCho ? " [조출]" : isHu ? " [후출]" : isSpare1 ? " [1부스페어]" : "";
           const grp      = isExcluded ? NAME_GROUP_NORMALIZED[normalize(n)] : undefined;
           const dotColor = grp ? GROUP_DOT[grp] : null;
           const invalidReason = result.invalidStatusReasons?.[n];
@@ -5808,8 +5846,8 @@ function DayResultView({ result, mode, compact = false }: {
             <span key={n}>
               {i > 0 && <span style={{ color: "#d1d5db" }}> · </span>}
               <span style={{
-                fontWeight: (isCho || isHu || isTwoR || isSpare1 || isDaegeun) ? 800 : 500,
-                color: isCho ? "#9a3412" : isHu ? "#5b21b6" : isTwoR ? "#164e63" : isSpare1 ? "#9a3412" : "#374151",
+                fontWeight: (isFinding || isCho || isHu || isTwoR || isSpare1 || isDaegeun) ? 800 : 500,
+                color: isFinding ? "#1d4ed8" : isCho ? "#9a3412" : isHu ? "#5b21b6" : isTwoR ? "#164e63" : isSpare1 ? "#9a3412" : "#374151",
                 background: isCho ? "#fed7aa" : isHu ? "#ddd6fe" : "transparent",
                 borderRadius: 4, padding: (isCho || isHu) ? "1px 4px" : 0,
               }}>
