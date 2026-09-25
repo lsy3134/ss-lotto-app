@@ -270,11 +270,12 @@ test("투가 도는 날 후출은 정상 원번 구간 뒤와 정상 투근무 �
     daegeun: {},
   });
 
-  assert.deepEqual(final.shift2Membership, ["5", ...forty.slice(5, 34)]);
-  assert.deepEqual(final.shift2DisplayOrder, [...forty.slice(31, 34), "5", ...forty.slice(5, 31)]);
-  assert.deepEqual(final.normalBothMembership, forty.slice(5, 31));
-  assert.deepEqual(final.shift2SpareQueue.slice(0, 2), ["35", "36"]);
-  assert.deepEqual(final.nextDayQueue.slice(0, 2), ["35", "36"]);
+  const expectedFlow = [...forty.slice(31), "5", ...forty.slice(0, 4), ...forty.slice(5, 21)];
+  assert.deepEqual(final.shift2Membership, expectedFlow);
+  assert.deepEqual(final.shift2DisplayOrder, expectedFlow);
+  assert.deepEqual(final.normalBothMembership, [...forty.slice(0, 4), ...forty.slice(5, 21)]);
+  assert.deepEqual(final.shift2SpareQueue.slice(0, 2), ["22", "23"]);
+  assert.deepEqual(final.nextDayQueue.slice(0, 2), ["22", "23"]);
 });
 
 test("복수 후출은 정상 원번 구간 뒤에 canonical 순서로 연속 표시된다", () => {
@@ -294,9 +295,66 @@ test("복수 후출은 정상 원번 구간 뒤에 canonical 순서로 연속 �
 
   const firstTwoRound = final.shift2DisplayOrder.findIndex((name) => final.normalBothMembership.includes(name));
   assert.deepEqual(final.shift2DisplayOrder.slice(firstTwoRound - 2, firstTwoRound), ["5", "10"]);
-  assert.deepEqual(final.shift2Membership, ["5", "10", ...forty.slice(5, 9), ...forty.slice(10, 34)]);
-  assert.deepEqual(final.shift2SpareQueue.slice(0, 2), ["35", "36"]);
-  assert.deepEqual(final.nextDayQueue.slice(0, 2), ["35", "36"]);
+  const expectedFlow = [...forty.slice(32), "5", "10", ...forty.slice(0, 4), ...forty.slice(5, 9), ...forty.slice(10, 22)];
+  assert.deepEqual(final.shift2Membership, expectedFlow);
+  assert.deepEqual(final.shift2DisplayOrder, expectedFlow);
+  assert.deepEqual(final.shift2SpareQueue.slice(0, 2), ["23", "24"]);
+  assert.deepEqual(final.nextDayQueue.slice(0, 2), ["23", "24"]);
+});
+
+test("1부 스페어가 조출이면 스페어에서 빠지고 다음 정상 순번이 승격된다", () => {
+  const requested = statuses({ E: "조출" });
+  const { base, final } = calculateSchedule(doubleInput({
+    statuses: requested, baseStatuses: statuses(), requests: requested,
+  }));
+  assert.deepEqual(base.shift1Spare, ["E"]);
+  assert.deepEqual(final.appliedEarly, ["E"]);
+  assert.ok(final.shift1Membership.includes("E"));
+  assert.ok(!final.shift2Membership.includes("E"));
+  assert.deepEqual(final.shift1Spare, ["D"]);
+  assert.ok(!final.shift1Spare.some((name) => final.appliedEarly.includes(name)));
+  assert.equal(final.shift2Membership[0], "D");
+});
+
+test("1부 스페어가 후출이면 새 스페어가 승격되고 후출 위치에서 근무한다", () => {
+  const requested = statuses({ E: "후출" });
+  const { base, final } = calculateSchedule(doubleInput({
+    statuses: requested, baseStatuses: statuses(), requests: requested,
+  }));
+  assert.deepEqual(base.shift1Spare, ["E"]);
+  assert.deepEqual(final.appliedLate, ["E"]);
+  assert.ok(!final.shift1Membership.includes("E"));
+  assert.ok(final.shift2Membership.includes("E"));
+  assert.deepEqual(final.shift1Spare, ["F"]);
+  assert.ok(!final.shift1Spare.some((name) => final.appliedLate.includes(name)));
+  assert.equal(final.shift2DisplayOrder.at(-1), "E");
+  assert.equal(final.shift2Membership[0], "F");
+});
+
+test("찾근·투라운드 대근·후출은 실제 위치에서 정원을 쓰고 정상 circular 중간을 건너뛰지 않는다", () => {
+  const forty = Array.from({ length: 40 }, (_, index) => String(index + 1));
+  const baseStatuses = Object.fromEntries(forty.map((name) => [name, null]));
+  const requested = { ...baseStatuses, "25": "찾근" as const, "5": "후출" as const };
+  const { final } = calculateSchedule({
+    canonicalQueue: forty,
+    mode: "2부제",
+    shift1Size: 30,
+    shift2Size: 30,
+    statuses: requested,
+    baseStatuses,
+    requests: requested,
+    requestOrder: ["25", "5"],
+    daegeun: { "28": "투라운드" },
+    previousSpare1: "31",
+    previousSpare2: "32",
+  });
+  const expectedFlow = ["32", "25", "28", ...forty.slice(32), "5", ...forty.slice(0, 4), ...forty.slice(5, 19)];
+  assert.deepEqual(final.shift2Membership, expectedFlow);
+  assert.deepEqual(final.shift2DisplayOrder, expectedFlow);
+  assert.deepEqual(final.shift1DisplayOrder.slice(0, 4), ["31", "25", "28", "1"]);
+  assert.deepEqual(final.shift2SpareQueue.slice(0, 2), ["20", "21"]);
+  assert.deepEqual(final.nextDayQueue.slice(0, 2), ["20", "21"]);
+  assert.ok(!final.shift1Spare.some((name) => final.appliedFinding.includes(name)));
 });
 
 test("VIP/대근이 정원을 채우면 찾근은 미성립한다", () => {
@@ -375,6 +433,34 @@ test("투라운드 날 정상 투스페어는 찾근이 성립한다", () => {
   assert.ok(base.twoSpareQueue.includes("F"));
   assert.ok(final.shift2Membership.includes("F"));
   assert.ok(final.appliedFinding.includes("F"));
+});
+
+test("투라운드 날 BASE 양쪽 번호가 없는 신청자는 찾근 정원과 잔여 정원을 소비하지 않는다", () => {
+  const names = Array.from({ length: 12 }, (_, index) => String(index + 1));
+  const baseStatuses = Object.fromEntries(names.map((name) => [name, null]));
+  baseStatuses["8"] = "대기";
+  const requested = { ...baseStatuses, "4": "찾근" as const, "9": "찾근" as const };
+  const { base, final } = calculateSchedule({
+    canonicalQueue: names,
+    mode: "2부제",
+    shift1Size: 3,
+    shift2Size: 8,
+    statuses: requested,
+    baseStatuses,
+    requests: requested,
+    requestOrder: ["4", "9"],
+    daegeun: {},
+  });
+
+  assert.ok(base.normalBothMembership.length > 0);
+  assert.ok(!base.shift1Membership.includes("4"));
+  assert.ok(!base.shift2Membership.includes("4"));
+  assert.equal(final.invalidStatusReasons["4"], "찾근 미성립 · 번호 안옴");
+  assert.ok(!final.appliedFinding.includes("4"));
+  assert.ok(!final.shift1Membership.includes("4"));
+  assert.ok(!final.shift2Membership.includes("4"));
+  assert.ok(final.appliedFinding.includes("9"));
+  assert.equal(requested["4"], "찾근");
 });
 
 test("투라운드 날 이미 정상 투근무자는 찾근이 미성립한다", () => {

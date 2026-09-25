@@ -48,6 +48,12 @@ type Allocation = Omit<ScheduleEngineResult,
     shift2RegularOrder: string[];
   };
 
+interface DoubleTimingPlacement {
+  finding: Set<string>;
+  late: Set<string>;
+  findingAnchor?: string;
+}
+
 const BLOCKED = new Set<ScheduleStatus>(["당번", "병가", "휴무", "하우스"]);
 const TIMING = new Set<ScheduleStatus>(["찾근", "조출", "후출"]);
 
@@ -157,6 +163,7 @@ function allocateDouble(
   excludeFromShift1: Set<string> = new Set(),
   excludeFromShift2: Set<string> = new Set(),
   excludeFromSpares: Set<string> = new Set(),
+  timingPlacement?: DoubleTimingPlacement,
 ): Allocation {
   const queue = input.canonicalQueue;
   const s1Capacity = Math.max(0, input.shift1Size);
@@ -185,17 +192,50 @@ function allocateDouble(
     .filter((n) => !excludeFromSpares.has(n))
     .slice(0, 1);
 
-  const fixed2 = unique([...vip2, ...vipBoth, ...dg2, ...dgBoth, ...canonicalSort(forceShift2, queue), ...shift1Spare])
+  const positionedFinding = timingPlacement?.finding ?? new Set<string>();
+  const positionedLate = timingPlacement?.late ?? new Set<string>();
+  const positionedTiming = new Set([...positionedFinding, ...positionedLate]);
+  const otherForced2 = canonicalSort(forceShift2, queue).filter((n) => !positionedTiming.has(n));
+  const fixed2 = unique(timingPlacement
+    ? [...vip2, ...vipBoth, ...dg2, ...otherForced2, ...shift1Spare]
+    : [...vip2, ...vipBoth, ...dg2, ...dgBoth, ...canonicalSort(forceShift2, queue), ...shift1Spare])
     .filter((n) => !excludedSet.has(n) && !excludeFromShift2.has(n)).slice(0, s2Capacity);
   const fixed2Set = new Set(fixed2);
+  const specialBoth = timingPlacement ? canonicalSort([...dgBoth, ...positionedFinding], queue) : [];
+  const specialBothSet = new Set(specialBoth);
+  const lateOrder = canonicalSort(positionedLate, queue);
+  const lateSet = new Set(lateOrder);
   const regularCandidateOrder = rotateAfter(queue, shift1Spare[0])
-    .filter((n) => !excludedSet.has(n) && !dedicated1.has(n) && !fixed2Set.has(n) && !excludeFromShift2.has(n));
-  const regularSelected = regularCandidateOrder.slice(0, Math.max(0, s2Capacity - fixed2.length));
-  const shift2Membership = unique([...fixed2, ...regularSelected]);
+    .filter((n) => !excludedSet.has(n) && !dedicated1.has(n) && !fixed2Set.has(n)
+      && !specialBothSet.has(n) && !lateSet.has(n) && !excludeFromShift2.has(n));
+  let shift2Flow = timingPlacement
+    ? addAfterAnchor(regularCandidateOrder, specialBoth, queue, timingPlacement.findingAnchor ?? shift1Spare[0])
+    : regularCandidateOrder;
+  if (timingPlacement && lateOrder.length > 0) {
+    const firstTwoRound = regularCandidateOrder.find((name) => shift1Set.has(name));
+    const insertion = firstTwoRound ? shift2Flow.indexOf(firstTwoRound) : shift2Flow.length;
+    const at = insertion < 0 ? shift2Flow.length : insertion;
+    shift2Flow = [...shift2Flow.slice(0, at), ...lateOrder, ...shift2Flow.slice(at)];
+  }
+  const flowCapacity = Math.max(0, s2Capacity - fixed2.length);
+  const positionedSet = new Set([...specialBoth, ...lateOrder]);
+  let remainingPositioned = shift2Flow.filter((name) => positionedSet.has(name)).length;
+  const selectedFlow: string[] = [];
+  for (const name of shift2Flow) {
+    if (selectedFlow.length >= flowCapacity) break;
+    if (positionedSet.has(name)) {
+      selectedFlow.push(name);
+      remainingPositioned--;
+    } else if (selectedFlow.length < flowCapacity - remainingPositioned) {
+      selectedFlow.push(name);
+    }
+  }
+  const regularCandidateSet = new Set(regularCandidateOrder);
+  const regularSelected = selectedFlow.filter((n) => regularCandidateSet.has(n));
+  const shift2Membership = unique([...fixed2, ...selectedFlow]);
   const shift2Set = new Set(shift2Membership);
-  const shift2SpareQueue = regularCandidateOrder
-    .slice(regularSelected.length)
-    .filter((n) => !shift2Set.has(n) && !excludeFromSpares.has(n));
+  const shift2SpareQueue = shift2Flow
+    .filter((n) => regularCandidateSet.has(n) && !shift2Set.has(n) && !excludeFromSpares.has(n));
   const bothMembership = queue.filter((n) => shift1Set.has(n) && shift2Set.has(n));
   const regularSelectedSet = new Set(regularSelected);
   const normalBothMembership = bothMembership.filter((n) => regularSelectedSet.has(n));
@@ -288,6 +328,8 @@ export function calculateSchedule(input: ScheduleEngineInput): { base: ScheduleE
     } else if (normalTwoRoundDay) {
       if (baseBoth.has(name)) {
         invalidStatusReasons[name] = "찾근 미성립 · 이미 투번호 옴";
+      } else if (!baseS1.has(name) && !baseS2.has(name)) {
+        invalidStatusReasons[name] = "찾근 미성립 · 번호 안옴";
       } else if (appliedFinding.length >= findingLimit) {
         invalidStatusReasons[name] = "찾근 미성립 · 정원 초과";
       } else if (baseS1.has(name)) {
@@ -296,10 +338,6 @@ export function calculateSchedule(input: ScheduleEngineInput): { base: ScheduleE
       } else if (baseS2.has(name)) {
         if (free1 <= 0) invalidStatusReasons[name] = "찾근 미성립 · VIP/대근 근무로 정원 초과";
         else { force2.add(name); force1.add(name); appliedFinding.push(name); free1--; }
-      } else if (free2 <= 0) {
-        invalidStatusReasons[name] = "찾근 미성립 · VIP/대근 근무로 정원 초과";
-      } else {
-        force2.add(name); appliedFinding.push(name); free2--;
       }
     } else if (baseS1.has(name) || baseS2.has(name)) {
       invalidStatusReasons[name] = "찾근 미성립 · 번호 옴";
@@ -310,8 +348,18 @@ export function calculateSchedule(input: ScheduleEngineInput): { base: ScheduleE
     }
   }
 
+  const findingAnchor = validFindingAnchor(
+    queue, baseAllocation.excluded, input.previousSpare1, input.previousSpare2,
+  );
+  const timingSpareExclusions = new Set([...appliedFinding, ...appliedEarly, ...appliedLate]);
+  const timingPlacement: DoubleTimingPlacement = {
+    finding: new Set(appliedFinding),
+    late: new Set(appliedLate),
+    findingAnchor,
+  };
+
   let finalAllocation = input.mode === "2부제"
-    ? allocateDouble(allocationInput, force1, force2, exclude1, exclude2, new Set(appliedFinding))
+    ? allocateDouble(allocationInput, force1, force2, exclude1, exclude2, timingSpareExclusions, timingPlacement)
     : allocateSingle(allocationInput, force1, new Set(appliedFinding));
   const failedFinding = appliedFinding.filter((name) =>
     (force1.has(name) && !finalAllocation.shift1Membership.includes(name)) ||
@@ -324,18 +372,24 @@ export function calculateSchedule(input: ScheduleEngineInput): { base: ScheduleE
       invalidStatusReasons[name] = "찾근 미성립 · VIP/대근 근무로 정원 초과";
     });
     appliedFinding = appliedFinding.filter((name) => !failedFinding.includes(name));
+    failedFinding.forEach((name) => timingSpareExclusions.delete(name));
+    timingPlacement.finding = new Set(appliedFinding);
     finalAllocation = input.mode === "2부제"
-      ? allocateDouble(allocationInput, force1, force2, exclude1, exclude2, new Set(appliedFinding))
+      ? allocateDouble(allocationInput, force1, force2, exclude1, exclude2, timingSpareExclusions, timingPlacement)
       : allocateSingle(allocationInput, force1, new Set(appliedFinding));
   }
   const finalS1 = new Set(finalAllocation.shift1Membership);
-  const finalS2 = new Set(finalAllocation.shift2Membership);
-  const findingAnchor = validFindingAnchor(
-    queue, baseAllocation.excluded, input.previousSpare1, input.previousSpare2,
-  );
+  const specialBothDisplay = canonicalSort([
+    ...appliedFinding,
+    ...queue.filter((name) => allocationInput.daegeun[name] === "투라운드"),
+  ], queue);
 
-  const findingDisplayOrder = input.mode === "2부제" && appliedFinding.length
-    ? addAfterAnchor(queue, appliedFinding, queue, findingAnchor)
+  const previousSpare1Index = input.previousSpare1 ? queue.indexOf(input.previousSpare1) : -1;
+  const findingCircularOrder = previousSpare1Index >= 0
+    ? [...queue.slice(previousSpare1Index), ...queue.slice(0, previousSpare1Index)]
+    : queue;
+  const findingDisplayOrder = input.mode === "2부제" && specialBothDisplay.length
+    ? addAfterAnchor(findingCircularOrder, specialBothDisplay, queue, findingAnchor)
     : queue;
   let shift1DisplayOrder = findingDisplayOrder.filter((n) => finalS1.has(n));
   let shift2DisplayOrder = [...finalAllocation.shift2Membership];
@@ -345,35 +399,12 @@ export function calculateSchedule(input: ScheduleEngineInput): { base: ScheduleE
       : input.previousSpare2 ?? input.previousSpare1;
     shift1DisplayOrder = addAfterAnchor(shift1DisplayOrder, appliedEarly, queue, earlyAnchor);
   }
-  if (input.mode === "2부제" && appliedFinding.length) {
-    shift2DisplayOrder = addAfterAnchor(
-      shift2DisplayOrder,
-      appliedFinding.filter((n) => finalS2.has(n)),
-      queue,
-      findingAnchor,
-    );
-  }
   if (appliedLate.length) {
     if (input.mode === "단부제") {
       const lateSet = new Set(appliedLate);
       const rest = shift1DisplayOrder.filter((n) => !lateSet.has(n));
       const at = Math.max(0, rest.length - 2);
       shift1DisplayOrder = [...rest.slice(0, at), ...canonicalSort(appliedLate, queue), ...rest.slice(at)];
-    } else {
-      const lateSet = new Set(appliedLate);
-      let rest = shift2DisplayOrder.filter((name) => !lateSet.has(name));
-      const normalBothSet = new Set(finalAllocation.normalBothMembership);
-      const firstOriginalIndex = rest.findIndex((name) => !normalBothSet.has(name));
-      if (firstOriginalIndex > 0 && rest.slice(0, firstOriginalIndex).every((name) => normalBothSet.has(name))) {
-        rest = [...rest.slice(firstOriginalIndex), ...rest.slice(0, firstOriginalIndex)];
-      }
-      const firstTwoRoundIndex = rest.findIndex((name) => normalBothSet.has(name));
-      const at = firstTwoRoundIndex >= 0 ? firstTwoRoundIndex : rest.length;
-      shift2DisplayOrder = [
-        ...rest.slice(0, at),
-        ...canonicalSort(appliedLate, queue),
-        ...rest.slice(at),
-      ];
     }
   }
 

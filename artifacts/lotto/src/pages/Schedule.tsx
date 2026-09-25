@@ -3986,12 +3986,15 @@ export default function SchedulePage() {
           : _filtered;
 
         // ★ 5순위: 선택창 필터
-        // 조출/후출/찾근: 요청은 누구나 가능, 성립 여부는 BASE 계산 후 판정
+        // 조출/후출/찾근: 현재 근무 제외자는 신규 선택에서 숨기고, 그 외 성립 여부는 BASE 계산 후 판정
         // 휴무: holidayMap 순서를 앞에, 나머지 roster 순서로
         const allNames = names.length > 0 ? names : sortedCustomRoster.map(p => p.name);
         const listNames = (() => {
           const st = modalStatus as StatusType;
-          if (st === "조출" || st === "후출" || st === "찾근") return allNames;
+          if (st === "조출" || st === "후출" || st === "찾근") {
+            const unavailable = new Set<StatusType>(["휴무", "병가", "당번", "하우스"]);
+            return allNames.filter(name => !unavailable.has(effectiveStatus(name)));
+          }
           if (st === "휴무") {
             const dk = currentDateKey ? currentDateKey.slice(0, 5) : "";
             const excelOrder = holidayMap[dk] ?? [];
