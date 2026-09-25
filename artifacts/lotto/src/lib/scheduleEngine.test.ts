@@ -24,6 +24,27 @@ test("2부제 BASE: 1부 스페어 1명과 2부 스페어 1·2번을 분리한�
   assert.deepEqual(final.nextDayQueue.slice(0, 2), ["I", "J"]);
 });
 
+test("40명 1부30 2부30에서 2부 화면도 circular membership 순서를 보존한다", () => {
+  const forty = Array.from({ length: 40 }, (_, index) => String(index + 1));
+  const baseStatuses = Object.fromEntries(forty.map((name) => [name, null]));
+  const { final } = calculateSchedule({
+    canonicalQueue: forty,
+    mode: "2부제",
+    shift1Size: 30,
+    shift2Size: 30,
+    statuses: baseStatuses,
+    baseStatuses,
+    daegeun: {},
+  });
+  const circularShift2 = [...forty.slice(30), ...forty.slice(0, 20)];
+  assert.deepEqual(final.shift2Membership, circularShift2);
+  assert.deepEqual(final.shift2DisplayOrder, circularShift2);
+  assert.deepEqual(final.normalBothMembership, forty.slice(0, 20));
+  assert.deepEqual(final.twoSpareQueue, forty.slice(20, 30));
+  assert.deepEqual(final.shift2SpareQueue.slice(0, 2), ["21", "22"]);
+  assert.deepEqual(final.nextDayQueue.slice(0, 2), ["21", "22"]);
+});
+
 test("2부 스페어 찾근은 정원을 유지하며 정상 마지막 근무자를 민다", () => {
   const requested = statuses({ I: "찾근" });
   const { final } = calculateSchedule(doubleInput({ statuses: requested, baseStatuses: statuses() }));

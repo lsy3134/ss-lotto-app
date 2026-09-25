@@ -309,12 +309,20 @@ export function calculateSchedule(input: ScheduleEngineInput): { base: ScheduleE
     ? addAfterAnchor(queue, appliedFinding, queue, input.previousSpare2 ?? input.previousSpare1)
     : queue;
   let shift1DisplayOrder = findingDisplayOrder.filter((n) => finalS1.has(n));
-  let shift2DisplayOrder = findingDisplayOrder.filter((n) => finalS2.has(n));
+  let shift2DisplayOrder = [...finalAllocation.shift2Membership];
   if (input.mode === "2부제" && appliedEarly.length) {
     const earlyAnchor = finalAllocation.bothMembership.length > 0 && finalAllocation.twoSpareQueue.length > 0
       ? finalAllocation.twoSpareQueue[Math.min(3, finalAllocation.twoSpareQueue.length - 1)]
       : input.previousSpare2 ?? input.previousSpare1;
     shift1DisplayOrder = addAfterAnchor(shift1DisplayOrder, appliedEarly, queue, earlyAnchor);
+  }
+  if (input.mode === "2부제" && appliedFinding.length) {
+    shift2DisplayOrder = addAfterAnchor(
+      shift2DisplayOrder,
+      appliedFinding.filter((n) => finalS2.has(n)),
+      queue,
+      input.previousSpare2 ?? input.previousSpare1,
+    );
   }
   if (appliedLate.length) {
     if (input.mode === "단부제") {
