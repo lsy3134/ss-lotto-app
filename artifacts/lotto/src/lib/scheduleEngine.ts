@@ -292,10 +292,10 @@ export function calculateSchedule(input: ScheduleEngineInput): { base: ScheduleE
         invalidStatusReasons[name] = "찾근 미성립 · 정원 초과";
       } else if (baseS1.has(name)) {
         if (free2 <= 0) invalidStatusReasons[name] = "찾근 미성립 · VIP/대근 근무로 정원 초과";
-        else { force2.add(name); appliedFinding.push(name); free2--; }
+        else { force1.add(name); force2.add(name); appliedFinding.push(name); free2--; }
       } else if (baseS2.has(name)) {
         if (free1 <= 0) invalidStatusReasons[name] = "찾근 미성립 · VIP/대근 근무로 정원 초과";
-        else { force1.add(name); appliedFinding.push(name); free1--; }
+        else { force2.add(name); force1.add(name); appliedFinding.push(name); free1--; }
       } else if (free2 <= 0) {
         invalidStatusReasons[name] = "찾근 미성립 · VIP/대근 근무로 정원 초과";
       } else {

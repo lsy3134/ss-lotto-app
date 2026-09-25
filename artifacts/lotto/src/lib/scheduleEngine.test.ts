@@ -315,7 +315,9 @@ test("투라운드 날 1부만 근무하는 원번자는 찾근으로 2부에 �
   assert.ok(base.normalBothMembership.length > 0);
   assert.ok(base.shift1Membership.includes("E"));
   assert.ok(!base.shift2Membership.includes("E"));
+  assert.ok(final.shift1Membership.includes("E"));
   assert.ok(final.shift2Membership.includes("E"));
+  assert.ok(final.bothMembership.includes("E"));
   assert.deepEqual(final.appliedFinding, ["E"]);
 });
 
@@ -328,7 +330,41 @@ test("투라운드 날 2부만 근무하는 원번자는 찾근으로 1부에 �
   assert.ok(!base.shift1Membership.includes("J"));
   assert.ok(base.shift2Membership.includes("J"));
   assert.ok(final.shift1Membership.includes("J"));
+  assert.ok(final.shift2Membership.includes("J"));
+  assert.ok(final.bothMembership.includes("J"));
   assert.deepEqual(final.appliedFinding, ["J"]);
+});
+
+test("권희진·박수림 회귀: 조출 force1이 있어도 BASE 1부 찾근자는 양쪽 근무를 유지한다", () => {
+  const regressionQueue = ["A", "B", "C", "D", "E", "F", "권희진", "박수림", "I", "윤다경", "이서온", "L"];
+  const baseStatuses = Object.fromEntries(regressionQueue.map((name) => [name, null]));
+  const requested = {
+    ...baseStatuses,
+    권희진: "찾근" as const,
+    박수림: "찾근" as const,
+    윤다경: "조출" as const,
+    이서온: "조출" as const,
+  };
+  const { base, final } = calculateSchedule({
+    canonicalQueue: regressionQueue,
+    mode: "2부제",
+    shift1Size: 8,
+    shift2Size: 8,
+    statuses: requested,
+    baseStatuses,
+    requests: requested,
+    requestOrder: ["권희진", "박수림", "윤다경", "이서온"],
+    daegeun: {},
+  });
+
+  for (const name of ["권희진", "박수림"]) {
+    assert.ok(base.shift1Membership.includes(name));
+    assert.ok(!base.shift2Membership.includes(name));
+    assert.ok(final.shift1Membership.includes(name));
+    assert.ok(final.shift2Membership.includes(name));
+    assert.ok(final.bothMembership.includes(name));
+    assert.ok(final.appliedFinding.includes(name));
+  }
 });
 
 test("투라운드 날 정상 투스페어는 찾근이 성립한다", () => {
