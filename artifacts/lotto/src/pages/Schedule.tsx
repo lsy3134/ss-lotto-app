@@ -1,10 +1,20 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { Fragment, useState, useEffect, useMemo, useRef } from "react";
 import { useLocation } from "wouter";
 import * as XLSX from "xlsx";
 import { ROSTER, isAutoOff, type GroupType, type PersonData } from "../data/roster";
-import { createWorker } from "tesseract.js";
 import { useAuth } from "../App";
 import { calculateSchedule, type ScheduleEngineResult } from "../lib/scheduleEngine";
+import {
+  applyOcrAssignments,
+  applyTimingImportState,
+  clearManualHolidayImports,
+  matchImportedStatuses,
+  mergeHolidayImport,
+  parseOcrStatusText,
+  parseTimingExcelBuffer,
+  type ImportStatus,
+  type ImportStatusMap,
+} from "../lib/scheduleInputImport";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -18,6 +28,19 @@ type StatusType =
 const VIP_STATUSES = new Set<StatusType>(["VIP1부", "VIP2부", "VIP투근무"]);
 
 type Mode = "2부제" | "단부제";
+type HolidayImportPreview = { fileName: string; map: Record<string, string[]>; selectedDates: string[] };
+type TimingImportPreview = {
+  fileName: string;
+  map: ImportStatusMap;
+  matched: Record<string, Partial<Record<ImportStatus, string[]>>>;
+  needsReview: Record<string, Partial<Record<ImportStatus, string[]>>>;
+  selectedDates: string[];
+};
+type OcrDraft = {
+  dateKey: string;
+  matched: Partial<Record<ImportStatus, string[]>>;
+  needsReview: Partial<Record<ImportStatus, string[]>>;
+};
 type DaegeunType = "1부" | "2부" | "투라운드";
 
 const STATUS_BUTTONS: StatusType[] = [
@@ -816,74 +839,6 @@ function buildNextDayQueue(
 
 
 
-// ── OCR 달력 파싱 ────────────────────────────────
-interface OcrWord {
-  text: string;
-  bbox: { x0: number; x1: number; y0: number; y1: number };
-}
-
-function parseCalendarOCR(words: OcrWord[]): Record<string, string[]> {
-  const dateNums: { date: number; cx: number; y: number }[] = [];
-  const korNames: { name: string; cx: number; y: number }[] = [];
-
-  for (const w of words) {
-    const raw = w.text.trim();
-    const cx = (w.bbox.x0 + w.bbox.x1) / 2;
-    const cy = (w.bbox.y0 + w.bbox.y1) / 2;
-
-    // 날짜 숫자 (1~31)
-    if (/^\d{1,2}$/.test(raw)) {
-      const n = parseInt(raw, 10);
-      if (n >= 1 && n <= 31) {
-        dateNums.push({ date: n, cx, y: cy });
-        continue;
-      }
-    }
-
-    // 한국어 이름 (2~4자)
-    const clean = raw.replace(/[^가-힣]/g, "");
-    if (/^[가-힣]{2,4}$/.test(clean)) {
-      korNames.push({ name: clean, cx, y: cy });
-    }
-  }
-
-  const result: Record<string, string[]> = {};
-
-  for (const nm of korNames) {
-    let bestDate: number | null = null;
-    let bestScore = Infinity;
-
-    for (const dn of dateNums) {
-      const dx = Math.abs(nm.cx - dn.cx);
-      const dy = nm.y - dn.y; // 양수 = 이름이 날짜 아래
-      if (dx > 120) continue;  // 다른 열
-      if (dy < -30) continue;  // 이름이 날짜 위에 너무 많이 올라가면 제외
-
-      const score = dx * 2 + Math.abs(dy) * 0.1;
-      if (score < bestScore) { bestScore = score; bestDate = dn.date; }
-    }
-
-    if (bestDate !== null) {
-      const key = String(bestDate);
-      if (!result[key]) result[key] = [];
-      if (!result[key].includes(nm.name)) result[key].push(nm.name);
-    }
-  }
-
-  return result;
-}
-
-async function runCalendarOCR(file: File): Promise<Record<string, string[]>> {
-  const worker = await createWorker("kor");
-  try {
-    const { data } = await worker.recognize(file);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return parseCalendarOCR((data as any).words as OcrWord[]);
-  } finally {
-    await worker.terminate();
-  }
-}
-
 // ── 메인 컴포넌트 ─────────────────────────────────
 export default function SchedulePage() {
   const [, setLocation] = useLocation();
@@ -1037,6 +992,17 @@ export default function SchedulePage() {
     localStorage.setItem(DSO_KEY, JSON.stringify(dateStatusOrders));
   }, [dateStatusOrders, DSO_KEY]);
 
+  // 조출·후출·찾근 Excel 출처만 추적한다. 실제 배정 입력은 기존 dateStatuses를 사용한다.
+  const TIMING_SOURCE_KEY = `lotto_timingExcelSource_${new Date().getFullYear()}`;
+  const [timingExcelSource, setTimingExcelSource] = useState<Record<string, Record<string, ImportStatus>>>(() => {
+    try { return JSON.parse(localStorage.getItem(TIMING_SOURCE_KEY) ?? "{}"); } catch { return {}; }
+  });
+  const [timingImportPreview, setTimingImportPreview] = useState<TimingImportPreview | null>(null);
+  const [timingFileName, setTimingFileName] = useState<string | null>(() => localStorage.getItem("lotto_timingExcelFileName"));
+  useEffect(() => {
+    localStorage.setItem(TIMING_SOURCE_KEY, JSON.stringify(timingExcelSource));
+  }, [timingExcelSource, TIMING_SOURCE_KEY]);
+
   // 병가 지속 상태 (해제 전까지 모든 날짜에 자동 적용)
   const SL_KEY = `lotto_sickLeave_${new Date().getFullYear()}`;
   const [sickLeave, setSickLeave] = useState<Record<string, boolean>>(() => {
@@ -1058,6 +1024,7 @@ export default function SchedulePage() {
   const [holidayFileName, setHolidayFileName] = useState<string | null>(() =>
     localStorage.getItem("lotto_holidayFileName")
   );
+  const [holidayImportPreview, setHolidayImportPreview] = useState<HolidayImportPreview | null>(null);
   useEffect(() => {
     localStorage.setItem(HM_KEY, JSON.stringify(holidayMap));
   }, [holidayMap]);
@@ -1111,96 +1078,51 @@ export default function SchedulePage() {
           );
           return;
         }
-        // ── 업로드한 월만 교체, 다른 월 데이터는 유지 ──
-        const uploadedMonths = new Set(Object.keys(map).map(k => k.slice(0, 2)));
-        setHolidayMap(prev => {
-          const next = { ...prev };
-          for (const key of Object.keys(next)) {
-            if (uploadedMonths.has(key.slice(0, 2))) delete next[key];
-          }
-          const merged = { ...next, ...map };
-
-          // ── 서버에 저장 (모든 기기에서 공유) ──
-          fetch("/api/holiday-map", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ fileName: file.name, holidayMap: merged }),
-          })
-            .then(r => r.json())
-            .then((result: { ok?: boolean; months?: string[]; keyCount?: number; updatedAt?: string; error?: string }) => {
-              if (result.error) {
-                console.error("[HolidayUpload] 서버 오류:", result.error);
-              } else if (result.updatedAt) {
-                localStorage.setItem("lotto_holidayMapUpdatedAt", result.updatedAt);
-              }
-            })
-            .catch(e => { console.error("[HolidayUpload] fetch 실패:", e); });
-
-          localStorage.setItem("lotto_holidayMap", JSON.stringify(merged));
-          return merged;
-        });
-        setHolidayFileName(file.name);
-        localStorage.setItem("lotto_holidayFileName", file.name);
-
-        // ── 업로드 월의 휴무 상태만 초기화 (다른 월·다른 상태는 유지) ──
-        // viewMonth 대신 실제 업로드된 파일의 월을 기준으로 초기화
-        const uploadMonthStr = [...uploadedMonths][0] ?? String(parseInt(viewMonth, 10)).padStart(2, "0");
-        setDateStatuses(prev => {
-          const next: typeof prev = {};
-          for (const [dl, statuses] of Object.entries(prev)) {
-            const dlMonth = dl.slice(5, 7); // "2026-05-01" → "05"
-            const isUploadMonth = dlMonth === uploadMonthStr;
-            const cleaned: Record<string, StatusType> = {};
-            for (const [name, st] of Object.entries(statuses)) {
-              // 업로드 월 날짜의 휴무만 제거, 다른 월·다른 상태 유지
-              if (isUploadMonth && st === "휴무") continue;
-              cleaned[name] = st;
-            }
-            if (Object.keys(cleaned).length > 0) next[dl] = cleaned;
-          }
-          return next;
-        });
-
-        // ── 최근 2개월만 유지: 업로드 월 기준 M-1 이전 데이터 삭제 ──
-        // 예) 6월 업로드 → cutoff = 2026-05-01 → 5월·6월 유지, 4월 이전 삭제
-        {
-          const uploadYr = viewYear; // already number
-          const uploadMo = parseInt(viewMonth, 10); // 1~12
-          const keepFromMo = uploadMo - 1; // 이 달부터 유지 (M-1)
-          const cutoffYr = keepFromMo <= 0 ? uploadYr - 1 : uploadYr;
-          const cutoffMoNorm = keepFromMo <= 0 ? keepFromMo + 12 : keepFromMo;
-          const cutoff = `${cutoffYr}-${String(cutoffMoNorm).padStart(2, "0")}-01`;
-
-          const trimKeys = <T extends Record<string, unknown>>(obj: T): T => {
-            const next = { ...obj };
-            for (const k of Object.keys(next)) {
-              if (k < cutoff) delete next[k];
-            }
-            return next;
-          };
-
-          // ── trimKeys 적용 범위 ──────────────────────────────────────
-          // trimKeys는 ISO "YYYY-MM-DD" 형식 키에만 안전하게 동작합니다.
-          // "MM.DD (요일)" 형식 키를 사용하는 state에 적용하면
-          // "0..." < "2026-..." 비교로 모든 키가 삭제되는 버그가 발생합니다.
-          //
-          // ISO 키 state (trimKeys 적용 가능):
-          //   - assignmentData
-          //
-          // MM.DD 형식 state (trimKeys 미적용 — 전부 삭제 버그 방지):
-          //   - dateStatuses, savedSpare2, dateDaegeun,
-          //     overrideStartByDate, dateStatusOrders
-          setAssignmentData(prev => trimKeys(prev) as typeof prev);
-        }
-
-        const totalPeople = Object.values(map).reduce((s, a) => s + a.length, 0);
-        const uploadedMonthList = [...uploadedMonths].sort().join("·");
-        alert(`✅ 휴무 엑셀 업로드 완료!\n${dateCount}개 날짜 · 총 ${totalPeople}건\n${uploadedMonthList}월 데이터 갱신 (다른 월 유지)`);
+        setHolidayImportPreview({ fileName: file.name, map, selectedDates: Object.keys(map) });
       } catch (err) {
         alert("엑셀 파일 읽기 실패: " + String(err));
       }
     };
     reader.readAsArrayBuffer(file);
+  }
+
+  function applyHolidayImport(scope: "all" | "selected") {
+    if (!holidayImportPreview) return;
+    const { fileName, map, selectedDates } = holidayImportPreview;
+    const targetDates = scope === "all" ? Object.keys(map) : selectedDates;
+    if (targetDates.length === 0) return;
+    if (!confirm(`${scope === "all" ? "전체 월" : `${targetDates.length}개 선택 날짜`}의 휴무 자료를 적용할까요?`)) return;
+    const uploadedMonths = new Set(Object.keys(map).map(key => key.slice(0, 2)));
+
+    setHolidayMap(prev => {
+      const next = mergeHolidayImport(prev, map, targetDates, scope);
+      fetch("/api/holiday-map", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName, holidayMap: next }),
+      })
+        .then(r => r.json())
+        .then((result: { updatedAt?: string; error?: string }) => {
+          if (result.error) console.error("[HolidayUpload] 서버 오류:", result.error);
+          else if (result.updatedAt) localStorage.setItem("lotto_holidayMapUpdatedAt", result.updatedAt);
+        })
+        .catch(error => console.error("[HolidayUpload] fetch 실패:", error));
+      localStorage.setItem(HM_KEY, JSON.stringify(next));
+      return next;
+    });
+
+    setDateStatuses(prev => clearManualHolidayImports(prev, Object.keys(map), targetDates, scope) as typeof prev);
+    setHolidayFileName(fileName);
+    localStorage.setItem("lotto_holidayFileName", fileName);
+    if (scope === "all") {
+      const uploadMonth = Number([...uploadedMonths][0] ?? viewMonth);
+      const keepFromMonth = uploadMonth - 1;
+      const cutoffYear = keepFromMonth <= 0 ? viewYear - 1 : viewYear;
+      const cutoffMonth = keepFromMonth <= 0 ? keepFromMonth + 12 : keepFromMonth;
+      const cutoff = `${cutoffYear}-${String(cutoffMonth).padStart(2, "0")}-01`;
+      setAssignmentData(prev => Object.fromEntries(Object.entries(prev).filter(([key]) => key >= cutoff)));
+    }
+    setHolidayImportPreview(null);
   }
 
   // 대근 날짜별 저장 (localStorage)
@@ -1459,11 +1381,14 @@ export default function SchedulePage() {
   const [viewStatusModal, setViewStatusModal] = useState<"당번" | "휴무" | "병가" | null>(null);
 
   // ── OCR 상태 ────────────────────────────────────
-  const ocrFileRef = useRef<HTMLInputElement>(null);
+  const ocrCameraRef = useRef<HTMLInputElement>(null);
+  const ocrGalleryRef = useRef<HTMLInputElement>(null);
   const [ocrState, setOcrState] = useState<"idle" | "running" | "done" | "error">("idle");
   const [ocrProgress, setOcrProgress] = useState(0);
-  const [ocrAllDates, setOcrAllDates] = useState<Record<string, string[]>>({});
-  const [ocrPreview, setOcrPreview] = useState<string[]>([]);  // 현재 날짜 추출 이름들
+  const [ocrError, setOcrError] = useState("");
+  const [ocrDraft, setOcrDraft] = useState<OcrDraft | null>(null);
+  const [ocrAddName, setOcrAddName] = useState("");
+  const [ocrAddStatus, setOcrAddStatus] = useState<ImportStatus>("휴무");
 
   // ── 사용자 정의 순번표 (localStorage 영구 저장) ──
   const [customRoster, setCustomRoster] = useState<PersonData[]>(() => {
@@ -2168,81 +2093,128 @@ export default function SchedulePage() {
     setVipSubPicking(null);
   }
 
-  // OCR 핸들러: 이미지 업로드 → Tesseract OCR → 날짜별 이름 추출
+  const shortDateToLabel = (shortDate: string) => {
+    const [month, day] = shortDate.split(".").map(Number);
+    return makeDateKey(new Date(viewYear, month - 1, day));
+  };
+
+  function loadTimingFile(file: File) {
+    file.arrayBuffer()
+      .then(buffer => {
+        const map = parseTimingExcelBuffer(buffer, parseInt(viewMonth, 10));
+        if (Object.keys(map).length === 0) throw new Error("날짜·이름·조출/후출/찾근 자료를 찾지 못했습니다.");
+        const rosterNames = sortedCustomRoster.map(person => person.name);
+        const matched: TimingImportPreview["matched"] = {};
+        const needsReview: TimingImportPreview["needsReview"] = {};
+        for (const [dateKey, statuses] of Object.entries(map)) {
+          const result = matchImportedStatuses(statuses, rosterNames);
+          matched[dateKey] = result.matched;
+          needsReview[dateKey] = result.needsReview;
+        }
+        setTimingImportPreview({ fileName: file.name, map, matched, needsReview, selectedDates: Object.keys(map) });
+      })
+      .catch(error => alert("조출·후출·찾근 Excel 읽기 실패: " + String(error)));
+  }
+
+  function applyTimingImport(scope: "all" | "selected") {
+    if (!timingImportPreview) return;
+    const previewDates = Object.keys(timingImportPreview.map);
+    const targetShortDates = scope === "all" ? previewDates : timingImportPreview.selectedDates;
+    if (targetShortDates.length === 0) return;
+    if (!confirm(`${scope === "all" ? "전체" : `${targetShortDates.length}개 선택 날짜`}의 조출·후출·찾근 자료를 적용할까요?`)) return;
+    const targetLabels = targetShortDates.map(shortDateToLabel);
+    const uploadedMonths = [...new Set(previewDates.map(key => key.slice(0, 2)))];
+    const incoming: Record<string, Record<string, ImportStatus>> = {};
+    for (const shortDate of targetShortDates) {
+      const dateLabel = shortDateToLabel(shortDate);
+      const byName: Record<string, ImportStatus> = {};
+      for (const status of ["조출", "후출", "찾근"] as const) {
+        for (const name of timingImportPreview.matched[shortDate]?.[status] ?? []) byName[name] = status;
+      }
+      incoming[dateLabel] = byName;
+    }
+
+    const applied = applyTimingImportState(
+      dateStatuses,
+      timingExcelSource,
+      incoming,
+      targetLabels,
+      uploadedMonths,
+      scope,
+    );
+    setDateStatuses(applied.statuses as typeof dateStatuses);
+    setTimingExcelSource(applied.source);
+    setTimingFileName(timingImportPreview.fileName);
+    localStorage.setItem("lotto_timingExcelFileName", timingImportPreview.fileName);
+    setTimingImportPreview(null);
+  }
+
+  const fileToBase64 = (file: File) => new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? "").split(",")[1] ?? "");
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+
+  // OCR 핸들러: 선택 날짜를 고정한 뒤 서버 Google Vision 연결 지점으로 전송한다.
   async function handleOcrFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
+    if (!currentDateKey) { alert("먼저 날짜를 선택해주세요."); return; }
+    const targetDateKey = currentDateKey;
 
     setOcrState("running");
     setOcrProgress(0);
-    setOcrPreview([]);
+    setOcrError("");
+    setOcrDraft(null);
 
     try {
-      // Tesseract.js는 파일 크기에 따라 30초~2분 소요
-      // progress 가상 타이머 (UI 피드백용)
       const timer = setInterval(() => {
         setOcrProgress((p) => Math.min(p + 4, 90));
       }, 600);
-
-      const result = await runCalendarOCR(file);
-
+      const imageBase64 = await fileToBase64(file);
+      const response = await fetch("/api/ocr-schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64, mimeType: file.type || "image/jpeg" }),
+      });
+      const payload = await response.json() as { text?: string; error?: string };
       clearInterval(timer);
+      if (!response.ok) throw new Error(payload.error ?? "OCR 서버 오류");
+      const parsed = parseOcrStatusText(payload.text ?? "");
+      const matched = matchImportedStatuses(parsed, sortedCustomRoster.map(person => person.name));
       setOcrProgress(100);
-      setOcrAllDates(result);
-
-      // 현재 선택된 날짜의 결과를 미리보기로 표시
-      if (currentDateKey) {
-        const dayNum = currentDateKey.split(".")[1]?.split(" ")[0]?.replace(/^0/, "");
-        const dayNames = dayNum ? (result[dayNum] ?? []) : [];
-        setOcrPreview(dayNames);
-      }
-
+      setOcrDraft({ dateKey: targetDateKey, matched: matched.matched, needsReview: matched.needsReview });
       setOcrState("done");
     } catch (err) {
       console.error("OCR error:", err);
+      setOcrError(String(err));
       setOcrState("error");
     }
   }
 
-  // OCR 결과를 현재 날짜에 휴무로 자동 적용
-  function applyOcrToCurrentDate() {
-    if (!currentDateKey || ocrPreview.length === 0) return;
-
-    // 순번표가 없으면 자동 로드 (첫번호 회전 적용)
-    let currentNames = names;
-    if (currentNames.length === 0) {
-      const base = sortedCustomRoster.map((p) => p.name);
-      currentNames = rotateNames(base, queueStartName);
-      setNames(currentNames);
-      setRosterLoaded(true);
-    }
-
-    setManualStatuses((prev) => {
-      const next = { ...prev };
-      for (const ocrName of ocrPreview) {
-        // 순번표에 있는 이름과 매칭 (이름이 포함되어 있거나 앞 2자가 같을 때)
-        const matched = currentNames.find(
-          (n) => n === ocrName || n.startsWith(ocrName.slice(0, 2))
-        );
-        const key = matched ?? ocrName;
-        next[key] = "휴무";
-      }
-      return next;
+  function updateOcrDraft(name: string, status: ImportStatus | null) {
+    setOcrDraft(prev => {
+      if (!prev) return prev;
+      const matched = { ...prev.matched };
+      for (const key of ["휴무", "조출", "후출", "찾근"] as const) matched[key] = (matched[key] ?? []).filter(item => item !== name);
+      if (status) matched[status] = [...(matched[status] ?? []), name];
+      return { ...prev, matched };
     });
-
-    setOcrPreview([]);
-    setOcrState("idle");
   }
 
-  // OCR 전체 결과에서 현재 날짜 미리보기 갱신
-  useEffect(() => {
-    if (ocrState === "done" && currentDateKey && Object.keys(ocrAllDates).length > 0) {
-      const dayNum = currentDateKey.split(".")[1]?.split(" ")[0]?.replace(/^0/, "");
-      const preview = dayNum ? (ocrAllDates[dayNum] ?? []) : [];
-      setOcrPreview(preview);
+  function applyOcrDraft() {
+    if (!ocrDraft) return;
+    const assignments: Record<string, ImportStatus> = {};
+    for (const status of ["휴무", "조출", "후출", "찾근"] as const) {
+      for (const name of ocrDraft.matched[status] ?? []) assignments[name] = status;
     }
-  }, [currentDateKey, ocrAllDates, ocrState]);
+    if (!confirm(`${ocrDraft.dateKey}에 OCR 결과 ${Object.keys(assignments).length}건을 적용할까요?`)) return;
+    setDateStatuses(prev => applyOcrAssignments(prev, ocrDraft.dateKey, assignments) as typeof prev);
+    setOcrDraft(null);
+    setOcrState("idle");
+  }
 
   // ── 공통: currentNames 하루 전진 (컴포넌트 레벨) ──
   function advanceNames(result: DayResult, curNames: string[]): string[] {
@@ -2692,6 +2664,35 @@ export default function SchedulePage() {
               <span style={{ color: "#aaa" }}>휴무 엑셀 미업로드</span>
             )}
           </div>
+
+          {isAdmin && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "10px" }}>
+              <label style={{
+                padding: "6px 10px", borderRadius: "8px", fontSize: "0.72rem", fontWeight: 700,
+                background: "#eef2ff", color: "#4338ca", border: "1px solid #c7d2fe", cursor: "pointer",
+              }}>
+                📊 조출·후출·찾근 Excel
+                <input type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={event => {
+                  const file = event.target.files?.[0];
+                  if (file) loadTimingFile(file);
+                  event.target.value = "";
+                }} />
+              </label>
+              <button onClick={() => ocrCameraRef.current?.click()} disabled={!selectedDate || ocrState === "running"} style={{
+                padding: "6px 10px", borderRadius: "8px", fontSize: "0.72rem", fontWeight: 700,
+                background: "#ecfeff", color: "#155e75", border: "1px solid #a5f3fc", cursor: selectedDate ? "pointer" : "not-allowed",
+              }}>📷 사진 촬영</button>
+              <button onClick={() => ocrGalleryRef.current?.click()} disabled={!selectedDate || ocrState === "running"} style={{
+                padding: "6px 10px", borderRadius: "8px", fontSize: "0.72rem", fontWeight: 700,
+                background: "#f0fdf4", color: "#166534", border: "1px solid #bbf7d0", cursor: selectedDate ? "pointer" : "not-allowed",
+              }}>🖼 사진 첨부</button>
+              <input ref={ocrCameraRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handleOcrFile} />
+              <input ref={ocrGalleryRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleOcrFile} />
+            </div>
+          )}
+          {timingFileName && <div style={{ fontSize: "0.7rem", color: "#6366f1", marginTop: "-6px", marginBottom: "8px" }}>📊 {timingFileName}</div>}
+          {ocrState === "running" && <div style={{ fontSize: "0.72rem", color: "#0891b2", marginBottom: "8px" }}>OCR 분석 중… {ocrProgress}%</div>}
+          {ocrState === "error" && <div style={{ fontSize: "0.72rem", color: "#dc2626", marginBottom: "8px" }}>OCR 연결 오류: {ocrError}</div>}
 
           {/* ── 캐릭터 + 월 네비게이션 (엑셀 유무와 무관하게 항상 표시) ── */}
           <>
@@ -3762,6 +3763,107 @@ export default function SchedulePage() {
           </div>
         </div>
       )}
+      {holidayImportPreview && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 520, background: "rgba(0,0,0,.5)", display: "flex", alignItems: "flex-end" }}>
+          <div style={{ background: "#fff", width: "100%", maxHeight: "82vh", overflow: "auto", borderRadius: "18px 18px 0 0", padding: "16px" }}>
+            <div style={{ fontWeight: 900, marginBottom: "4px" }}>휴무 Excel 미리보기</div>
+            <div style={{ fontSize: "0.75rem", color: "#777", marginBottom: "10px" }}>{holidayImportPreview.fileName}</div>
+            {Object.entries(holidayImportPreview.map).map(([dateKey, importedNames]) => (
+              <label key={dateKey} style={{ display: "block", padding: "8px 0", borderBottom: "1px solid #eee" }}>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  <input type="checkbox" checked={holidayImportPreview.selectedDates.includes(dateKey)} onChange={() => setHolidayImportPreview(prev => prev ? ({
+                    ...prev,
+                    selectedDates: prev.selectedDates.includes(dateKey) ? prev.selectedDates.filter(key => key !== dateKey) : [...prev.selectedDates, dateKey],
+                  }) : prev)} />
+                  <strong>{dateKey}</strong><span style={{ color: "#888", fontSize: "0.75rem" }}>{importedNames.length}명</span>
+                </div>
+                <div style={{ marginTop: "5px", fontSize: "0.78rem", color: "#555" }}>{importedNames.join(" · ")}</div>
+              </label>
+            ))}
+            <div style={{ display: "flex", gap: "7px", marginTop: "12px" }}>
+              <button onClick={() => setHolidayImportPreview(null)} style={{ flex: 1, padding: 11 }}>취소</button>
+              <button onClick={() => applyHolidayImport("selected")} style={{ flex: 1, padding: 11 }}>선택 날짜 적용</button>
+              <button onClick={() => applyHolidayImport("all")} style={{ flex: 1, padding: 11, background: "#166534", color: "white", border: 0, borderRadius: 8 }}>전체 적용</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {timingImportPreview && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 520, background: "rgba(0,0,0,.5)", display: "flex", alignItems: "flex-end" }}>
+          <div style={{ background: "#fff", width: "100%", maxHeight: "82vh", overflow: "auto", borderRadius: "18px 18px 0 0", padding: "16px" }}>
+            <div style={{ fontWeight: 900, marginBottom: "4px" }}>조출·후출·찾근 Excel 미리보기</div>
+            <div style={{ fontSize: "0.75rem", color: "#777", marginBottom: "10px" }}>{timingImportPreview.fileName}</div>
+            {Object.keys(timingImportPreview.map).map(dateKey => (
+              <label key={dateKey} style={{ display: "block", padding: "8px 0", borderBottom: "1px solid #eee" }}>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  <input type="checkbox" checked={timingImportPreview.selectedDates.includes(dateKey)} onChange={() => setTimingImportPreview(prev => prev ? ({
+                    ...prev,
+                    selectedDates: prev.selectedDates.includes(dateKey) ? prev.selectedDates.filter(key => key !== dateKey) : [...prev.selectedDates, dateKey],
+                  }) : prev)} />
+                  <strong>{dateKey}</strong>
+                </div>
+                {(["조출", "후출", "찾근"] as const).map(status => {
+                  const matchedNames = timingImportPreview.matched[dateKey]?.[status] ?? [];
+                  return matchedNames.length ? <div key={status} style={{ marginTop: 4, fontSize: "0.78rem" }}><b>{status}</b> {matchedNames.join(" · ")}</div> : null;
+                })}
+                {(["조출", "후출", "찾근"] as const).map(status => {
+                  const unresolved = timingImportPreview.needsReview[dateKey]?.[status] ?? [];
+                  return unresolved.length ? <div key={`review-${status}`} style={{ marginTop: 4, fontSize: "0.75rem", color: "#b45309" }}>확인 필요 · {status}: {unresolved.join(" · ")}</div> : null;
+                })}
+              </label>
+            ))}
+            <div style={{ display: "flex", gap: "7px", marginTop: "12px" }}>
+              <button onClick={() => setTimingImportPreview(null)} style={{ flex: 1, padding: 11 }}>취소</button>
+              <button onClick={() => applyTimingImport("selected")} style={{ flex: 1, padding: 11 }}>선택 날짜 적용</button>
+              <button onClick={() => applyTimingImport("all")} style={{ flex: 1, padding: 11, background: "#4338ca", color: "white", border: 0, borderRadius: 8 }}>전체 적용</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {ocrDraft && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 530, background: "rgba(0,0,0,.5)", display: "flex", alignItems: "flex-end" }}>
+          <div style={{ background: "#fff", width: "100%", maxHeight: "85vh", overflow: "auto", borderRadius: "18px 18px 0 0", padding: "16px" }}>
+            <div style={{ fontWeight: 900 }}>사진 OCR 검토 · {ocrDraft.dateKey}</div>
+            <div style={{ fontSize: "0.72rem", color: "#777", margin: "4px 0 12px" }}>적용 전 결과입니다. 이 날짜 하나만 변경됩니다.</div>
+            {(["휴무", "조출", "후출", "찾근"] as const).map(status => (
+              <div key={status} style={{ marginBottom: 10 }}>
+                <strong style={{ fontSize: "0.8rem" }}>{status}</strong>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 5 }}>
+                  {(ocrDraft.matched[status] ?? []).map(name => (
+                    <span key={name} style={{ padding: "4px 8px", borderRadius: 14, background: STATUS_COLOR[status].bg, color: STATUS_COLOR[status].color, fontSize: "0.75rem", fontWeight: 700 }}>
+                      {name} <button onClick={() => updateOcrDraft(name, null)} style={{ border: 0, background: "transparent", color: "inherit", cursor: "pointer" }}>×</button>
+                    </span>
+                  ))}
+                  {(ocrDraft.matched[status] ?? []).length === 0 && <span style={{ color: "#bbb", fontSize: "0.75rem" }}>없음</span>}
+                </div>
+              </div>
+            ))}
+            {Object.entries(ocrDraft.needsReview).some(([, value]) => (value?.length ?? 0) > 0) && (
+              <div style={{ padding: 9, background: "#fff7ed", color: "#9a3412", borderRadius: 8, fontSize: "0.75rem", marginBottom: 10 }}>
+                확인 필요 — roster와 정확히 일치하지 않아 자동 적용하지 않음:{" "}
+                {Object.values(ocrDraft.needsReview).flat().join(" · ")}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+              <select value={ocrAddName} onChange={event => setOcrAddName(event.target.value)} style={{ flex: 2, padding: 8 }}>
+                <option value="">직원 추가…</option>
+                {sortedCustomRoster.map(person => <option key={person.name} value={person.name}>{person.name}</option>)}
+              </select>
+              <select value={ocrAddStatus} onChange={event => setOcrAddStatus(event.target.value as ImportStatus)} style={{ flex: 1, padding: 8 }}>
+                {(["휴무", "조출", "후출", "찾근"] as const).map(status => <option key={status}>{status}</option>)}
+              </select>
+              <button onClick={() => { if (ocrAddName) { updateOcrDraft(ocrAddName, ocrAddStatus); setOcrAddName(""); } }}>추가</button>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => { setOcrDraft(null); setOcrState("idle"); }} style={{ flex: 1, padding: 11 }}>취소</button>
+              <button onClick={applyOcrDraft} style={{ flex: 2, padding: 11, border: 0, borderRadius: 8, background: "#155e75", color: "white", fontWeight: 800 }}>선택 날짜에 적용</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── 통합 선택 모달 (조출/후출/찾근/VIP/기타 공통) ── */}
       {modalStatus && (() => {
         const isVip = modalStatus === "VIP";
@@ -3860,6 +3962,26 @@ export default function SchedulePage() {
           2: { bg: "#e8f5e9", color: "#2e7d32" },
           3: { bg: "#e3f2fd", color: "#1565c0" },
           4: { bg: "#fff8e1", color: "#f57f17" },
+        };
+
+        const groupEmployeeTitle = (group: "하우스" | "주말" | "주중") =>
+          `${group === "하우스" ? "하우스" : group === "주말" ? "주말반" : "주중반"} 직원들`;
+
+        const renderGroupBoundary = (group: "하우스" | "주말" | "주중", key: string, showDivider: boolean) => {
+          const gs = GROUP_STYLE[group];
+          return (
+            <div key={key} style={{
+              width: "100%", display: "flex", alignItems: "center", gap: "7px",
+              paddingTop: showDivider ? "8px" : "2px",
+              marginTop: showDivider ? "2px" : 0,
+              borderTop: showDivider ? `1px solid ${gs.color}33` : "none",
+            }}>
+              <span style={{ color: gs.color, fontSize: "0.75rem", fontWeight: 800 }}>
+                {groupEmployeeTitle(group)}
+              </span>
+              <div style={{ flex: 1, height: 1, background: gs.color + "33" }} />
+            </div>
+          );
         };
 
         // ── 리스트 렌더 헬퍼 (검색결과 / 전체리스트 공유) ──
@@ -4123,20 +4245,25 @@ export default function SchedulePage() {
                   {selectedNames.length === 0 ? (
                     <span style={{ fontSize: "0.8rem", color: "#ccc", alignSelf: "center" }}>선택된 인원 없음</span>
                   ) : isVip ? (
-                    currentVipMembers.map(({ name, type }) => {
+                    currentVipMembers.map(({ name, type }, idx) => {
                       const sc = STATUS_COLOR[type] ?? { bg: "#f3e5f5", color: "#7b1fa2" };
                       const lbl = type === "VIP1부" ? "1부" : type === "VIP2부" ? "2부" : "투근무";
+                      const group = getGroup(name) as "하우스" | "주말" | "주중";
+                      const previousGroup = idx > 0 ? getGroup(currentVipMembers[idx - 1].name) : null;
                       return (
-                        <span key={name} style={{
-                          display: "inline-flex", alignItems: "center", gap: "4px",
-                          padding: "4px 10px", borderRadius: "20px",
-                          background: sc.bg, color: sc.color, border: `1px solid ${sc.color}44`,
-                          fontSize: "0.76rem", fontWeight: 700,
-                        }}>
-                          {name}<span style={{ opacity: 0.7, fontSize: "0.68rem" }}>({lbl})</span>
-                          <button onClick={() => clearStatus(name)}
-                            style={{ background: "none", border: "none", color: sc.color, cursor: "pointer", fontSize: "0.85rem", padding: 0, lineHeight: 1 }}>×</button>
-                        </span>
+                        <Fragment key={name}>
+                          {group !== previousGroup && renderGroupBoundary(group, `vip-group-${group}-${idx}`, idx > 0)}
+                          <span style={{
+                            display: "inline-flex", alignItems: "center", gap: "4px",
+                            padding: "4px 10px", borderRadius: "20px",
+                            background: sc.bg, color: sc.color, border: `1px solid ${sc.color}44`,
+                            fontSize: "0.76rem", fontWeight: 700,
+                          }}>
+                            {name}<span style={{ opacity: 0.7, fontSize: "0.68rem" }}>({lbl})</span>
+                            <button onClick={() => clearStatus(name)}
+                              style={{ background: "none", border: "none", color: sc.color, cursor: "pointer", fontSize: "0.85rem", padding: 0, lineHeight: 1 }}>×</button>
+                          </span>
+                        </Fragment>
                       );
                     })
                   ) : modalStatus === "휴무" ? (
@@ -4149,11 +4276,13 @@ export default function SchedulePage() {
                         {selectedNames.map((n, idx) => {
                           const grp = getGroup(n) as "하우스" | "주말" | "주중";
                           const gs = GROUP_STYLE[grp];
+                          const previousGroup = idx > 0 ? getGroup(selectedNames[idx - 1]) : null;
                           const isDragSrc = chipDragRef.current.fromIdx === idx;
                           const isDragOver = chipDragOver === idx;
                           return (
-                            <div
-                              key={n}
+                            <Fragment key={n}>
+                              {grp !== previousGroup && renderGroupBoundary(grp, `holiday-group-${grp}-${idx}`, idx > 0)}
+                              <div
                               data-chip-index={String(idx)}
                               draggable
                               onDragStart={() => { chipDragRef.current.fromIdx = idx; chipDragRef.current.didDrag = false; }}
@@ -4206,7 +4335,8 @@ export default function SchedulePage() {
                               <span style={{ color: gs.color, fontSize: "0.65rem", lineHeight: 1 }}>●</span>
                               <span style={{ color: "#1a2035" }}>{n}</span>
                               <span style={{ color: "#9aa3b5", fontWeight: 800, fontSize: "0.85rem", lineHeight: 1 }}>×</span>
-                            </div>
+                              </div>
+                            </Fragment>
                           );
                         })}
                       </div>
@@ -4226,10 +4356,7 @@ export default function SchedulePage() {
                         if (grpEntries.length === 0) return null;
                         return (
                           <div key={grp} style={{ width: "100%" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: "5px", marginBottom: "5px" }}>
-                              <span style={{ color: gs.color, fontSize: "0.85rem", lineHeight: 1 }}>●</span>
-                              <span style={{ fontSize: "0.75rem", fontWeight: 800, color: gs.color }}>{grp} {grpEntries.length}명</span>
-                            </div>
+                            {renderGroupBoundary(grp, `selected-group-${grp}`, grp !== "하우스")}
                             <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "6px" }}>
                               {grpEntries.map(({ n, idx }) => {
                                 const isDragSrc = chipDragRef.current.fromIdx === idx;
@@ -4351,7 +4478,7 @@ export default function SchedulePage() {
                                 fontSize: "0.68rem", fontWeight: 800,
                                 padding: "1px 8px", borderRadius: "20px",
                                 border: `1px solid ${gs.color}44`,
-                              }}>{grp} {grpNames.length}명</span>
+                              }}>{groupEmployeeTitle(grp)} · {grpNames.length}명</span>
                               <div style={{ flex: 1, height: 1, background: gs.color + "33" }} />
                             </div>
                             {renderItems(grpNames.slice(0, 2), false)}
@@ -5798,7 +5925,7 @@ function DayResultView({ result, mode, compact = false }: {
   const cats = mode === "2부제" ? CATS_DOUBLE : CATS_SINGLE;
   const 조출Set  = new Set(result.조출List ?? []);
   const 후출Set  = new Set(result.후출List ?? []);
-  const findingSet = new Set(result.findingList ?? []);
+  const bothSet = new Set(result.twoRound ?? []);
   const spare1Set = new Set(result.spare1 ?? []); // 1부스페어는 shift2 앞에 이미 배정 → 중복 제거용
   // 대근 인원 set (1부·2부·투라운드) — 배정 결과에서 bold 표시용
   const daegeunSet = new Set(result.daegeunList ?? []);
@@ -5810,11 +5937,14 @@ function DayResultView({ result, mode, compact = false }: {
         const grp = isExcluded ? NAME_GROUP_NORMALIZED[normalize(n)] : undefined;
         const dot = grp ? GROUP_DOT[grp] : null;
         const invalidReason = result.invalidStatusReasons?.[n];
+        const isBoth = (key === "shift1" || key === "shift2") && bothSet.has(n);
         return (
-          <span key={n} style={{ fontWeight: (daegeunSet.has(n) || findingSet.has(n)) ? 800 : undefined, color: findingSet.has(n) ? "#1d4ed8" : undefined }}>
+          <span key={n} style={{
+            fontWeight: (daegeunSet.has(n) || isBoth || key === "twoRound") ? 800 : undefined,
+            color: key === "twoRound" ? "#164e63" : undefined,
+          }}>
             {i > 0 && "  ·  "}
             {n}
-            {findingSet.has(n) && " [찾근]"}
             {invalidReason && ` (${invalidReason})`}
             {dot && <span style={{ color: dot, marginLeft: "2px", fontSize: "0.65rem" }}>●</span>}
           </span>
@@ -5828,9 +5958,9 @@ function DayResultView({ result, mode, compact = false }: {
           const isHu     = (key === "shift2") && 후출Set.has(n);
           const isSpare1 = (key === "shift2") && spare1Set.has(n);
           const isTwoR   = key === "twoRound";
+          const isBoth   = (key === "shift1" || key === "shift2") && bothSet.has(n);
           const isDaegeun = daegeunSet.has(n); // 대근 인원 (bold 강조)
-          const isFinding = findingSet.has(n);
-          const suffix   = isFinding ? " [찾근]" : isCho ? " [조출]" : isHu ? " [후출]" : isSpare1 ? " [1부스페어]" : "";
+          const suffix   = isCho ? " [조출]" : isHu ? " [후출]" : isSpare1 ? " [1부스페어]" : "";
           const grp      = isExcluded ? NAME_GROUP_NORMALIZED[normalize(n)] : undefined;
           const dotColor = grp ? GROUP_DOT[grp] : null;
           const invalidReason = result.invalidStatusReasons?.[n];
@@ -5838,8 +5968,8 @@ function DayResultView({ result, mode, compact = false }: {
             <span key={n}>
               {i > 0 && <span style={{ color: "#d1d5db" }}> · </span>}
               <span style={{
-                fontWeight: (isFinding || isCho || isHu || isTwoR || isSpare1 || isDaegeun) ? 800 : 500,
-                color: isFinding ? "#1d4ed8" : isCho ? "#9a3412" : isHu ? "#5b21b6" : isTwoR ? "#164e63" : isSpare1 ? "#9a3412" : "#374151",
+                fontWeight: (isBoth || isCho || isHu || isTwoR || isSpare1 || isDaegeun) ? 800 : 500,
+                color: isCho ? "#9a3412" : isHu ? "#5b21b6" : isTwoR ? "#164e63" : isSpare1 ? "#9a3412" : "#374151",
                 background: isCho ? "#fed7aa" : isHu ? "#ddd6fe" : "transparent",
                 borderRadius: 4, padding: (isCho || isHu) ? "1px 4px" : 0,
               }}>
