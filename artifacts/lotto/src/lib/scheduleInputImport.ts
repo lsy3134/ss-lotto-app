@@ -162,6 +162,45 @@ export function matchImportedStatuses(
 export type DateStatusStore = Record<string, Record<string, string | null>>;
 export type TimingSourceStore = Record<string, Record<string, ImportStatus>>;
 
+export function limitTimingAssignments(
+  current: Record<string, string | null>,
+  orderedAssignments: Array<[string, ImportStatus]>,
+): { assignments: Record<string, ImportStatus>; order: string[] } {
+  const orderedNames = orderedAssignments.map(([name]) => name);
+  const normalizedAssignments = orderedAssignments.filter(
+    ([name], index) => orderedNames.lastIndexOf(name) === index,
+  );
+  const incomingNames = new Set(normalizedAssignments.map(([name]) => name));
+  const counts = {
+    조출: Object.entries(current).filter(([name, status]) => !incomingNames.has(name) && status === "조출").length,
+    후출: Object.entries(current).filter(([name, status]) => !incomingNames.has(name) && status === "후출").length,
+  };
+  const assignments: Record<string, ImportStatus> = {};
+  const order: string[] = [];
+  for (const [name, status] of normalizedAssignments) {
+    if ((status === "조출" || status === "후출") && counts[status] >= 6) continue;
+    assignments[name] = status;
+    order.push(name);
+    if (status === "조출" || status === "후출") counts[status]++;
+  }
+  return { assignments, order };
+}
+
+export function mergeTimingRequestOrder(
+  currentOrder: string[],
+  finalStatuses: Record<string, string | null>,
+  appliedOrder: string[],
+  replacedTimingNames: string[] = [],
+): string[] {
+  const applied = new Set(appliedOrder);
+  const replaced = new Set(replacedTimingNames);
+  const isTiming = (name: string) => ["조출", "후출", "찾근"].includes(finalStatuses[name] ?? "");
+  return [
+    ...currentOrder.filter((name) => !applied.has(name) && (!replaced.has(name) || isTiming(name))),
+    ...appliedOrder.filter(isTiming),
+  ].filter((name, index, all) => all.indexOf(name) === index);
+}
+
 export function mergeHolidayImport(
   current: Record<string, string[]>,
   incoming: Record<string, string[]>,

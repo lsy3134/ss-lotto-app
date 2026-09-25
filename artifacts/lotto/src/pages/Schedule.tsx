@@ -8,8 +8,10 @@ import {
   applyOcrAssignments,
   applyTimingImportState,
   clearManualHolidayImports,
+  limitTimingAssignments,
   matchImportedStatuses,
   mergeHolidayImport,
+  mergeTimingRequestOrder,
   parseOcrStatusText,
   parseTimingExcelBuffer,
   type ImportStatus,
@@ -1586,6 +1588,13 @@ export default function SchedulePage() {
   // 상태 토글
   function toggleStatus(name: string, btn: StatusType) {
     const storedStatus = manualStatuses[name] ?? null;
+    if ((btn === "조출" || btn === "후출") && storedStatus !== btn) {
+      const count = Object.values(manualStatuses).filter(status => status === btn).length;
+      if (count >= 6) {
+        alert(`${btn}은 최대 6명까지 신청할 수 있습니다.`);
+        return;
+      }
+    }
     if (storedStatus && storedStatus !== btn) {
       const nextLabel = btn ?? "일반";
       if (!confirm(`${name}님은 현재 '${storedStatus}'으로 지정되어 있습니다. '${nextLabel}'로 변경할까요?`)) return;
@@ -2006,6 +2015,7 @@ export default function SchedulePage() {
       statuses,
       baseStatuses,
       requests: savedDay,
+      requestOrder: _statusOrder,
       daegeun: eligibleDaegeun,
       previousSpare1: previousSpares[0],
       previousSpare2: previousSpares[1],
@@ -2125,13 +2135,20 @@ export default function SchedulePage() {
     const targetLabels = targetShortDates.map(shortDateToLabel);
     const uploadedMonths = [...new Set(previewDates.map(key => key.slice(0, 2)))];
     const incoming: Record<string, Record<string, ImportStatus>> = {};
+    const incomingOrders: Record<string, string[]> = {};
     for (const shortDate of targetShortDates) {
       const dateLabel = shortDateToLabel(shortDate);
-      const byName: Record<string, ImportStatus> = {};
-      for (const status of ["조출", "후출", "찾근"] as const) {
-        for (const name of timingImportPreview.matched[shortDate]?.[status] ?? []) byName[name] = status;
+      const currentForLimit = { ...(dateStatuses[dateLabel] ?? {}) } as Record<string, string | null>;
+      for (const [name, status] of Object.entries(timingExcelSource[dateLabel] ?? {})) {
+        if (currentForLimit[name] === status) delete currentForLimit[name];
       }
-      incoming[dateLabel] = byName;
+      const ordered: Array<[string, ImportStatus]> = [];
+      for (const status of ["조출", "후출", "찾근"] as const) {
+        for (const name of timingImportPreview.matched[shortDate]?.[status] ?? []) ordered.push([name, status]);
+      }
+      const limited = limitTimingAssignments(currentForLimit, ordered);
+      incoming[dateLabel] = limited.assignments;
+      incomingOrders[dateLabel] = limited.order;
     }
 
     const applied = applyTimingImportState(
@@ -2144,6 +2161,19 @@ export default function SchedulePage() {
     );
     setDateStatuses(applied.statuses as typeof dateStatuses);
     setTimingExcelSource(applied.source);
+    setDateStatusOrders(prev => {
+      const next = { ...prev };
+      for (const dateLabel of targetLabels) {
+        const accepted = incomingOrders[dateLabel].filter(name => applied.source[dateLabel]?.[name]);
+        next[dateLabel] = mergeTimingRequestOrder(
+          prev[dateLabel] ?? [],
+          applied.statuses[dateLabel] ?? {},
+          accepted,
+          Object.keys(timingExcelSource[dateLabel] ?? {}),
+        );
+      }
+      return next;
+    });
     setTimingFileName(timingImportPreview.fileName);
     localStorage.setItem("lotto_timingExcelFileName", timingImportPreview.fileName);
     setTimingImportPreview(null);
@@ -2206,12 +2236,18 @@ export default function SchedulePage() {
 
   function applyOcrDraft() {
     if (!ocrDraft) return;
-    const assignments: Record<string, ImportStatus> = {};
+    const ordered: Array<[string, ImportStatus]> = [];
     for (const status of ["휴무", "조출", "후출", "찾근"] as const) {
-      for (const name of ocrDraft.matched[status] ?? []) assignments[name] = status;
+      for (const name of ocrDraft.matched[status] ?? []) ordered.push([name, status]);
     }
-    if (!confirm(`${ocrDraft.dateKey}에 OCR 결과 ${Object.keys(assignments).length}건을 적용할까요?`)) return;
-    setDateStatuses(prev => applyOcrAssignments(prev, ocrDraft.dateKey, assignments) as typeof prev);
+    const limited = limitTimingAssignments(dateStatuses[ocrDraft.dateKey] ?? {}, ordered);
+    if (!confirm(`${ocrDraft.dateKey}에 OCR 결과 ${Object.keys(limited.assignments).length}건을 적용할까요?`)) return;
+    const nextDay = { ...(dateStatuses[ocrDraft.dateKey] ?? {}), ...limited.assignments };
+    setDateStatuses(prev => applyOcrAssignments(prev, ocrDraft.dateKey, limited.assignments) as typeof prev);
+    setDateStatusOrders(prev => ({
+      ...prev,
+      [ocrDraft.dateKey]: mergeTimingRequestOrder(prev[ocrDraft.dateKey] ?? [], nextDay, limited.order),
+    }));
     setOcrDraft(null);
     setOcrState("idle");
   }
@@ -2634,6 +2670,7 @@ export default function SchedulePage() {
               }}>
                 📂 {holidayFileName ? "휴무 교체" : "휴무 업로드"}
                 <input
+                  id="holiday-excel-input"
                   type="file"
                   accept=".xlsx,.xls"
                   style={{ display: "none" }}
@@ -2648,46 +2685,65 @@ export default function SchedulePage() {
           </div>
 
           {/* 휴무 파일 정보 */}
-          <div style={{ fontSize: "0.72rem", color: "#555", marginBottom: "8px" }}>
-            {holidayFileName ? (
-              <span>
-                📂 <strong style={{ color: "#2e7d32" }}>{holidayFileName.replace(/\.xlsx?$/i, "")}</strong>
-                {selectedDate && holidayMap[selectedDate.dateLabel.slice(0, 5)] ? (
-                  <span style={{ color: "#1565c0", marginLeft: 6 }}>
-                    ({holidayMap[selectedDate.dateLabel.slice(0, 5)].length}명 자동입력)
-                  </span>
-                ) : selectedDate ? (
-                  <span style={{ color: "#bbb", marginLeft: 6 }}>(해당 날짜 데이터 없음)</span>
-                ) : null}
-              </span>
-            ) : (
-              <span style={{ color: "#aaa" }}>휴무 엑셀 미업로드</span>
-            )}
+          <div style={{
+            padding: "9px 10px", marginBottom: "10px", borderRadius: "10px",
+            background: "#f7fbf7", border: "1px solid #d7ead8",
+          }}>
+            <div style={{ fontSize: "0.68rem", color: "#6b7280", fontWeight: 800, marginBottom: "4px" }}>현재 휴무 파일</div>
+            <div style={{ fontSize: "0.72rem", color: "#555", overflowWrap: "anywhere" }}>
+              {holidayFileName ? (
+                <span>
+                  📂 <strong style={{ color: "#2e7d32" }}>{holidayFileName.replace(/\.xlsx?$/i, "")}</strong>
+                  {selectedDate && holidayMap[selectedDate.dateLabel.slice(0, 5)] ? (
+                    <span style={{ color: "#1565c0", marginLeft: 6 }}>
+                      ({holidayMap[selectedDate.dateLabel.slice(0, 5)].length}명 자동입력)
+                    </span>
+                  ) : selectedDate ? (
+                    <span style={{ color: "#bbb", marginLeft: 6 }}>(해당 날짜 데이터 없음)</span>
+                  ) : null}
+                </span>
+              ) : (
+                <span style={{ color: "#aaa" }}>휴무 엑셀 미업로드</span>
+              )}
+            </div>
           </div>
 
           {isAdmin && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "10px" }}>
-              <label style={{
-                padding: "6px 10px", borderRadius: "8px", fontSize: "0.72rem", fontWeight: 700,
-                background: "#eef2ff", color: "#4338ca", border: "1px solid #c7d2fe", cursor: "pointer",
-              }}>
-                📊 조출·후출·찾근 Excel
-                <input type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={event => {
-                  const file = event.target.files?.[0];
-                  if (file) loadTimingFile(file);
-                  event.target.value = "";
-                }} />
-              </label>
-              <button onClick={() => ocrCameraRef.current?.click()} disabled={!selectedDate || ocrState === "running"} style={{
-                padding: "6px 10px", borderRadius: "8px", fontSize: "0.72rem", fontWeight: 700,
-                background: "#ecfeff", color: "#155e75", border: "1px solid #a5f3fc", cursor: selectedDate ? "pointer" : "not-allowed",
-              }}>📷 사진 촬영</button>
-              <button onClick={() => ocrGalleryRef.current?.click()} disabled={!selectedDate || ocrState === "running"} style={{
-                padding: "6px 10px", borderRadius: "8px", fontSize: "0.72rem", fontWeight: 700,
-                background: "#f0fdf4", color: "#166534", border: "1px solid #bbf7d0", cursor: selectedDate ? "pointer" : "not-allowed",
-              }}>🖼 사진 첨부</button>
-              <input ref={ocrCameraRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handleOcrFile} />
-              <input ref={ocrGalleryRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleOcrFile} />
+            <div style={{ marginBottom: "10px" }}>
+              <div style={{ ...S.label, marginBottom: "6px" }}>자료 입력</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "6px" }}>
+                <label htmlFor="holiday-excel-input" style={{
+                  minHeight: "42px", padding: "7px 8px", borderRadius: "10px", fontSize: "0.72rem", fontWeight: 700,
+                  background: "#f0fdf4", color: "#166534", border: "1px solid #bbf7d0", cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center",
+                }}>
+                  📁 휴무 Excel
+                </label>
+                <label style={{
+                  minHeight: "42px", padding: "7px 8px", borderRadius: "10px", fontSize: "0.72rem", fontWeight: 700,
+                  background: "#eef2ff", color: "#4338ca", border: "1px solid #c7d2fe", cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center",
+                }}>
+                  📊 조출·후출·찾근 Excel
+                  <input type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={event => {
+                    const file = event.target.files?.[0];
+                    if (file) loadTimingFile(file);
+                    event.target.value = "";
+                  }} />
+                </label>
+                <button onClick={() => ocrCameraRef.current?.click()} disabled={!selectedDate || ocrState === "running"} style={{
+                  minHeight: "42px", padding: "7px 8px", borderRadius: "10px", fontSize: "0.72rem", fontWeight: 700,
+                  background: "#ecfeff", color: "#155e75", border: "1px solid #a5f3fc", cursor: selectedDate ? "pointer" : "not-allowed",
+                  display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center",
+                }}>📷 사진 촬영</button>
+                <button onClick={() => ocrGalleryRef.current?.click()} disabled={!selectedDate || ocrState === "running"} style={{
+                  minHeight: "42px", padding: "7px 8px", borderRadius: "10px", fontSize: "0.72rem", fontWeight: 700,
+                  background: "#f0fdf4", color: "#166534", border: "1px solid #bbf7d0", cursor: selectedDate ? "pointer" : "not-allowed",
+                  display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center",
+                }}>🖼 사진 첨부</button>
+                <input ref={ocrCameraRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handleOcrFile} />
+                <input ref={ocrGalleryRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleOcrFile} />
+              </div>
             </div>
           )}
           {timingFileName && <div style={{ fontSize: "0.7rem", color: "#6366f1", marginTop: "-6px", marginBottom: "8px" }}>📊 {timingFileName}</div>}
@@ -3965,7 +4021,7 @@ export default function SchedulePage() {
         };
 
         const groupEmployeeTitle = (group: "하우스" | "주말" | "주중") =>
-          `${group === "하우스" ? "하우스" : group === "주말" ? "주말반" : "주중반"} 직원들`;
+          group === "하우스" ? "하우스" : group === "주말" ? "주말반" : "주중반";
 
         const renderGroupBoundary = (group: "하우스" | "주말" | "주중", key: string, showDivider: boolean) => {
           const gs = GROUP_STYLE[group];
@@ -4267,79 +4323,90 @@ export default function SchedulePage() {
                       );
                     })
                   ) : modalStatus === "휴무" ? (
-                    // ★ 휴무: selectedNames(holidayMap) 순서 그대로 flat 렌더 — 그룹 재정렬 없음
+                    // ★ 휴무: 저장 순서는 유지하고 렌더링에서만 그룹별로 모아 표시
                     <>
                       <div style={{ width: "100%", fontSize: "0.72rem", color: "#aaa", marginBottom: "4px", paddingLeft: "2px" }}>
                         ↕ 드래그해서 순서 변경
                       </div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                        {selectedNames.map((n, idx) => {
-                          const grp = getGroup(n) as "하우스" | "주말" | "주중";
+                      {(["하우스", "주중", "주말"] as const)
+                        .map(grp => ({
+                          grp,
+                          entries: selectedNames
+                            .map((n, idx) => ({ n, idx }))
+                            .filter(({ n }) => (getGroup(n) as string) === grp),
+                        }))
+                        .filter(({ entries }) => entries.length > 0)
+                        .map(({ grp, entries }, groupIdx) => {
                           const gs = GROUP_STYLE[grp];
-                          const previousGroup = idx > 0 ? getGroup(selectedNames[idx - 1]) : null;
-                          const isDragSrc = chipDragRef.current.fromIdx === idx;
-                          const isDragOver = chipDragOver === idx;
                           return (
-                            <Fragment key={n}>
-                              {grp !== previousGroup && renderGroupBoundary(grp, `holiday-group-${grp}-${idx}`, idx > 0)}
-                              <div
-                              data-chip-index={String(idx)}
-                              draggable
-                              onDragStart={() => { chipDragRef.current.fromIdx = idx; chipDragRef.current.didDrag = false; }}
-                              onDragOver={(e) => { e.preventDefault(); if (chipDragOver !== idx) setChipDragOver(idx); }}
-                              onDragLeave={() => setChipDragOver(null)}
-                              onDrop={(e) => {
-                                e.preventDefault();
-                                if (chipDragRef.current.fromIdx !== null) {
-                                  reorderSelectedChips(chipDragRef.current.fromIdx, idx, selectedNames);
-                                  chipDragRef.current.didDrag = true;
-                                }
-                                chipDragRef.current.fromIdx = null;
-                                setChipDragOver(null);
-                              }}
-                              onDragEnd={() => { chipDragRef.current.fromIdx = null; setChipDragOver(null); }}
-                              onTouchStart={() => { chipDragRef.current.fromIdx = idx; chipDragRef.current.didDrag = false; }}
-                              onTouchMove={(e) => {
-                                const touch = e.touches[0];
-                                const el = document.elementFromPoint(touch.clientX, touch.clientY);
-                                const chip = (el?.closest?.("[data-chip-index]")) as HTMLElement | null;
-                                if (chip) {
-                                  const i = parseInt(chip.dataset.chipIndex ?? "-1");
-                                  if (i >= 0 && chipDragOver !== i) setChipDragOver(i);
-                                }
-                              }}
-                              onTouchEnd={() => {
-                                const from = chipDragRef.current.fromIdx;
-                                const to = chipDragOver;
-                                if (from !== null && to !== null && from !== to) {
-                                  reorderSelectedChips(from, to, selectedNames);
-                                  chipDragRef.current.didDrag = true;
-                                }
-                                chipDragRef.current.fromIdx = null;
-                                setChipDragOver(null);
-                              }}
-                              onClick={() => {
-                                if (chipDragRef.current.didDrag) { chipDragRef.current.didDrag = false; return; }
-                                toggleStatus(n, modalStatus as StatusType);
-                              }}
-                              style={{
-                                display: "inline-flex", alignItems: "center", gap: "5px",
-                                padding: "5px 10px", borderRadius: "999px", background: "#fff",
-                                border: `1.5px solid ${isDragOver ? gs.color : gs.color + "55"}`,
-                                fontSize: "0.83rem", fontWeight: 700,
-                                cursor: "grab", userSelect: "none", touchAction: "none",
-                                opacity: isDragSrc ? 0.4 : 1,
-                                boxShadow: isDragOver ? `0 0 0 2.5px ${gs.color}88` : "none",
-                                transition: "box-shadow 0.1s, opacity 0.1s",
-                              }}>
-                              <span style={{ color: gs.color, fontSize: "0.65rem", lineHeight: 1 }}>●</span>
-                              <span style={{ color: "#1a2035" }}>{n}</span>
-                              <span style={{ color: "#9aa3b5", fontWeight: 800, fontSize: "0.85rem", lineHeight: 1 }}>×</span>
+                            <div key={grp} style={{ width: "100%" }}>
+                              {renderGroupBoundary(grp, `holiday-group-${grp}`, groupIdx > 0)}
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "6px" }}>
+                                {entries.map(({ n, idx }) => {
+                                  const isDragSrc = chipDragRef.current.fromIdx === idx;
+                                  const isDragOver = chipDragOver === idx;
+                                  return (
+                                    <div
+                                      key={n}
+                                      data-chip-index={String(idx)}
+                                      draggable
+                                      onDragStart={() => { chipDragRef.current.fromIdx = idx; chipDragRef.current.didDrag = false; }}
+                                      onDragOver={(e) => { e.preventDefault(); if (chipDragOver !== idx) setChipDragOver(idx); }}
+                                      onDragLeave={() => setChipDragOver(null)}
+                                      onDrop={(e) => {
+                                        e.preventDefault();
+                                        if (chipDragRef.current.fromIdx !== null) {
+                                          reorderSelectedChips(chipDragRef.current.fromIdx, idx, selectedNames);
+                                          chipDragRef.current.didDrag = true;
+                                        }
+                                        chipDragRef.current.fromIdx = null;
+                                        setChipDragOver(null);
+                                      }}
+                                      onDragEnd={() => { chipDragRef.current.fromIdx = null; setChipDragOver(null); }}
+                                      onTouchStart={() => { chipDragRef.current.fromIdx = idx; chipDragRef.current.didDrag = false; }}
+                                      onTouchMove={(e) => {
+                                        const touch = e.touches[0];
+                                        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+                                        const chip = (el?.closest?.("[data-chip-index]")) as HTMLElement | null;
+                                        if (chip) {
+                                          const i = parseInt(chip.dataset.chipIndex ?? "-1");
+                                          if (i >= 0 && chipDragOver !== i) setChipDragOver(i);
+                                        }
+                                      }}
+                                      onTouchEnd={() => {
+                                        const from = chipDragRef.current.fromIdx;
+                                        const to = chipDragOver;
+                                        if (from !== null && to !== null && from !== to) {
+                                          reorderSelectedChips(from, to, selectedNames);
+                                          chipDragRef.current.didDrag = true;
+                                        }
+                                        chipDragRef.current.fromIdx = null;
+                                        setChipDragOver(null);
+                                      }}
+                                      onClick={() => {
+                                        if (chipDragRef.current.didDrag) { chipDragRef.current.didDrag = false; return; }
+                                        toggleStatus(n, modalStatus as StatusType);
+                                      }}
+                                      style={{
+                                        display: "inline-flex", alignItems: "center", gap: "5px",
+                                        padding: "5px 10px", borderRadius: "999px", background: "#fff",
+                                        border: `1.5px solid ${isDragOver ? gs.color : gs.color + "55"}`,
+                                        fontSize: "0.83rem", fontWeight: 700,
+                                        cursor: "grab", userSelect: "none", touchAction: "none",
+                                        opacity: isDragSrc ? 0.4 : 1,
+                                        boxShadow: isDragOver ? `0 0 0 2.5px ${gs.color}88` : "none",
+                                        transition: "box-shadow 0.1s, opacity 0.1s",
+                                      }}>
+                                      <span style={{ color: gs.color, fontSize: "0.65rem", lineHeight: 1 }}>●</span>
+                                      <span style={{ color: "#1a2035" }}>{n}</span>
+                                      <span style={{ color: "#9aa3b5", fontWeight: 800, fontSize: "0.85rem", lineHeight: 1 }}>×</span>
+                                    </div>
+                                  );
+                                })}
                               </div>
-                            </Fragment>
+                            </div>
                           );
                         })}
-                      </div>
                     </>
                   ) : (
                     // 기타 상태: 그룹(하우스/주말/주중)별 chip (기존 동작 유지)
@@ -4347,7 +4414,7 @@ export default function SchedulePage() {
                       <div style={{ width: "100%", fontSize: "0.72rem", color: "#aaa", marginBottom: "4px", paddingLeft: "2px" }}>
                         ↕ 드래그해서 순서 변경 (그룹 내)
                       </div>
-                      {(["하우스", "주말", "주중"] as const).map(grp => {
+                      {(["하우스", "주중", "주말"] as const).map(grp => {
                         const gs = GROUP_STYLE[grp];
                         // selectedNames 순서 유지하면서 이 그룹 이름만 추출 (인덱스 보존)
                         const grpEntries = selectedNames
@@ -5905,7 +5972,7 @@ function StatBadge({ label, value, color, small = false }: {
 
 // ── 결과 표시 컴포넌트 ─────────────────────────────
 const CATS_DOUBLE = [
-  { key: "twoRound" as const, label: "🔄 투라운드",          badge: { bg: "#cffafe", color: "#164e63" } },
+  { key: "findingList" as const, label: "🔄 찾근",            badge: { bg: "#cffafe", color: "#164e63" } },
   { key: "shift1"   as const, label: "☀️ 1부",               badge: { bg: "#dbeafe", color: "#1e40af" } },
   { key: "spare1"   as const, label: "⚡ 1부스페어→2부1번째", badge: { bg: "#fed7aa", color: "#9a3412" } },
   { key: "shift2"   as const, label: "🌙 2부",               badge: { bg: "#ede9fe", color: "#5b21b6" } },
@@ -5913,7 +5980,7 @@ const CATS_DOUBLE = [
   { key: "excluded" as const, label: "💤 휴무/제외",          badge: { bg: "#f3f4f6", color: "#6b7280" } },
 ];
 const CATS_SINGLE = [
-  { key: "twoRound" as const, label: "🔄 투라운드", badge: { bg: "#cffafe", color: "#164e63" } },
+  { key: "findingList" as const, label: "🔄 찾근",   badge: { bg: "#cffafe", color: "#164e63" } },
   { key: "shift1"   as const, label: "⛳ 단부",     badge: { bg: "#dbeafe", color: "#1e40af" } },
   { key: "spare2"   as const, label: "🏁 스페어",   badge: { bg: "#fef3c7", color: "#92400e" } },
   { key: "excluded" as const, label: "💤 휴무/제외", badge: { bg: "#f3f4f6", color: "#6b7280" } },
@@ -5929,6 +5996,7 @@ function DayResultView({ result, mode, compact = false }: {
   const spare1Set = new Set(result.spare1 ?? []); // 1부스페어는 shift2 앞에 이미 배정 → 중복 제거용
   // 대근 인원 set (1부·2부·투라운드) — 배정 결과에서 bold 표시용
   const daegeunSet = new Set(result.daegeunList ?? []);
+  const shortInvalidReason = (reason?: string) => reason?.replace(/^.+ 미성립 · /, "");
 
   function renderPeople(people: string[], key: string) {
     const isExcluded = key === "excluded";
@@ -5936,12 +6004,12 @@ function DayResultView({ result, mode, compact = false }: {
       return people.map((n, i) => {
         const grp = isExcluded ? NAME_GROUP_NORMALIZED[normalize(n)] : undefined;
         const dot = grp ? GROUP_DOT[grp] : null;
-        const invalidReason = result.invalidStatusReasons?.[n];
+        const invalidReason = shortInvalidReason(result.invalidStatusReasons?.[n]);
         const isBoth = (key === "shift1" || key === "shift2") && bothSet.has(n);
         return (
           <span key={n} style={{
-            fontWeight: (daegeunSet.has(n) || isBoth || key === "twoRound") ? 800 : undefined,
-            color: key === "twoRound" ? "#164e63" : undefined,
+            fontWeight: (daegeunSet.has(n) || isBoth || key === "findingList") ? 800 : undefined,
+            color: key === "findingList" ? "#164e63" : undefined,
           }}>
             {i > 0 && "  ·  "}
             {n}
@@ -5957,19 +6025,19 @@ function DayResultView({ result, mode, compact = false }: {
           const isCho    = (key === "shift1") && 조출Set.has(n);
           const isHu     = (key === "shift2") && 후출Set.has(n);
           const isSpare1 = (key === "shift2") && spare1Set.has(n);
-          const isTwoR   = key === "twoRound";
+          const isFinding = key === "findingList";
           const isBoth   = (key === "shift1" || key === "shift2") && bothSet.has(n);
           const isDaegeun = daegeunSet.has(n); // 대근 인원 (bold 강조)
           const suffix   = isCho ? " [조출]" : isHu ? " [후출]" : isSpare1 ? " [1부스페어]" : "";
           const grp      = isExcluded ? NAME_GROUP_NORMALIZED[normalize(n)] : undefined;
           const dotColor = grp ? GROUP_DOT[grp] : null;
-          const invalidReason = result.invalidStatusReasons?.[n];
+          const invalidReason = shortInvalidReason(result.invalidStatusReasons?.[n]);
           return (
             <span key={n}>
               {i > 0 && <span style={{ color: "#d1d5db" }}> · </span>}
               <span style={{
-                fontWeight: (isBoth || isCho || isHu || isTwoR || isSpare1 || isDaegeun) ? 800 : 500,
-                color: isCho ? "#9a3412" : isHu ? "#5b21b6" : isTwoR ? "#164e63" : isSpare1 ? "#9a3412" : "#374151",
+                fontWeight: (isBoth || isCho || isHu || isFinding || isSpare1 || isDaegeun) ? 800 : 500,
+                color: isCho ? "#9a3412" : isHu ? "#5b21b6" : isFinding ? "#164e63" : isSpare1 ? "#9a3412" : "#374151",
                 background: isCho ? "#fed7aa" : isHu ? "#ddd6fe" : "transparent",
                 borderRadius: 4, padding: (isCho || isHu) ? "1px 4px" : 0,
               }}>
@@ -6000,7 +6068,9 @@ function DayResultView({ result, mode, compact = false }: {
     <div style={{ display: "flex", flexDirection: "column", gap: compact ? "4px" : "10px" }}>
       {cats.map(({ key, label, badge }) => {
         // shift2에서 spare1 중복 제거 (1부스페어는 별도 행에 표시되므로)
-        const rawPeople = result[key];
+        const rawPeople = mode === "2부제" && key === "spare2"
+          ? (result.shift2SpareQueue ?? result.spare2).slice(0, 6)
+          : (result[key] ?? []);
         const people = key === "shift2" ? rawPeople.filter(n => !spare1Set.has(n)) : rawPeople;
         if (!people.length) return null;
         // 2부 항목에 후출 위치 안내 추가

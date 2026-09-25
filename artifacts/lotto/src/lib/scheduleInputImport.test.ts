@@ -6,8 +6,10 @@ import {
   applyOcrAssignments,
   applyTimingImportState,
   clearManualHolidayImports,
+  limitTimingAssignments,
   matchImportedStatuses,
   mergeHolidayImport,
+  mergeTimingRequestOrder,
   parseOcrStatusText,
   parseTimingExcelBuffer,
 } from "./scheduleInputImport.ts";
@@ -142,4 +144,30 @@ test("상태 입력 순서가 달라도 배정 결과는 canonical 번호 순서
   const first = calculateSchedule({ ...input, statuses: forward, baseStatuses: Object.fromEntries(canonicalQueue.map(name => [name, null])) });
   const second = calculateSchedule({ ...input, statuses: reverse, baseStatuses: Object.fromEntries(canonicalQueue.map(name => [name, null])) });
   assert.deepEqual(second, first);
+});
+
+test("Excel/OCR 조출·후출 입력은 기존 신청을 포함해 최대 6명까지만 받는다", () => {
+  const current = { 기존조출: "조출", 기존후출: "후출" };
+  const incoming: Array<[string, "조출" | "후출" | "찾근"]> = [
+    ...Array.from({ length: 7 }, (_, index) => [`조출${index + 1}`, "조출"] as [string, "조출"]),
+    ...Array.from({ length: 7 }, (_, index) => [`후출${index + 1}`, "후출"] as [string, "후출"]),
+    ["찾근1", "찾근"],
+  ];
+  const result = limitTimingAssignments(current, incoming);
+  assert.equal(Object.values(result.assignments).filter(status => status === "조출").length, 5);
+  assert.equal(Object.values(result.assignments).filter(status => status === "후출").length, 5);
+  assert.equal(result.assignments.조출6, undefined);
+  assert.equal(result.assignments.후출6, undefined);
+  assert.equal(result.assignments.찾근1, "찾근");
+});
+
+test("Excel/OCR 찾근 순서를 기존 dateStatusOrders에 이어서 보존한다", () => {
+  const statuses = { 수동찾근: "찾근", 엑셀B: "찾근", 엑셀A: "찾근", 조출자: "조출" };
+  const order = mergeTimingRequestOrder(
+    ["조출자", "수동찾근"],
+    statuses,
+    ["엑셀B", "엑셀A"],
+  );
+  assert.deepEqual(order, ["조출자", "수동찾근", "엑셀B", "엑셀A"]);
+  assert.deepEqual(order.filter(name => statuses[name as keyof typeof statuses] === "찾근"), ["수동찾근", "엑셀B", "엑셀A"]);
 });

@@ -14,6 +14,7 @@ export interface ScheduleEngineInput {
   statuses: Record<string, ScheduleStatus>;
   baseStatuses?: Record<string, ScheduleStatus>;
   requests?: Record<string, ScheduleStatus>;
+  requestOrder?: string[];
   daegeun: Record<string, ScheduleDaegeun>;
   previousSpare1?: string;
   previousSpare2?: string;
@@ -238,9 +239,10 @@ export function calculateSchedule(input: ScheduleEngineInput): { base: ScheduleE
   };
   const baseAllocation = input.mode === "2부제" ? allocateDouble(allocationInput) : allocateSingle(allocationInput);
   const requestSource = input.requests ?? input.statuses;
-  const requestedFinding = queue.filter((n) => requestSource[n] === "찾근");
-  const requestedEarly = queue.filter((n) => requestSource[n] === "조출").slice(0, 6);
-  const requestedLate = queue.filter((n) => requestSource[n] === "후출").slice(0, 6);
+  const requestOrder = unique([...(input.requestOrder ?? []), ...queue]).filter((name) => queue.includes(name));
+  const requestedFinding = requestOrder.filter((n) => requestSource[n] === "찾근");
+  const requestedEarly = requestOrder.filter((n) => requestSource[n] === "조출").slice(0, 6);
+  const requestedLate = requestOrder.filter((n) => requestSource[n] === "후출").slice(0, 6);
   const invalidStatusReasons: Record<string, string> = {};
   const force1 = new Set<string>();
   const force2 = new Set<string>();
@@ -250,6 +252,9 @@ export function calculateSchedule(input: ScheduleEngineInput): { base: ScheduleE
   let free1 = Math.max(0, input.shift1Size - fixedCount(allocationInput, 1));
   let free2 = Math.max(0, (input.shift2Size ?? 0) - fixedCount(allocationInput, 2) - baseAllocation.shift1Spare.length);
   const normalTwoRoundDay = input.mode === "2부제" && baseAllocation.normalBothMembership.length > 0;
+  const findingLimit = normalTwoRoundDay
+    ? Math.max(0, baseAllocation.normalBothMembership.length - 2)
+    : Number.POSITIVE_INFINITY;
   const baseS1 = new Set(baseAllocation.shift1Membership);
   const baseS2 = new Set(baseAllocation.shift2Membership);
   const baseNumbered = new Set([...baseS1, ...baseS2]);
@@ -283,6 +288,8 @@ export function calculateSchedule(input: ScheduleEngineInput): { base: ScheduleE
     } else if (normalTwoRoundDay) {
       if (baseBoth.has(name)) {
         invalidStatusReasons[name] = "찾근 미성립 · 이미 투번호 옴";
+      } else if (appliedFinding.length >= findingLimit) {
+        invalidStatusReasons[name] = "찾근 미성립 · 정원 초과";
       } else if (baseS1.has(name)) {
         if (free2 <= 0) invalidStatusReasons[name] = "찾근 미성립 · VIP/대근 근무로 정원 초과";
         else { force2.add(name); appliedFinding.push(name); free2--; }
@@ -354,9 +361,18 @@ export function calculateSchedule(input: ScheduleEngineInput): { base: ScheduleE
       shift1DisplayOrder = [...rest.slice(0, at), ...canonicalSort(appliedLate, queue), ...rest.slice(at)];
     } else {
       const lateSet = new Set(appliedLate);
+      let rest = shift2DisplayOrder.filter((name) => !lateSet.has(name));
+      const normalBothSet = new Set(finalAllocation.normalBothMembership);
+      const firstOriginalIndex = rest.findIndex((name) => !normalBothSet.has(name));
+      if (firstOriginalIndex > 0 && rest.slice(0, firstOriginalIndex).every((name) => normalBothSet.has(name))) {
+        rest = [...rest.slice(firstOriginalIndex), ...rest.slice(0, firstOriginalIndex)];
+      }
+      const firstTwoRoundIndex = rest.findIndex((name) => normalBothSet.has(name));
+      const at = firstTwoRoundIndex >= 0 ? firstTwoRoundIndex : rest.length;
       shift2DisplayOrder = [
-        ...shift2DisplayOrder.filter((name) => !lateSet.has(name)),
+        ...rest.slice(0, at),
         ...canonicalSort(appliedLate, queue),
+        ...rest.slice(at),
       ];
     }
   }

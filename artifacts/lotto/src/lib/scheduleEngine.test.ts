@@ -141,7 +141,7 @@ const findingAnchorResult = (excluded: Record<string, ScheduleStatus>, findings 
     canonicalQueue: anchorQueue,
     mode: "2부제",
     shift1Size: 6,
-    shift2Size: 8,
+    shift2Size: 10,
     statuses: requested,
     baseStatuses,
     requests: requested,
@@ -244,7 +244,7 @@ test("원번만 도는 날 조출은 전일 스페어2 canonical 위치 뒤에 �
   assert.equal(final.shift1DisplayOrder[final.shift1DisplayOrder.indexOf("C") + 1], "B");
 });
 
-test("2부제 후출은 찾근 배치 후 원번 마지막으로 이동한다", () => {
+test("투가 안 도는 2부제 후출은 정상 원번 마지막으로 이동한다", () => {
   const requested = statuses({ I: "찾근", G: "후출" });
   const { final } = calculateSchedule(doubleInput({
     statuses: requested,
@@ -253,6 +253,50 @@ test("2부제 후출은 찾근 배치 후 원번 마지막으로 이동한다", 
   }));
   assert.deepEqual(final.shift2DisplayOrder, ["E", "F", "I", "G"]);
   assert.equal(final.shift2DisplayOrder.at(-1), "G");
+});
+
+test("투가 도는 날 후출은 정상 원번 구간 뒤와 정상 투근무 구간 앞에 표시된다", () => {
+  const forty = Array.from({ length: 40 }, (_, index) => String(index + 1));
+  const baseStatuses = Object.fromEntries(forty.map((name) => [name, null]));
+  const requested = { ...baseStatuses, "5": "후출" as const };
+  const { final } = calculateSchedule({
+    canonicalQueue: forty,
+    mode: "2부제",
+    shift1Size: 30,
+    shift2Size: 30,
+    statuses: requested,
+    baseStatuses,
+    requests: requested,
+    daegeun: {},
+  });
+
+  assert.deepEqual(final.shift2Membership, ["5", ...forty.slice(5, 34)]);
+  assert.deepEqual(final.shift2DisplayOrder, [...forty.slice(31, 34), "5", ...forty.slice(5, 31)]);
+  assert.deepEqual(final.normalBothMembership, forty.slice(5, 31));
+  assert.deepEqual(final.shift2SpareQueue.slice(0, 2), ["35", "36"]);
+  assert.deepEqual(final.nextDayQueue.slice(0, 2), ["35", "36"]);
+});
+
+test("복수 후출은 정상 원번 구간 뒤에 canonical 순서로 연속 표시된다", () => {
+  const forty = Array.from({ length: 40 }, (_, index) => String(index + 1));
+  const baseStatuses = Object.fromEntries(forty.map((name) => [name, null]));
+  const requested = { ...baseStatuses, "5": "후출" as const, "10": "후출" as const };
+  const { final } = calculateSchedule({
+    canonicalQueue: forty,
+    mode: "2부제",
+    shift1Size: 30,
+    shift2Size: 30,
+    statuses: requested,
+    baseStatuses,
+    requests: requested,
+    daegeun: {},
+  });
+
+  const firstTwoRound = final.shift2DisplayOrder.findIndex((name) => final.normalBothMembership.includes(name));
+  assert.deepEqual(final.shift2DisplayOrder.slice(firstTwoRound - 2, firstTwoRound), ["5", "10"]);
+  assert.deepEqual(final.shift2Membership, ["5", "10", ...forty.slice(5, 9), ...forty.slice(10, 34)]);
+  assert.deepEqual(final.shift2SpareQueue.slice(0, 2), ["35", "36"]);
+  assert.deepEqual(final.nextDayQueue.slice(0, 2), ["35", "36"]);
 });
 
 test("VIP/대근이 정원을 채우면 찾근은 미성립한다", () => {
@@ -552,4 +596,81 @@ test("3일/7일 연쇄는 전체 nextDayQueue를 다음 canonicalQueue로 전달
     assert.equal(new Set(result.nextDayQueue).size, queue.length);
     current = result.nextDayQueue;
   }
+});
+
+test("정상 투근무 11명은 신청순서 앞 9명까지만 찾근이 성립한다", () => {
+  const names = Array.from({ length: 40 }, (_, index) => String(index + 1));
+  const plain = Object.fromEntries(names.map(name => [name, null]));
+  const applicants = names.slice(11, 23).reverse();
+  const requests = { ...plain };
+  applicants.forEach(name => { requests[name] = "찾근"; });
+  const { base, final } = calculateSchedule({
+    canonicalQueue: names, mode: "2부제", shift1Size: 30, shift2Size: 21,
+    statuses: requests, baseStatuses: plain, requests, requestOrder: applicants, daegeun: {},
+  });
+  assert.equal(base.normalBothMembership.length, 11);
+  assert.deepEqual(final.appliedFinding, applicants.slice(0, 9));
+  assert.equal(final.invalidStatusReasons[applicants[9]], "찾근 미성립 · 정원 초과");
+});
+
+test("정상 투근무 7명은 신청순서 앞 5명까지만 찾근이 성립한다", () => {
+  const names = Array.from({ length: 40 }, (_, index) => String(index + 1));
+  const plain = Object.fromEntries(names.map(name => [name, null]));
+  const applicants = names.slice(7, 15).reverse();
+  const requests = { ...plain };
+  applicants.forEach(name => { requests[name] = "찾근"; });
+  const { base, final } = calculateSchedule({
+    canonicalQueue: names, mode: "2부제", shift1Size: 30, shift2Size: 17,
+    statuses: requests, baseStatuses: plain, requests, requestOrder: applicants, daegeun: {},
+  });
+  assert.equal(base.normalBothMembership.length, 7);
+  assert.deepEqual(final.appliedFinding, applicants.slice(0, 5));
+  assert.equal(final.invalidStatusReasons[applicants[5]], "찾근 미성립 · 정원 초과");
+});
+
+test("이미 정상 투근무인 찾근 신청자는 동적 정원을 소비하지 않는다", () => {
+  const names = Array.from({ length: 40 }, (_, index) => String(index + 1));
+  const plain = Object.fromEntries(names.map(name => [name, null]));
+  const applicants = ["1", "15", "14", "13", "12", "11"];
+  const requests = { ...plain };
+  applicants.forEach(name => { requests[name] = "찾근"; });
+  const { final } = calculateSchedule({
+    canonicalQueue: names, mode: "2부제", shift1Size: 30, shift2Size: 17,
+    statuses: requests, baseStatuses: plain, requests, requestOrder: applicants, daegeun: {},
+  });
+  assert.equal(final.invalidStatusReasons["1"], "찾근 미성립 · 이미 투번호 옴");
+  assert.deepEqual(final.appliedFinding, ["15", "14", "13", "12", "11"]);
+});
+
+test("팀 수 증감은 저장된 찾근 신청순서를 유지한 채 동적 정원을 다시 계산한다", () => {
+  const names = Array.from({ length: 40 }, (_, index) => String(index + 1));
+  const plain = Object.fromEntries(names.map(name => [name, null]));
+  const applicants = names.slice(10, 18).reverse();
+  const requests = { ...plain };
+  applicants.forEach(name => { requests[name] = "찾근"; });
+  const run = (shift2Size: number) => calculateSchedule({
+    canonicalQueue: names, mode: "2부제", shift1Size: 30, shift2Size,
+    statuses: requests, baseStatuses: plain, requests, requestOrder: applicants, daegeun: {},
+  }).final;
+  const small = run(16);
+  const large = run(20);
+  const smallAgain = run(16);
+  assert.deepEqual(small.appliedFinding, applicants.slice(0, 4));
+  assert.deepEqual(large.appliedFinding, applicants);
+  assert.deepEqual(smallAgain.appliedFinding, applicants.slice(0, 4));
+  assert.deepEqual(applicants, names.slice(10, 18).reverse());
+});
+
+test("조출·후출 미성립 요청은 입력을 변경하지 않고 조건 변경 후 다시 성립한다", () => {
+  const requests = statuses({ I: "조출", J: "후출" });
+  const before = structuredClone(requests);
+  const small = calculateSchedule(doubleInput({ statuses: requests, baseStatuses: statuses(), requests })).final;
+  const large = calculateSchedule(doubleInput({
+    shift1Size: 10, shift2Size: 10, statuses: requests, baseStatuses: statuses(), requests,
+  })).final;
+  assert.equal(small.invalidStatusReasons.I, "조출 미성립 · 번호 안옴");
+  assert.equal(small.invalidStatusReasons.J, "후출 미성립 · 번호 안옴");
+  assert.ok(large.appliedEarly.includes("I"));
+  assert.ok(large.appliedLate.includes("J"));
+  assert.deepEqual(requests, before);
 });
