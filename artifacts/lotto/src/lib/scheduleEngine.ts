@@ -83,10 +83,28 @@ function addAfterAnchor(
   return [...rest.slice(0, at), ...moving, ...rest.slice(at)];
 }
 
-function makeNextDayQueue(spares: string[], canonicalQueue: string[]): string[] {
-  const first = unique(spares).slice(0, 2);
-  const firstSet = new Set(first);
-  return [...first, ...canonicalQueue.filter((name) => !firstSet.has(name))];
+function validFindingAnchor(
+  canonicalQueue: string[], excluded: Iterable<string>, previousSpare1?: string, previousSpare2?: string,
+): string | undefined {
+  if (!previousSpare2) return previousSpare1;
+  if (!previousSpare1) return previousSpare2;
+  const start = canonicalQueue.indexOf(previousSpare1);
+  if (start < 0) return previousSpare2;
+  const excludedSet = new Set(excluded);
+  const previousOrder = [...canonicalQueue.slice(start), ...canonicalQueue.slice(0, start)];
+  const valid = previousOrder.filter((name) => !excludedSet.has(name));
+  return valid[1] ?? valid[0];
+}
+
+function makeNextDayQueue(spares: string[], canonicalQueue: string[], excluded: string[]): string[] {
+  const spareOrder = unique(spares);
+  const spareSet = new Set(spareOrder);
+  const excludedSet = new Set(excluded);
+  return [
+    ...spareOrder,
+    ...canonicalQueue.filter((name) => !spareSet.has(name) && !excludedSet.has(name)),
+    ...canonicalQueue.filter((name) => excludedSet.has(name)),
+  ];
 }
 
 function baseStatus(status: ScheduleStatus): ScheduleStatus {
@@ -152,6 +170,7 @@ function allocateDouble(
   const dg2 = queue.filter((n) => !excludedSet.has(n) && input.daegeun[n] === "2부");
   const dgBoth = queue.filter((n) => !excludedSet.has(n) && input.daegeun[n] === "투라운드");
   const waiting = queue.filter((n) => !excludedSet.has(n) && statusOf(n) === "대기");
+  const dedicated1 = new Set([...vip1, ...dg1]);
   const dedicated2 = new Set([...vip2, ...dg2]);
   const fixed1 = unique([...vip1, ...vipBoth, ...dg1, ...dgBoth, ...canonicalSort(forceShift1, queue)])
     .filter((n) => !excludedSet.has(n) && !dedicated2.has(n) && !excludeFromShift1.has(n)).slice(0, s1Capacity);
@@ -169,7 +188,7 @@ function allocateDouble(
     .filter((n) => !excludedSet.has(n) && !excludeFromShift2.has(n)).slice(0, s2Capacity);
   const fixed2Set = new Set(fixed2);
   const regularCandidateOrder = rotateAfter(queue, shift1Spare[0])
-    .filter((n) => !excludedSet.has(n) && !fixed2Set.has(n) && !excludeFromShift2.has(n));
+    .filter((n) => !excludedSet.has(n) && !dedicated1.has(n) && !fixed2Set.has(n) && !excludeFromShift2.has(n));
   const regularSelected = regularCandidateOrder.slice(0, Math.max(0, s2Capacity - fixed2.length));
   const shift2Membership = unique([...fixed2, ...regularSelected]);
   const shift2Set = new Set(shift2Membership);
@@ -220,8 +239,8 @@ export function calculateSchedule(input: ScheduleEngineInput): { base: ScheduleE
   const baseAllocation = input.mode === "2부제" ? allocateDouble(allocationInput) : allocateSingle(allocationInput);
   const requestSource = input.requests ?? input.statuses;
   const requestedFinding = queue.filter((n) => requestSource[n] === "찾근");
-  const requestedEarly = queue.filter((n) => requestSource[n] === "조출");
-  const requestedLate = queue.filter((n) => requestSource[n] === "후출");
+  const requestedEarly = queue.filter((n) => requestSource[n] === "조출").slice(0, 6);
+  const requestedLate = queue.filter((n) => requestSource[n] === "후출").slice(0, 6);
   const invalidStatusReasons: Record<string, string> = {};
   const force1 = new Set<string>();
   const force2 = new Set<string>();
@@ -304,9 +323,12 @@ export function calculateSchedule(input: ScheduleEngineInput): { base: ScheduleE
   }
   const finalS1 = new Set(finalAllocation.shift1Membership);
   const finalS2 = new Set(finalAllocation.shift2Membership);
+  const findingAnchor = validFindingAnchor(
+    queue, baseAllocation.excluded, input.previousSpare1, input.previousSpare2,
+  );
 
   const findingDisplayOrder = input.mode === "2부제" && appliedFinding.length
-    ? addAfterAnchor(queue, appliedFinding, queue, input.previousSpare2 ?? input.previousSpare1)
+    ? addAfterAnchor(queue, appliedFinding, queue, findingAnchor)
     : queue;
   let shift1DisplayOrder = findingDisplayOrder.filter((n) => finalS1.has(n));
   let shift2DisplayOrder = [...finalAllocation.shift2Membership];
@@ -321,7 +343,7 @@ export function calculateSchedule(input: ScheduleEngineInput): { base: ScheduleE
       shift2DisplayOrder,
       appliedFinding.filter((n) => finalS2.has(n)),
       queue,
-      input.previousSpare2 ?? input.previousSpare1,
+      findingAnchor,
     );
   }
   if (appliedLate.length) {
@@ -339,18 +361,33 @@ export function calculateSchedule(input: ScheduleEngineInput): { base: ScheduleE
     }
   }
 
-  const decorate = (allocation: Allocation, isFinal: boolean): ScheduleEngineResult => ({
-    ...allocation,
-    shift1DisplayOrder: isFinal ? shift1DisplayOrder : allocation.shift1Membership,
-    shift2DisplayOrder: isFinal ? shift2DisplayOrder : allocation.shift2Membership,
-    appliedFinding: isFinal ? appliedFinding : [],
-    appliedEarly: isFinal ? appliedEarly : [],
-    appliedLate: isFinal ? appliedLate : [],
-    invalidStatusReasons: isFinal ? invalidStatusReasons : {},
-    nextDayQueue: makeNextDayQueue(
-      input.mode === "2부제" ? allocation.shift2SpareQueue : allocation.shift2SpareQueue,
-      queue,
-    ),
-  });
+  const decorate = (allocation: Allocation, isFinal: boolean): ScheduleEngineResult => {
+    let shift2SpareQueue = allocation.shift2SpareQueue;
+    let nextDayQueue: string[];
+    if (shift2SpareQueue.length > 0) {
+      nextDayQueue = makeNextDayQueue(shift2SpareQueue, queue, allocation.excluded);
+    } else {
+      const excludedSet = new Set(allocation.excluded);
+      const shift1SpareSet = new Set(input.mode === "2부제" ? allocation.shift1Spare : []);
+      const validQueue = queue.filter((name) => !excludedSet.has(name) && !shift1SpareSet.has(name));
+      const lastWorked = input.mode === "2부제"
+        ? allocation.shift2Membership.at(-1)
+        : allocation.shift1Membership.at(-1);
+      const rotated = rotateAfter(validQueue, lastWorked);
+      nextDayQueue = [...rotated, ...queue.filter((name) => excludedSet.has(name))];
+      if (input.mode === "2부제") shift2SpareQueue = rotated.slice(0, 2);
+    }
+    return {
+      ...allocation,
+      shift2SpareQueue,
+      shift1DisplayOrder: isFinal ? shift1DisplayOrder : allocation.shift1Membership,
+      shift2DisplayOrder: isFinal ? shift2DisplayOrder : allocation.shift2Membership,
+      appliedFinding: isFinal ? appliedFinding : [],
+      appliedEarly: isFinal ? appliedEarly : [],
+      appliedLate: isFinal ? appliedLate : [],
+      invalidStatusReasons: isFinal ? invalidStatusReasons : {},
+      nextDayQueue,
+    };
+  };
   return { base: decorate(baseAllocation, false), final: decorate(finalAllocation, true) };
 }

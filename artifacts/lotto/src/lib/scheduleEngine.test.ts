@@ -132,6 +132,55 @@ test("복수 찾근자는 1부와 2부에서 canonical 순서의 연속 블록�
   assert.deepEqual(final.shift2DisplayOrder.slice(shift2FindingStart, shift2FindingStart + 2), ["E", "G"]);
 });
 
+const findingAnchorResult = (excluded: Record<string, ScheduleStatus>, findings = ["30"]) => {
+  const anchorQueue = Array.from({ length: 12 }, (_, index) => String(index + 21));
+  const baseStatuses = Object.fromEntries(anchorQueue.map((name) => [name, excluded[name] ?? null]));
+  const requested = { ...baseStatuses };
+  findings.forEach((name) => { requested[name] = "찾근"; });
+  return calculateSchedule({
+    canonicalQueue: anchorQueue,
+    mode: "2부제",
+    shift1Size: 6,
+    shift2Size: 8,
+    statuses: requested,
+    baseStatuses,
+    requests: requested,
+    daegeun: {},
+    previousSpare1: "21",
+    previousSpare2: "22",
+  }).final;
+};
+
+test("전일 스페어2가 오늘 휴무면 다음 유효 두 번째 사람 뒤에 찾근을 배치한다", () => {
+  const final = findingAnchorResult({ "22": "휴무" });
+  assert.deepEqual(final.shift1DisplayOrder.slice(0, 4), ["21", "23", "30", "24"]);
+});
+
+test("전일 스페어1이 오늘 휴무면 다음 유효 두 명 중 두 번째 뒤에 찾근을 배치한다", () => {
+  const final = findingAnchorResult({ "21": "휴무" });
+  assert.deepEqual(final.shift1DisplayOrder.slice(0, 4), ["22", "23", "30", "24"]);
+});
+
+test("전일 스페어1·2가 모두 휴무면 다음 유효 두 명 뒤에 찾근을 배치한다", () => {
+  const final = findingAnchorResult({ "21": "휴무", "22": "휴무" });
+  assert.deepEqual(final.shift1DisplayOrder.slice(0, 4), ["23", "24", "30", "25"]);
+});
+
+test("전일 스페어의 병가도 유효 찾근 anchor 계산에서 제외한다", () => {
+  const final = findingAnchorResult({ "22": "병가" });
+  assert.deepEqual(final.shift1DisplayOrder.slice(0, 4), ["21", "23", "30", "24"]);
+});
+
+test("제외자가 없으면 전일 스페어1·2 뒤에 찾근을 배치한다", () => {
+  const final = findingAnchorResult({});
+  assert.deepEqual(final.shift1DisplayOrder.slice(0, 4), ["21", "22", "30", "23"]);
+});
+
+test("복수 찾근도 유효 전일 스페어2 뒤에 canonical 순서로 연속 배치한다", () => {
+  const final = findingAnchorResult({ "22": "휴무" }, ["30", "31"]);
+  assert.deepEqual(final.shift1DisplayOrder.slice(0, 5), ["21", "23", "30", "31", "24"]);
+});
+
 test("단부제 찾근과 뒤에서 3번째 후출 위치", () => {
   const singleQueue = "ABCDEFGH".split("");
   const baseStatuses = Object.fromEntries(singleQueue.map((n) => [n, null]));
@@ -419,6 +468,80 @@ test("팀 수 변경은 BASE부터 스페어와 다음날 큐를 다시 계산�
   assert.notDeepEqual(four.shift1Spare, five.shift1Spare);
   assert.notDeepEqual(four.shift2SpareQueue.slice(0, 2), five.shift2SpareQueue.slice(0, 2));
   assert.deepEqual(five.nextDayQueue.slice(0, 2), five.shift2SpareQueue.slice(0, 2));
+});
+
+test("다음날 전체 순번은 2부 스페어 전체가 끊기지 않고 이어진다", () => {
+  const { final } = calculateSchedule(doubleInput());
+  assert.deepEqual(final.shift2SpareQueue, ["I", "J", "K", "L", "A", "B", "C", "D"]);
+  assert.deepEqual(final.nextDayQueue, ["I", "J", "K", "L", "A", "B", "C", "D", "E", "F", "G", "H"]);
+});
+
+test("다음날 순번에서 휴무·병가 등 근무 불가자는 건너뛰어 뒤로 보낸다", () => {
+  const baseStatuses = statuses({ B: "휴무", C: "병가" });
+  const { final } = calculateSchedule(doubleInput({ statuses: baseStatuses, baseStatuses }));
+  assert.deepEqual(final.nextDayQueue.slice(-2), ["B", "C"]);
+  assert.ok(final.nextDayQueue.indexOf("D") < final.nextDayQueue.indexOf("B"));
+});
+
+test("VIP1부는 2부 근무와 2부 스페어 후보에서 제외한다", () => {
+  const baseStatuses = statuses({ H: "VIP1부", K: "VIP2부" });
+  const { final } = calculateSchedule(doubleInput({ statuses: baseStatuses, baseStatuses }));
+  assert.ok(final.shift1Membership.includes("H"));
+  assert.ok(!final.shift2Membership.includes("H"));
+  assert.ok(!final.shift2SpareQueue.includes("H"));
+});
+
+test("대근1부는 2부 근무와 2부 스페어 후보에서 제외한다", () => {
+  const { final } = calculateSchedule(doubleInput({ daegeun: { H: "1부", K: "2부", L: "투라운드" } }));
+  assert.ok(final.shift1Membership.includes("H"));
+  assert.ok(!final.shift2Membership.includes("H"));
+  assert.ok(!final.shift2SpareQueue.includes("H"));
+  assert.ok(final.shift2Membership.includes("K"));
+  assert.ok(final.bothMembership.includes("L"));
+});
+
+test("2부제 full rotation은 마지막 실제 근무자 다음 유효 순번부터 이어간다", () => {
+  const fullQueue = "ABCDEFGH".split("");
+  const baseStatuses = Object.fromEntries(fullQueue.map((name) => [name, null]));
+  const { final } = calculateSchedule({
+    canonicalQueue: fullQueue, mode: "2부제", shift1Size: 4, shift2Size: 8,
+    statuses: baseStatuses, baseStatuses, daegeun: {},
+  });
+  assert.deepEqual(final.shift2Membership, ["E", "F", "G", "H", "A", "B", "C", "D"]);
+  assert.deepEqual(final.shift2SpareQueue, ["F", "G"]);
+  assert.deepEqual(final.nextDayQueue, ["F", "G", "H", "A", "B", "C", "D"]);
+});
+
+test("단부제 full rotation은 마지막 실제 근무자 다음 유효 순번부터 이어간다", () => {
+  const fullQueue = "ABCDEFGH".split("");
+  const baseStatuses = Object.fromEntries(fullQueue.map((name) => [name, name === "C" ? "휴무" : null]));
+  const { final } = calculateSchedule({
+    canonicalQueue: fullQueue, mode: "단부제", shift1Size: 7,
+    statuses: baseStatuses, baseStatuses, daegeun: {},
+  });
+  assert.deepEqual(final.shift2SpareQueue, []);
+  assert.deepEqual(final.nextDayQueue, ["A", "B", "D", "E", "F", "G", "H", "C"]);
+});
+
+test("엔진은 조출과 후출 특수 효과를 각각 최대 6명까지만 적용한다", () => {
+  const manyQueue = Array.from({ length: 20 }, (_, index) => String(index + 1));
+  const plain = Object.fromEntries(manyQueue.map((name) => [name, null]));
+  const earlyRequests = { ...plain };
+  const lateRequests = { ...plain };
+  manyQueue.slice(0, 7).forEach((name) => { earlyRequests[name] = "조출"; });
+  manyQueue.slice(0, 7).forEach((name) => { lateRequests[name] = "후출"; });
+  const early = calculateSchedule({
+    canonicalQueue: manyQueue, mode: "2부제", shift1Size: 10, shift2Size: 10,
+    statuses: earlyRequests, baseStatuses: plain, requests: earlyRequests, daegeun: {},
+  }).final;
+  const late = calculateSchedule({
+    canonicalQueue: manyQueue, mode: "2부제", shift1Size: 10, shift2Size: 10,
+    statuses: lateRequests, baseStatuses: plain, requests: lateRequests, daegeun: {},
+  }).final;
+  assert.deepEqual(early.appliedEarly, manyQueue.slice(0, 6));
+  assert.deepEqual(late.appliedLate, manyQueue.slice(0, 6));
+  assert.ok(!early.appliedEarly.includes("7"));
+  assert.ok(!late.appliedLate.includes("7"));
 });
 
 test("3일/7일 연쇄는 전체 nextDayQueue를 다음 canonicalQueue로 전달할 수 있다", () => {
