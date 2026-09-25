@@ -45,6 +45,72 @@ test("1부 스페어 찾근은 FINAL을 다시 계산한다", () => {
   assert.deepEqual(final.appliedFinding, ["I"]);
 });
 
+test("찾근 성립자가 원래 1부 스페어 후보면 다음 정상 순번이 FINAL 1부 스페어가 된다", () => {
+  const requested = statuses({ I: "찾근" });
+  const { base, final } = calculateSchedule(doubleInput({
+    shift1Size: 8, shift2Size: 8, statuses: requested, baseStatuses: statuses(),
+  }));
+  assert.deepEqual(base.shift1Spare, ["I"]);
+  assert.deepEqual(final.appliedFinding, ["I"]);
+  assert.deepEqual(final.shift1Spare, ["H"]);
+  assert.ok(!final.shift1Spare.some((name) => final.appliedFinding.includes(name)));
+});
+
+test("찾근 성립자가 2부 스페어 후보면 다음 정상 후보가 FINAL 스페어로 승격된다", () => {
+  const requested = statuses({ I: "찾근" });
+  const { base, final } = calculateSchedule(doubleInput({ statuses: requested, baseStatuses: statuses() }));
+  assert.deepEqual(base.shift2SpareQueue.slice(0, 2), ["I", "J"]);
+  assert.deepEqual(final.shift2SpareQueue.slice(0, 2), ["H", "J"]);
+  assert.ok(!final.shift2SpareQueue.includes("I"));
+});
+
+test("복수 찾근 성립자는 FINAL 1부·2부 스페어와 겹치지 않는다", () => {
+  const requested = statuses({ J: "찾근", K: "찾근" });
+  const { final } = calculateSchedule(doubleInput({
+    shift2Size: 5, statuses: requested, baseStatuses: statuses(), previousSpare2: "F",
+  }));
+  const finding = new Set(final.appliedFinding);
+  assert.ok(!final.shift1Spare.some((name) => finding.has(name)));
+  assert.ok(!final.shift2SpareQueue.some((name) => finding.has(name)));
+});
+
+test("찾근 제외 후 새 FINAL 2부 스페어1·2가 다음날 1·2번으로 전달된다", () => {
+  const requested = statuses({ I: "찾근" });
+  const { final } = calculateSchedule(doubleInput({ statuses: requested, baseStatuses: statuses() }));
+  assert.deepEqual(final.nextDayQueue.slice(0, 2), final.shift2SpareQueue.slice(0, 2));
+  assert.deepEqual(final.nextDayQueue.slice(0, 2), ["H", "J"]);
+});
+
+test("스페어 후보 제외 후에도 찾근 표시 위치는 전일 스페어2 뒤를 유지한다", () => {
+  const requested = statuses({ I: "찾근" });
+  const { final } = calculateSchedule(doubleInput({
+    statuses: requested, baseStatuses: statuses(), previousSpare2: "F",
+  }));
+  const anchor = final.shift2DisplayOrder.indexOf("F");
+  assert.equal(final.shift2DisplayOrder[anchor + 1], "I");
+});
+
+test("1부 찾근자도 전일 스페어2 anchor 뒤 공통 순서를 따른다", () => {
+  const requested = statuses({ J: "찾근" });
+  const { final } = calculateSchedule(doubleInput({
+    shift1Size: 8, shift2Size: 8, statuses: requested, baseStatuses: statuses(), previousSpare2: "F",
+  }));
+  assert.ok(final.appliedFinding.includes("J"));
+  assert.equal(final.shift1DisplayOrder[final.shift1DisplayOrder.indexOf("F") + 1], "J");
+});
+
+test("복수 찾근자는 1부와 2부에서 canonical 순서의 연속 블록을 유지한다", () => {
+  const requested = statuses({ G: "찾근", E: "찾근" });
+  const { final } = calculateSchedule(doubleInput({
+    shift1Size: 8, shift2Size: 8, statuses: requested, baseStatuses: statuses(), previousSpare2: "F",
+  }));
+  assert.deepEqual(final.appliedFinding, ["E", "G"]);
+  const shift1Anchor = final.shift1DisplayOrder.indexOf("F");
+  assert.deepEqual(final.shift1DisplayOrder.slice(shift1Anchor + 1, shift1Anchor + 3), ["E", "G"]);
+  const shift2FindingStart = final.shift2DisplayOrder.indexOf("E");
+  assert.deepEqual(final.shift2DisplayOrder.slice(shift2FindingStart, shift2FindingStart + 2), ["E", "G"]);
+});
+
 test("단부제 찾근과 뒤에서 3번째 후출 위치", () => {
   const singleQueue = "ABCDEFGH".split("");
   const baseStatuses = Object.fromEntries(singleQueue.map((n) => [n, null]));
