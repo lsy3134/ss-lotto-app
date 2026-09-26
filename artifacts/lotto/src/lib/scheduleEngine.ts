@@ -49,7 +49,7 @@ type Allocation = Omit<ScheduleEngineResult,
   };
 
 interface DoubleTimingPlacement {
-  finding: Set<string>;
+  findingBoth: Set<string>;
   late: Set<string>;
   findingAnchor?: string;
 }
@@ -192,7 +192,7 @@ function allocateDouble(
     .filter((n) => !excludeFromSpares.has(n))
     .slice(0, 1);
 
-  const positionedFinding = timingPlacement?.finding ?? new Set<string>();
+  const positionedFinding = timingPlacement?.findingBoth ?? new Set<string>();
   const positionedLate = timingPlacement?.late ?? new Set<string>();
   const positionedTiming = new Set([...positionedFinding, ...positionedLate]);
   const otherForced2 = canonicalSort(forceShift2, queue).filter((n) => !positionedTiming.has(n));
@@ -284,99 +284,133 @@ export function calculateSchedule(input: ScheduleEngineInput): { base: ScheduleE
   const requestedEarly = requestOrder.filter((n) => requestSource[n] === "조출").slice(0, 6);
   const requestedLate = requestOrder.filter((n) => requestSource[n] === "후출").slice(0, 6);
   const invalidStatusReasons: Record<string, string> = {};
-  const force1 = new Set<string>();
-  const force2 = new Set<string>();
-  const exclude1 = new Set<string>();
-  const exclude2 = new Set<string>();
-  let appliedFinding: string[] = [];
-  let free1 = Math.max(0, input.shift1Size - fixedCount(allocationInput, 1));
-  let free2 = Math.max(0, (input.shift2Size ?? 0) - fixedCount(allocationInput, 2) - baseAllocation.shift1Spare.length);
   const normalTwoRoundDay = input.mode === "2부제" && baseAllocation.normalBothMembership.length > 0;
   const findingLimit = normalTwoRoundDay
     ? Math.max(0, baseAllocation.normalBothMembership.length - 2)
     : Number.POSITIVE_INFINITY;
-  const baseS1 = new Set(baseAllocation.shift1Membership);
-  const baseS2 = new Set(baseAllocation.shift2Membership);
-  const baseNumbered = new Set([...baseS1, ...baseS2]);
-  const baseBoth = new Set(baseAllocation.bothMembership);
-  const appliedEarly = requestedEarly.filter((name) => {
-    const valid = baseNumbered.has(name);
-    if (!valid) invalidStatusReasons[name] = "조출 미성립 · 번호 안옴";
-    else if (input.mode === "2부제") {
-      force1.add(name);
-      exclude2.add(name);
-    }
-    return valid;
-  });
-  const appliedLate = requestedLate.filter((name) => {
-    const valid = baseNumbered.has(name);
-    if (!valid) invalidStatusReasons[name] = "후출 미성립 · 번호 안옴";
-    else if (input.mode === "2부제") {
-      force2.add(name);
-      exclude1.add(name);
-    }
-    return valid;
-  });
-
-  for (const name of requestedFinding) {
-    if (baseAllocation.excluded.includes(name)) {
-      invalidStatusReasons[name] = `찾근 미성립 · ${input.statuses[name] === "병가" ? "병가" : "근무 제외"}`;
-    } else if (input.mode === "단부제") {
-      if (baseS1.has(name)) invalidStatusReasons[name] = "찾근 미성립 · 번호 옴";
-      else if (free1 <= 0) invalidStatusReasons[name] = "찾근 미성립 · VIP/대근 근무로 정원 초과";
-      else { force1.add(name); appliedFinding.push(name); free1--; }
-    } else if (normalTwoRoundDay) {
-      if (baseBoth.has(name)) {
-        invalidStatusReasons[name] = "찾근 미성립 · 이미 투번호 옴";
-      } else if (!baseS1.has(name) && !baseS2.has(name)) {
-        invalidStatusReasons[name] = "찾근 미성립 · 번호 안옴";
-      } else if (appliedFinding.length >= findingLimit) {
-        invalidStatusReasons[name] = "찾근 미성립 · 정원 초과";
-      } else if (baseS1.has(name)) {
-        if (free2 <= 0) invalidStatusReasons[name] = "찾근 미성립 · VIP/대근 근무로 정원 초과";
-        else { force1.add(name); force2.add(name); appliedFinding.push(name); free2--; }
-      } else if (baseS2.has(name)) {
-        if (free1 <= 0) invalidStatusReasons[name] = "찾근 미성립 · VIP/대근 근무로 정원 초과";
-        else { force2.add(name); force1.add(name); appliedFinding.push(name); free1--; }
-      }
-    } else if (baseS1.has(name) || baseS2.has(name)) {
-      invalidStatusReasons[name] = "찾근 미성립 · 번호 옴";
-    } else if (free2 <= 0) {
-      invalidStatusReasons[name] = "찾근 미성립 · VIP/대근 근무로 정원 초과";
-    } else {
-      force2.add(name); appliedFinding.push(name); free2--;
-    }
-  }
-
   const findingAnchor = validFindingAnchor(
     queue, baseAllocation.excluded, input.previousSpare1, input.previousSpare2,
   );
-  const timingSpareExclusions = new Set([...appliedFinding, ...appliedEarly, ...appliedLate]);
-  const timingPlacement: DoubleTimingPlacement = {
-    finding: new Set(appliedFinding),
-    late: new Set(appliedLate),
-    findingAnchor,
+  let appliedEarly: string[] = [];
+  let appliedLate: string[] = [];
+  let appliedFinding: string[] = [];
+
+  const allocateWithTiming = (
+    early: Iterable<string>, late: Iterable<string>, finding: Iterable<string>,
+  ): Allocation => {
+    const earlySet = new Set(early);
+    const lateSet = new Set(late);
+    const findingSet = new Set(finding);
+    if (input.mode === "단부제") {
+      return allocateSingle(allocationInput, findingSet, findingSet);
+    }
+    const force1 = new Set([...earlySet, ...findingSet]);
+    const findingBoth = normalTwoRoundDay ? findingSet : new Set<string>();
+    const force2 = new Set([...lateSet, ...findingBoth]);
+    const spareExclusions = new Set([...earlySet, ...lateSet, ...findingSet]);
+    return allocateDouble(
+      allocationInput, force1, force2, lateSet, earlySet, spareExclusions,
+      { findingBoth, late: lateSet, findingAnchor },
+    );
   };
 
-  let finalAllocation = input.mode === "2부제"
-    ? allocateDouble(allocationInput, force1, force2, exclude1, exclude2, timingSpareExclusions, timingPlacement)
-    : allocateSingle(allocationInput, force1, new Set(appliedFinding));
-  const failedFinding = appliedFinding.filter((name) =>
-    (force1.has(name) && !finalAllocation.shift1Membership.includes(name)) ||
-    (force2.has(name) && !finalAllocation.shift2Membership.includes(name))
-  );
-  if (failedFinding.length > 0) {
-    failedFinding.forEach((name) => {
-      force1.delete(name);
-      force2.delete(name);
-      invalidStatusReasons[name] = "찾근 미성립 · VIP/대근 근무로 정원 초과";
-    });
-    appliedFinding = appliedFinding.filter((name) => !failedFinding.includes(name));
-    failedFinding.forEach((name) => timingSpareExclusions.delete(name));
-    timingPlacement.finding = new Set(appliedFinding);
-    finalAllocation = input.mode === "2부제"
-      ? allocateDouble(allocationInput, force1, force2, exclude1, exclude2, timingSpareExclusions, timingPlacement)
-      : allocateSingle(allocationInput, force1, new Set(appliedFinding));
+  if (input.mode === "단부제") {
+    const baseS1 = new Set(baseAllocation.shift1Membership);
+    appliedEarly = requestedEarly.filter((name) => baseS1.has(name));
+    appliedLate = requestedLate.filter((name) => baseS1.has(name));
+    const available = Math.max(0, input.shift1Size - fixedCount(allocationInput, 1));
+    for (const name of requestedFinding) {
+      if (baseAllocation.excluded.includes(name) || baseS1.has(name) || appliedFinding.length >= available) continue;
+      appliedFinding.push(name);
+    }
+  } else {
+    const excludedSet = new Set(baseAllocation.excluded);
+    const stateKey = (early: string[], late: string[], finding: string[]) =>
+      `${early.join("\u0001")}|${late.join("\u0001")}|${finding.join("\u0001")}`;
+    const seen = new Set<string>();
+    const maxPasses = Math.max(8, (requestedEarly.length + requestedLate.length + requestedFinding.length + 1) * 4);
+    let converged = false;
+
+    for (let pass = 0; pass < maxPasses; pass++) {
+      const key = stateKey(appliedEarly, appliedLate, appliedFinding);
+      if (seen.has(key)) throw new Error("특수근무 동적 재판정이 안정 상태에 도달하지 못했습니다.");
+      seen.add(key);
+
+      const nextEarly = requestedEarly.filter((name) => {
+        if (excludedSet.has(name)) return false;
+        const withoutSelf = allocateWithTiming(
+          appliedEarly.filter((n) => n !== name), appliedLate, appliedFinding,
+        );
+        return withoutSelf.shift1Membership.includes(name) || withoutSelf.shift2Membership.includes(name);
+      });
+      const nextLate = requestedLate.filter((name) => {
+        if (excludedSet.has(name)) return false;
+        const withoutSelf = allocateWithTiming(
+          nextEarly, appliedLate.filter((n) => n !== name), appliedFinding,
+        );
+        return withoutSelf.shift1Membership.includes(name) || withoutSelf.shift2Membership.includes(name);
+      });
+
+      const nextFinding: string[] = [];
+      for (const name of requestedFinding) {
+        if (excludedSet.has(name) || nextFinding.length >= findingLimit) continue;
+        const withoutSelf = allocateWithTiming(
+          nextEarly, nextLate, appliedFinding.filter((n) => n !== name),
+        );
+        const in1 = withoutSelf.shift1Membership.includes(name);
+        const in2 = withoutSelf.shift2Membership.includes(name);
+        const eligible = normalTwoRoundDay ? in1 !== in2 : !in1 && !in2;
+        if (!eligible) continue;
+        const trial = [...nextFinding, name];
+        const trialAllocation = allocateWithTiming(nextEarly, nextLate, trial);
+        const allPlaced = trial.every((candidate) => normalTwoRoundDay
+          ? trialAllocation.shift1Membership.includes(candidate) && trialAllocation.shift2Membership.includes(candidate)
+          : trialAllocation.shift1Membership.includes(candidate));
+        if (allPlaced) nextFinding.push(name);
+      }
+
+      const nextKey = stateKey(nextEarly, nextLate, nextFinding);
+      appliedEarly = nextEarly;
+      appliedLate = nextLate;
+      appliedFinding = nextFinding;
+      if (nextKey === key) {
+        converged = true;
+        break;
+      }
+    }
+    if (!converged) throw new Error("특수근무 동적 재판정이 허용된 반복 횟수 안에 종료되지 않았습니다.");
+  }
+
+  const finalAllocation = allocateWithTiming(appliedEarly, appliedLate, appliedFinding);
+
+  for (const name of requestedEarly) {
+    if (!appliedEarly.includes(name)) invalidStatusReasons[name] = "조출 미성립 · 번호 안옴";
+  }
+  for (const name of requestedLate) {
+    if (!appliedLate.includes(name)) invalidStatusReasons[name] = "후출 미성립 · 번호 안옴";
+  }
+  for (const name of requestedFinding) {
+    if (appliedFinding.includes(name)) continue;
+    if (baseAllocation.excluded.includes(name)) {
+      invalidStatusReasons[name] = `찾근 미성립 · ${input.statuses[name] === "병가" ? "병가" : "근무 제외"}`;
+      continue;
+    }
+    const withoutSelf = allocateWithTiming(appliedEarly, appliedLate, appliedFinding.filter((n) => n !== name));
+    const in1 = withoutSelf.shift1Membership.includes(name);
+    const in2 = withoutSelf.shift2Membership.includes(name);
+    if (input.mode === "단부제" || !normalTwoRoundDay) {
+      invalidStatusReasons[name] = in1 || in2
+        ? "찾근 미성립 · 번호 옴"
+        : "찾근 미성립 · VIP/대근 근무로 정원 초과";
+    } else if (in1 && in2) {
+      invalidStatusReasons[name] = "찾근 미성립 · 이미 투번호 옴";
+    } else if (!in1 && !in2) {
+      invalidStatusReasons[name] = "찾근 미성립 · 번호 안옴";
+    } else {
+      invalidStatusReasons[name] = appliedFinding.length >= findingLimit
+        ? "찾근 미성립 · 정원 초과"
+        : "찾근 미성립 · VIP/대근 근무로 정원 초과";
+    }
   }
   const finalS1 = new Set(finalAllocation.shift1Membership);
   const specialBothDisplay = canonicalSort([

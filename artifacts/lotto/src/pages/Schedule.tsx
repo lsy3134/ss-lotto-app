@@ -2068,19 +2068,19 @@ export default function SchedulePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveNames, dateStatuses, currentDateKey, selectedDate, dayOfWeek, currentDaegeun, mode, shift1Size, shift2Size, singleSize, dateStatusOrders, holidayMap, sickLeave]);
 
-  // 이름 → 배정 카테고리 맵 (live)
+  // 이름 → 화면에 표시 중인 배정 결과 카테고리 맵
   const liveCategoryMap = useMemo<Record<string, "1부" | "1부스페어" | "2부" | "2부스페어" | "스페어" | "단부" | "찾근" | "제외">>(() => {
-    if (!livePreview) return {};
+    if (!displayResult) return {};
     const map: Record<string, "1부" | "1부스페어" | "2부" | "2부스페어" | "스페어" | "단부" | "찾근" | "제외"> = {};
-    livePreview.twoRound?.forEach((n: string) => { map[n] = "찾근"; });
-    livePreview.shift1?.forEach((n: string) => { map[n] = mode === "2부제" ? "1부" : "단부"; });
-    livePreview.shift2?.forEach((n: string) => { map[n] = "2부"; });
-    livePreview.spare2?.forEach((n: string) => { map[n] = mode === "2부제" ? "2부스페어" : "스페어"; });
-    livePreview.excluded?.forEach((n: string) => { map[n] = "제외"; });
+    displayResult.twoRound?.forEach((n: string) => { map[n] = "찾근"; });
+    displayResult.shift1?.forEach((n: string) => { map[n] = mode === "2부제" ? "1부" : "단부"; });
+    displayResult.shift2?.forEach((n: string) => { map[n] = "2부"; });
+    displayResult.spare2?.forEach((n: string) => { map[n] = mode === "2부제" ? "2부스페어" : "스페어"; });
+    displayResult.excluded?.forEach((n: string) => { map[n] = "제외"; });
     // spare1(1부스페어)은 shift2에도 포함되므로 마지막에 덮어써야 "1부스페어" 표시 유지
-    livePreview.spare1?.forEach((n: string) => { map[n] = "1부스페어"; });
+    displayResult.spare1?.forEach((n: string) => { map[n] = "1부스페어"; });
     return map;
-  }, [livePreview, mode]);
+  }, [displayResult, mode]);
 
   // 상태 버튼 목록
   const STATUS_BTNS: { st: StatusType; label: string; color: string; bg: string }[] = [
@@ -2576,28 +2576,28 @@ export default function SchedulePage() {
   const cho현재수 = names.filter((n) => effectiveStatus(n) === "조출").length;
   const hu현재수 = names.filter((n) => effectiveStatus(n) === "후출").length;
 
-  // 순번 위치에 따른 배정 구간 레이블 (livePreview 기반 정확한 계산)
+  // 순번 위치에 따른 배정 구간 레이블 (현재 표시 중인 배정 결과 기준)
   function getSlotLabel(name: string): { label: string; color: string } | null {
-    if (!livePreview) return null;
+    if (!displayResult) return null;
     const cat = liveCategoryMap[name];
     if (!cat) return null;
     if (cat === "찾근")  return { label: "투라운드", color: "#00bcd4" };
     if (cat === "제외")  return null;
     if (cat === "1부") {
-      const idx = livePreview.shift1.indexOf(name);
-      const isLast = idx === livePreview.shift1.length - 1;
+      const idx = displayResult.shift1.indexOf(name);
+      const isLast = idx === displayResult.shift1.length - 1;
       return { label: `1부 #${idx + 1}${isLast ? " ★" : ""}`, color: "#1565c0" };
     }
     if (cat === "1부스페어") return { label: "1부스페어", color: "#e65100" };
     if (cat === "2부") {
-      const idx = livePreview.shift2.indexOf(name);
-      const isLast = idx === livePreview.shift2.length - 1;
+      const idx = displayResult.shift2.indexOf(name);
+      const isLast = idx === displayResult.shift2.length - 1;
       return { label: `2부 #${idx + 1}${isLast ? " ★" : ""}`, color: "#2e7d32" };
     }
     if (cat === "2부스페어") return { label: "2부스페어", color: "#6a1b9a" };
     if (cat === "단부") {
-      const idx = livePreview.shift1.indexOf(name);
-      const isLast = idx === livePreview.shift1.length - 1;
+      const idx = displayResult.shift1.indexOf(name);
+      const isLast = idx === displayResult.shift1.length - 1;
       return { label: `단부 #${idx + 1}${isLast ? " ★" : ""}`, color: "#1565c0" };
     }
     if (cat === "스페어") return { label: "스페어", color: "#6a1b9a" };
@@ -5392,10 +5392,9 @@ export default function SchedulePage() {
           </div>
 
           {/* ── 컷 기준 요약 ── */}
-          {(displayResult || (currentDateKey && assignmentData[currentDateKey]) || (livePreview && names.length > 0)) && (() => {
-            // pendingResult → dayResult → livePreview → assignmentData 순 우선
+          {displayResult && (() => {
             // 배정 결과(DayResultView)와 동일한 소스를 사용해야 컷 기준 요약과 배정 결과가 일치
-            const cutSource = (pendingResult ?? dayResult ?? livePreview ?? (currentDateKey ? assignmentData[currentDateKey] : undefined))!;
+            const cutSource = displayResult;
             return (
             <div style={{
               background: "#f8f9ff", border: "1.5px solid #c5cae9", borderRadius: 12,
