@@ -30,6 +30,12 @@ type StatusType =
 const VIP_STATUSES = new Set<StatusType>(["VIP1부", "VIP2부", "VIP투근무"]);
 
 type Mode = "2부제" | "단부제";
+type DayTeamSettings = {
+  mode: Mode;
+  shift1Size: number;
+  shift2Size: number;
+  singleSize: number;
+};
 type HolidayImportPreview = { fileName: string; map: Record<string, string[]>; selectedDates: string[] };
 type TimingImportPreview = {
   fileName: string;
@@ -1987,7 +1993,8 @@ export default function SchedulePage() {
     dayIdx: number,
     dgMap: Record<string, DaegeunType>,
     _statusOrder: string[],
-    previousResult?: DayResult | null
+    previousResult?: DayResult | null,
+    teamSettings: DayTeamSettings = { mode, shift1Size, shift2Size, singleSize }
   ): { result: DayResult; invalidStatusReasons: Record<string, string> } {
     const statuses: Record<string, StatusType> = {};
     namesList.forEach((n) => {
@@ -2009,9 +2016,9 @@ export default function SchedulePage() {
     const previousSpares = previousResult ? getPrioritySpares(previousResult) : [];
     const engine = calculateSchedule({
       canonicalQueue: namesList,
-      mode,
-      shift1Size: mode === "2부제" ? shift1Size : singleSize,
-      shift2Size: mode === "2부제" ? shift2Size : 0,
+      mode: teamSettings.mode,
+      shift1Size: teamSettings.mode === "2부제" ? teamSettings.shift1Size : teamSettings.singleSize,
+      shift2Size: teamSettings.mode === "2부제" ? teamSettings.shift2Size : 0,
       statuses,
       baseStatuses,
       requests: savedDay,
@@ -2455,6 +2462,7 @@ export default function SchedulePage() {
     // excelDays / viewDays 빠른 조회 맵 (① excelDays 우선, ② viewDays fallback)
     const excelMap = new Map(excelDays.map(d => [d.dateLabel, d]));
     const viewMap = new Map(viewDays.map(d => [d.dateLabel, d]));
+    const teamMap = _readTeamMap();
 
     let lastDayLabel = startDateLabel;
 
@@ -2467,13 +2475,30 @@ export default function SchedulePage() {
       const weekDay = excelMap.get(dateLabel) ?? viewMap.get(dateLabel);
       const dayIdx = weekDay?.dayIdx ?? (date.getDay() + 6) % 7;
 
-      // ── 시작 이름: 루프 내 직전 결과 우선 스페어[0] 우선 → getStartNameForDate → fallback ──
-      // 직전 날짜를 이번 루프에서 방금 계산했다면 state 우회하여 직접 사용
+      // ── 시작 이름: 하루 배정과 동일하게 전날 FINAL 스페어1부터 원본 roster를 회전 ──
+      // 직전 결과의 전체 nextDayQueue를 다음 canonical 원장으로 재사용하지 않는다.
       const prevLoopResult = results.length > 0 ? results[results.length - 1].result : null;
-      const dayStartName = getStartNameForDate(dateLabel);
-      const dayNames = prevLoopResult?.nextDayQueue?.length
-        ? [...prevLoopResult.nextDayQueue]
-        : dayStartName ? rotateNames([...names], dayStartName) : [...names];
+      const previousSpares = getPrioritySpares(prevLoopResult);
+      const dayStartName = previousSpares[0] ?? getStartNameForDate(dateLabel);
+      const dayNames = dayStartName ? rotateNames([...names], dayStartName) : [...names];
+
+      // 날짜를 직접 선택했을 때와 동일하게 그 날짜에 저장된 팀 설정을 사용한다.
+      const savedTeam = teamMap[dateLabel];
+      const dayTeamSettings: DayTeamSettings = savedTeam
+        ? savedTeam.mode === "2부제"
+          ? {
+              mode: "2부제",
+              shift1Size: savedTeam.shift1Size ?? 35,
+              shift2Size: Math.max(0, (savedTeam.totalSize ?? 60) - (savedTeam.shift1Size ?? 35)),
+              singleSize: savedTeam.singleSize ?? savedTeam.totalSize ?? 60,
+            }
+          : {
+              mode: "단부제",
+              shift1Size: 0,
+              shift2Size: 0,
+              singleSize: savedTeam.singleSize ?? savedTeam.totalSize ?? 60,
+            }
+        : { mode: "단부제", shift1Size: 0, shift2Size: 0, singleSize: 60 };
 
       // ── 배정 계산: buildValidatedResult → livePreview · assign() · recalculateFrom()와 동일 경로 ──
       const savedDay = dateStatuses[dateLabel] ?? {};
@@ -2485,7 +2510,8 @@ export default function SchedulePage() {
         dayIdx,
         dgMap,
         dateStatusOrders[dateLabel] ?? [],
-        prevLoopResult ?? getPreviousDayResult(dateLabel)
+        prevLoopResult ?? getPreviousDayResult(dateLabel),
+        dayTeamSettings
       );
 
       results.push({ day: dateLabel, result, skipped: false });

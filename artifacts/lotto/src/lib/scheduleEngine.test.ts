@@ -724,6 +724,77 @@ test("3일/7일 연쇄는 전체 nextDayQueue를 다음 canonicalQueue로 전달
   }
 });
 
+test("3일 생성은 날짜별 팀 설정과 전날 FINAL 스페어 기준으로 하루 배정 3회와 일치한다", () => {
+  const roster = Array.from({ length: 50 }, (_, index) => String(index + 1));
+  const rotateFrom = (start?: string) => {
+    if (!start) return [...roster];
+    const index = roster.indexOf(start);
+    return index < 0 ? [...roster] : [...roster.slice(index), ...roster.slice(0, index)];
+  };
+  const dayInputs = [
+    {
+      mode: "2부제" as const, shift1Size: 22, shift2Size: 20,
+      requests: { "2": "휴무", "8": "조출", "24": "후출", "45": "찾근", "46": "찾근" } as Record<string, ScheduleStatus>,
+      requestOrder: ["8", "24", "46", "45"], daegeun: { "47": "투라운드" as const },
+    },
+    {
+      mode: "2부제" as const, shift1Size: 18, shift2Size: 14,
+      requests: { "2": "휴무해제", "11": "조출", "31": "후출", "42": "찾근" } as Record<string, ScheduleStatus>,
+      requestOrder: ["11", "31", "42"], daegeun: { "44": "2부" as const },
+    },
+    {
+      mode: "단부제" as const, shift1Size: 27, shift2Size: 0,
+      requests: { "5": "병가", "9": "조출", "33": "후출", "48": "찾근" } as Record<string, ScheduleStatus>,
+      requestOrder: ["9", "33", "48"], daegeun: {},
+    },
+  ];
+  const calculateDay = (
+    day: typeof dayInputs[number],
+    canonicalQueue: string[],
+    previous?: ReturnType<typeof calculateSchedule>["final"],
+  ) => {
+    const statusesForDay = Object.fromEntries(roster.map(name => [name, day.requests[name] ?? null]));
+    const baseStatuses = Object.fromEntries(roster.map(name => {
+      const status = day.requests[name] ?? null;
+      return [name, status === "조출" || status === "후출" || status === "찾근" ? null : status];
+    }));
+    return calculateSchedule({
+      canonicalQueue,
+      mode: day.mode,
+      shift1Size: day.shift1Size,
+      shift2Size: day.shift2Size,
+      statuses: statusesForDay,
+      baseStatuses,
+      requests: statusesForDay,
+      requestOrder: day.requestOrder,
+      daegeun: day.daegeun,
+      previousSpare1: previous?.shift2SpareQueue[0],
+      previousSpare2: previous?.shift2SpareQueue[1],
+    }).final;
+  };
+  const runLikeThreeManualAssignments = () => {
+    const results = [];
+    let previous: ReturnType<typeof calculateSchedule>["final"] | undefined;
+    for (const day of dayInputs) {
+      const canonicalQueue = rotateFrom(previous?.shift2SpareQueue[0]);
+      previous = calculateDay(day, canonicalQueue, previous);
+      results.push(previous);
+    }
+    return results;
+  };
+  const manual = runLikeThreeManualAssignments();
+  const generated = runLikeThreeManualAssignments();
+  for (let day = 0; day < 3; day++) {
+    assert.deepEqual(generated[day].shift1DisplayOrder, manual[day].shift1DisplayOrder);
+    assert.deepEqual(generated[day].shift1Spare, manual[day].shift1Spare);
+    assert.deepEqual(generated[day].shift2DisplayOrder, manual[day].shift2DisplayOrder);
+    assert.deepEqual(generated[day].shift2SpareQueue, manual[day].shift2SpareQueue);
+    assert.deepEqual(generated[day].nextDayQueue, manual[day].nextDayQueue);
+  }
+  const legacySecondDay = calculateDay(dayInputs[1], manual[0].nextDayQueue, manual[0]);
+  assert.notDeepEqual(legacySecondDay.shift1DisplayOrder, manual[1].shift1DisplayOrder);
+});
+
 test("정상 투근무 11명은 신청순서 앞 9명까지만 찾근이 성립한다", () => {
   const names = Array.from({ length: 40 }, (_, index) => String(index + 1));
   const plain = Object.fromEntries(names.map(name => [name, null]));
