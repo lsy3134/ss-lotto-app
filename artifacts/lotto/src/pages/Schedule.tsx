@@ -5940,28 +5940,6 @@ export default function SchedulePage() {
                             </button>
                           );
                         })}
-                        {/* 엑셀 휴무 인원에게만 "해제" 버튼 표시 */}
-                        {(() => {
-                          const dk = currentDateKey.slice(0, 5);
-                          const isInExcel = new Set((holidayMap[dk] ?? []).map(n => normalize(n))).has(normalize(name));
-                          if (!isInExcel) return null;
-                          const isReleased = !!dateHolidayReleases[currentDateKey]?.[normalize(name)];
-                          return (
-                            <button
-                              key="휴무해제"
-                              onClick={() => toggleStatus(name, isReleased ? "휴무" : "휴무해제")}
-                              title={isReleased ? "클릭 시 엑셀 휴무 복원" : "엑셀 휴무 해제 (가용인원에 포함)"}
-                              style={{
-                                ...S.statusBtn,
-                                background: isReleased ? "#dcfce7" : "#fef2f2",
-                                color: isReleased ? "#166534" : "#b91c1c",
-                                border: isReleased ? "1.5px solid #86efac" : "1.5px solid #fca5a5",
-                                fontWeight: 800,
-                              }}>
-                              {isReleased ? "↩복원" : "해제"}
-                            </button>
-                          );
-                        })()}
                         </>
                       )}
                     </div>

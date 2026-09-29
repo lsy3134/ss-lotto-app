@@ -33,7 +33,7 @@ function roundTrip<T>(value: T): T {
 }
 
 for (const status of ["조출", "후출", "찾근"] as const) {
-  test(`Excel 빨간 해제 → ${status}: release 기록이 유지되어 BASE에서 휴무가 되살아나지 않는다`, () => {
+  test(`Excel 휴무 명단에서 이름 삭제 → ${status}: release 기록이 유지되어 BASE에서 휴무가 되살아나지 않는다`, () => {
     const { releases, baseSavedDay, result } = runReleasedTiming(status);
     assert.equal(releases["09.30"].E, true);
     assert.equal(baseSavedDay.E, "휴무해제");
@@ -86,19 +86,6 @@ for (const status of ["조출", "후출", "찾근"] as const) {
   });
 }
 
-test("휴무 목록 이름 삭제와 빨간 해제는 동일한 release 상태와 찾근 결과를 만든다", () => {
-  const listRemovalReleases = setHolidayRelease({}, "09.30", "E", true);
-  const redButtonReleases = setHolidayRelease({}, "09.30", "E", true);
-  const savedDay = { E: "찾근" as const };
-
-  assert.deepEqual(listRemovalReleases, redButtonReleases);
-  assert.deepEqual(
-    buildBaseSavedDay(savedDay, listRemovalReleases["09.30"]),
-    buildBaseSavedDay(savedDay, redButtonReleases["09.30"]),
-  );
-  assert.deepEqual(runReleasedTiming("찾근").result.final.appliedFinding, ["E"]);
-});
-
 test("휴무해제 후 휴무 목록에 다시 추가하면 release가 제거되고 다시 근무 제외된다", () => {
   const released = setHolidayRelease({}, "09.30", "E", true);
   const restored = setHolidayRelease(released, "09.30", "E", false);
@@ -117,6 +104,21 @@ test("휴무해제 후 휴무 목록에 다시 추가하면 release가 제거되
 
   assert.equal(restored["09.30"], undefined);
   assert.ok(result.base.excluded.includes("E"));
+});
+
+test("Excel 휴무 명단 ON → OFF → ON → OFF를 반복할 수 있다", () => {
+  let releases: HolidayReleaseMap = {};
+
+  releases = setHolidayRelease(releases, "09.30", "E", true);
+  assert.equal(releases["09.30"].E, true);
+  assert.equal(buildBaseSavedDay({}, releases["09.30"]).E, "휴무해제");
+
+  releases = setHolidayRelease(releases, "09.30", "E", false);
+  assert.equal(releases["09.30"], undefined);
+
+  releases = setHolidayRelease(releases, "09.30", "E", true);
+  assert.equal(releases["09.30"].E, true);
+  assert.equal(buildBaseSavedDay({}, releases["09.30"]).E, "휴무해제");
 });
 
 for (const status of ["조출", "후출", "찾근"] as const) {
