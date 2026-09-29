@@ -18,6 +18,16 @@ export function setHolidayRelease(
   return next;
 }
 
+export function clearActiveHolidayStatus<T extends string | null>(
+  savedDay: Record<string, T>,
+  name: string,
+): Record<string, T> {
+  if (savedDay[name] !== "휴무" && savedDay[name] !== "휴무해제") return savedDay;
+  const next = { ...savedDay };
+  delete next[name];
+  return next;
+}
+
 export function mergeLegacyHolidayReleases(
   releases: HolidayReleaseMap,
   statuses: Record<string, Record<string, string | null>>,

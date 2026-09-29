@@ -3,6 +3,7 @@ import test from "node:test";
 import { calculateSchedule } from "./scheduleEngine";
 import {
   buildBaseSavedDay,
+  clearActiveHolidayStatus,
   mergeLegacyHolidayReleases,
   setHolidayRelease,
   type HolidayReleaseMap,
@@ -119,6 +120,46 @@ test("Excel 휴무 명단 ON → OFF → ON → OFF를 반복할 수 있다", ()
   releases = setHolidayRelease(releases, "09.30", "E", true);
   assert.equal(releases["09.30"].E, true);
   assert.equal(buildBaseSavedDay({}, releases["09.30"]).E, "휴무해제");
+});
+
+for (const status of ["찾근", "조출", "후출"] as const) {
+  test(`휴무 → 명단 삭제 → 정상근무 → ${status}: 활성 휴무 상태 없이 바로 신청된다`, () => {
+    const released = setHolidayRelease({}, "09.30", "E", true);
+    const afterRemoval = clearActiveHolidayStatus({ E: "휴무" as const }, "E");
+    const savedDay = { ...afterRemoval, E: status };
+    const baseSavedDay = buildBaseSavedDay(savedDay, released["09.30"]);
+
+    assert.equal(afterRemoval.E, undefined);
+    assert.equal(savedDay.E, status);
+    assert.equal(baseSavedDay.E, "휴무해제");
+  });
+}
+
+test("휴무 → 삭제 → 다시 추가 → 다시 삭제는 활성 휴무 상태와 release를 양방향 전환한다", () => {
+  let releases: HolidayReleaseMap = {};
+  let savedDay: Record<string, "휴무"> = { E: "휴무" };
+
+  releases = setHolidayRelease(releases, "09.30", "E", true);
+  savedDay = clearActiveHolidayStatus(savedDay, "E");
+  assert.equal(savedDay.E, undefined);
+  assert.equal(releases["09.30"].E, true);
+
+  releases = setHolidayRelease(releases, "09.30", "E", false);
+  savedDay = { E: "휴무" };
+  assert.equal(savedDay.E, "휴무");
+  assert.equal(releases["09.30"], undefined);
+
+  releases = setHolidayRelease(releases, "09.30", "E", true);
+  savedDay = clearActiveHolidayStatus(savedDay, "E");
+  assert.equal(savedDay.E, undefined);
+  assert.equal(releases["09.30"].E, true);
+});
+
+test("기존 휴무해제 상태는 읽기 호환 후 활성 상태에서 제거할 수 있다", () => {
+  const migrated = mergeLegacyHolidayReleases({}, { "09.30": { E: "휴무해제" } });
+  const savedDay = clearActiveHolidayStatus({ E: "휴무해제" as const }, "E");
+  assert.equal(migrated["09.30"].E, true);
+  assert.equal(savedDay.E, undefined);
 });
 
 for (const status of ["조출", "후출", "찾근"] as const) {

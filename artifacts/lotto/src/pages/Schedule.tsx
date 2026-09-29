@@ -19,6 +19,7 @@ import {
 } from "../lib/scheduleInputImport";
 import {
   buildBaseSavedDay,
+  clearActiveHolidayStatus,
   mergeLegacyHolidayReleases,
   setHolidayRelease,
   type HolidayReleaseMap,
@@ -1613,7 +1614,7 @@ export default function SchedulePage() {
 
   // 상태 토글
   function toggleStatus(name: string, btn: StatusType) {
-    const storedStatus = manualStatuses[name] ?? null;
+    const storedStatus = manualStatuses[name] === "휴무해제" ? null : manualStatuses[name] ?? null;
     const currentStatus = effectiveStatus(name);
     if ((btn === "조출" || btn === "후출") && storedStatus !== btn) {
       const count = Object.values(manualStatuses).filter(status => status === btn).length;
@@ -1685,21 +1686,15 @@ export default function SchedulePage() {
     setManualStatuses((prev) => {
       const cur = effectiveStatus(name);
       if (cur === btn && name in prev) {
-        // 수동 override가 있는 경우: 삭제
-        // 단, 엑셀 휴무인 사람은 삭제하면 holidayMap이 다시 "휴무"로 복구되므로
-        // "휴무해제"로 명시적 해제
-        const dk5 = currentDateKey.slice(0, 5);
-        const inHolidayMap = new Set((holidayMap[dk5] ?? []).map(n => normalize(n))).has(normalize(name));
-        if (btn === "휴무" && inHolidayMap) {
-          return { ...prev, [name]: "휴무해제" };
-        }
+        // 휴무 명단에서 삭제할 때는 release map만 남기고 활성 휴무 상태는 제거한다.
+        if (btn === "휴무") return clearActiveHolidayStatus(prev, name);
         const next = { ...prev };
         delete next[name];
         return next;
       } else if (cur === btn && !(name in prev)) {
-        // 수동 override 없이 "휴무"인 경우 (holidayMap/autoOff 기반)
-        // → "휴무해제"로 명시적 해제 (null은 resolveStatus에서 무시됨)
-        return { ...prev, [name]: "휴무해제" };
+        // Excel/자동휴무 취소도 활성 상태를 새로 만들지 않는다.
+        if (btn === "휴무") return prev;
+        return { ...prev, [name]: btn };
       } else {
         return { ...prev, [name]: btn };
       }
