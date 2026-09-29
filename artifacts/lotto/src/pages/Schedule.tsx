@@ -17,6 +17,12 @@ import {
   type ImportStatus,
   type ImportStatusMap,
 } from "../lib/scheduleInputImport";
+import {
+  buildBaseSavedDay,
+  mergeLegacyHolidayReleases,
+  setHolidayRelease,
+  type HolidayReleaseMap,
+} from "../lib/scheduleHolidayRelease";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -988,6 +994,20 @@ export default function SchedulePage() {
     localStorage.setItem(DS_KEY, JSON.stringify(dateStatuses));
   }, [dateStatuses, DS_KEY]);
 
+  // Excel/자동휴무 해제와 조출·후출·찾근은 서로 독립적으로 유지한다.
+  const DHR_KEY = `lotto_dateHolidayReleases_${new Date().getFullYear()}`;
+  const [dateHolidayReleases, setDateHolidayReleases] = useState<HolidayReleaseMap>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(DHR_KEY) ?? "{}") as HolidayReleaseMap;
+      return mergeLegacyHolidayReleases(saved, dateStatuses);
+    } catch {
+      return mergeLegacyHolidayReleases({}, dateStatuses);
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem(DHR_KEY, JSON.stringify(dateHolidayReleases));
+  }, [dateHolidayReleases, DHR_KEY]);
+
   // 날짜별 찾근/조출/후출 클릭 순서 (화면 표시 및 배치 순서 결정)
   const DSO_KEY = `lotto_dateStatusOrders_${new Date().getFullYear()}`;
   const [dateStatusOrders, setDateStatusOrders] = useState<Record<string, string[]>>(() => {
@@ -1538,8 +1558,8 @@ export default function SchedulePage() {
     // 비휴무 명시 override (조출/후출/찾근/당번 등) → 그대로 반환
     if (override && override !== "휴무" && override !== "휴무해제") return override;
     // 휴무 판단: 해제 > 추가 > 엑셀 > 자동규칙
-    if (override === "휴무해제") return null;
     if (override === "휴무") return "휴무";
+    if (override === "휴무해제" || dateHolidayReleases[dateKey]?.[normalize(name)]) return null;
     const dk = dateKey.slice(0, 5);
     if (new Set((holidayMap[dk] ?? []).map(n => normalize(n))).has(normalize(name))) return "휴무";
     const person = getRosterPerson(name);
@@ -1579,7 +1599,7 @@ export default function SchedulePage() {
       가용인원: calcAvailable(d.dateLabel, d.dayIdx),
     }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewDays, names, sortedCustomRoster, dateStatuses, dateDaegeun, sickLeave, holidayMap, customRoster]);
+  }, [viewDays, names, sortedCustomRoster, dateStatuses, dateHolidayReleases, dateDaegeun, sickLeave, holidayMap, customRoster]);
 
   // 수동 상태 삭제 (키 자체 제거 → day-of-week 로직이 다시 적용됨)
   function clearStatus(name: string) {
@@ -1594,6 +1614,7 @@ export default function SchedulePage() {
   // 상태 토글
   function toggleStatus(name: string, btn: StatusType) {
     const storedStatus = manualStatuses[name] ?? null;
+    const currentStatus = effectiveStatus(name);
     if ((btn === "조출" || btn === "후출") && storedStatus !== btn) {
       const count = Object.values(manualStatuses).filter(status => status === btn).length;
       if (count >= 6) {
@@ -1605,8 +1626,14 @@ export default function SchedulePage() {
       const nextLabel = btn ?? "일반";
       if (!confirm(`${name}님은 현재 '${storedStatus}'으로 지정되어 있습니다. '${nextLabel}'로 변경할까요?`)) return;
     }
+    if (btn === "휴무" && currentDateKey) {
+      const dk5 = currentDateKey.slice(0, 5);
+      const inHolidayMap = new Set((holidayMap[dk5] ?? []).map(n => normalize(n))).has(normalize(name));
+      const storesRelease = currentStatus === "휴무" && (!(name in manualStatuses) || inHolidayMap);
+      setDateHolidayReleases(prev => setHolidayRelease(prev, currentDateKey, normalize(name), storesRelease));
+    }
     if (btn === "병가") {
-      const cur = effectiveStatus(name);
+      const cur = currentStatus;
       if (cur === "병가") {
         // 병가 해제: sickLeave에서 제거 + 해당 날짜 manualStatuses도 정리
         setSickLeave((prev) => {
@@ -1635,7 +1662,7 @@ export default function SchedulePage() {
     // 모든 수동 상태: 클릭 순서 추적 (dateStatusOrders 업데이트)
     // 찾근/조출/후출 + 휴무/병가/당번/대기 모두 동일하게 적용
     if (currentDateKey) {
-      const cur = effectiveStatus(name);
+      const cur = currentStatus;
       if (cur === btn) {
         // 취소 → 순서 배열에서 제거
         setDateStatusOrders(prev => ({
@@ -2000,8 +2027,9 @@ export default function SchedulePage() {
     namesList.forEach((n) => {
       statuses[n] = resolveStatus(n, dateLabel, dayIdx, savedDay, dgMap);
     });
-    const baseSavedDay = Object.fromEntries(
-      Object.entries(savedDay).filter(([, status]) => status !== "찾근" && status !== "조출" && status !== "후출")
+    const baseSavedDay = buildBaseSavedDay(
+      savedDay,
+      dateHolidayReleases[dateLabel] ?? {},
     ) as Record<string, StatusType>;
     const baseStatuses: Record<string, StatusType> = {};
     namesList.forEach((n) => {
@@ -2048,7 +2076,7 @@ export default function SchedulePage() {
     );
     return result;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveNames, dateStatuses, currentDateKey, selectedDate, dayOfWeek, customRosterMap, currentDaegeun, mode, shift1Size, shift2Size, singleSize, dateStatusOrders, holidayMap, sickLeave]);
+  }, [effectiveNames, dateStatuses, dateHolidayReleases, currentDateKey, selectedDate, dayOfWeek, customRosterMap, currentDaegeun, mode, shift1Size, shift2Size, singleSize, dateStatusOrders, holidayMap, sickLeave]);
 
   // ── 선택창 필터용 기본 배정 결과 ──────────────────────────────────────────
   // 타이밍 상태(조출/후출/찾근) 없이 순수 자동 배정한 결과
@@ -2073,7 +2101,7 @@ export default function SchedulePage() {
       getPreviousDayResult(currentDateKey)
     ).result;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveNames, dateStatuses, currentDateKey, selectedDate, dayOfWeek, currentDaegeun, mode, shift1Size, shift2Size, singleSize, dateStatusOrders, holidayMap, sickLeave]);
+  }, [effectiveNames, dateStatuses, dateHolidayReleases, currentDateKey, selectedDate, dayOfWeek, currentDaegeun, mode, shift1Size, shift2Size, singleSize, dateStatusOrders, holidayMap, sickLeave]);
 
   // 이름 → 화면에 표시 중인 배정 결과 카테고리 맵
   const liveCategoryMap = useMemo<Record<string, "1부" | "1부스페어" | "2부" | "2부스페어" | "스페어" | "단부" | "찾근" | "제외">>(() => {
