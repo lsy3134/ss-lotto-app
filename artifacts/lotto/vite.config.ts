@@ -2,6 +2,8 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
+import { readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
 const rawPort = process.env.PORT;
@@ -29,6 +31,15 @@ if (!basePath) {
 export default defineConfig({
   base: basePath,
   plugins: [
+    {
+      name: "pwa-build-version",
+      apply: "build",
+      closeBundle() {
+        const source = readFileSync(path.resolve(import.meta.dirname, "public/sw.js"), "utf8");
+        writeFileSync(path.resolve(import.meta.dirname, "dist/public/sw.js"),
+          source.replaceAll("__PWA_BUILD_ID__", randomUUID()));
+      },
+    },
     react(),
     tailwindcss(),
     runtimeErrorOverlay(),

@@ -227,7 +227,7 @@
   <body>
     <!-- SW 업데이트 배너 -->
     <div id="sw-update-banner" aria-label="앱 업데이트 배너">
-      <span>🔄 새 버전이 있습니다</span>
+      <span>🔄 새 버전이 있습니다 · 작업을 저장한 뒤 업데이트하세요</span>
       <button id="sw-update-btn">지금 업데이트</button>
     </div>
 
@@ -273,8 +273,21 @@
 
           // 새 SW가 컨트롤을 가져가면 자동으로 페이지 새로고침
           var reloading = false;
+          var updateRequested = false;
+          navigator.serviceWorker.addEventListener('message', function (event) {
+            if (event.data && event.data.type === 'PWA_UPDATE_SAFETY_CHECK' && event.ports[0]) {
+              event.ports[0].postMessage('PWA_UPDATE_SAFE');
+            }
+            if (event.data && event.data.type === 'PWA_UPDATE_BLOCKED') {
+              updateRequested = false;
+              if (updateBanner) {
+                updateBanner.querySelector('span').textContent = '다른 구버전 창의 작업을 저장하고 닫은 뒤 업데이트하세요';
+                updateBanner.classList.add('visible');
+              }
+            }
+          });
           navigator.serviceWorker.addEventListener('controllerchange', function () {
-            if (!reloading) {
+            if (updateRequested && !reloading) {
               reloading = true;
               window.location.reload();
             }
@@ -282,7 +295,7 @@
 
           window.addEventListener('load', function () {
             navigator.serviceWorker
-              .register('./sw.js', { scope: './' })
+              .register('./sw.js', { scope: './', updateViaCache: 'none' })
               .then(function (reg) {
                 console.log('[SW] registered, scope:', reg.scope);
 
@@ -299,6 +312,7 @@
                 }
 
                 reg.addEventListener('updatefound', onUpdateFound);
+                if (reg.installing) onUpdateFound();
 
                 // 이미 waiting 중인 SW가 있을 경우 즉시 배너
                 if (reg.waiting && navigator.serviceWorker.controller) {
@@ -306,7 +320,16 @@
                 }
 
                 // 주기적으로 업데이트 확인 (5분마다)
-                setInterval(function () { reg.update(); }, 5 * 60 * 1000);
+                function checkUpdate() {
+                  reg.update().catch(function (err) { console.warn('[SW] update check failed:', err); });
+                }
+                checkUpdate();
+                setInterval(checkUpdate, 5 * 60 * 1000);
+                window.addEventListener('online', checkUpdate);
+                window.addEventListener('pageshow', checkUpdate);
+                document.addEventListener('visibilitychange', function () {
+                  if (document.visibilityState === 'visible') checkUpdate();
+                });
               })
               .catch(function (err) {
                 console.warn('[SW] registration failed:', err);
@@ -318,9 +341,13 @@
             updateBtn.addEventListener('click', function () {
               navigator.serviceWorker.getRegistration('./').then(function (reg) {
                 if (reg && reg.waiting) {
+                  updateRequested = true;
                   reg.waiting.postMessage({ type: 'SKIP_WAITING' });
                 } else {
-                  window.location.reload();
+                  if (!reloading) {
+                    reloading = true;
+                    window.location.reload();
+                  }
                 }
               });
             });
