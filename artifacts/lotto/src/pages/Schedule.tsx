@@ -1626,6 +1626,9 @@ export default function SchedulePage() {
       const nextLabel = btn ?? "일반";
       if (!confirm(`${name}님은 현재 '${storedStatus}'으로 지정되어 있습니다. '${nextLabel}'로 변경할까요?`)) return;
     }
+    if (btn === "휴무해제" && currentDateKey) {
+      setDateHolidayReleases(prev => setHolidayRelease(prev, currentDateKey, normalize(name), true));
+    }
     if (btn === "휴무" && currentDateKey) {
       const dk5 = currentDateKey.slice(0, 5);
       const inHolidayMap = new Set((holidayMap[dk5] ?? []).map(n => normalize(n))).has(normalize(name));
@@ -5942,11 +5945,11 @@ export default function SchedulePage() {
                           const dk = currentDateKey.slice(0, 5);
                           const isInExcel = new Set((holidayMap[dk] ?? []).map(n => normalize(n))).has(normalize(name));
                           if (!isInExcel) return null;
-                          const isReleased = effS === "휴무해제";
+                          const isReleased = !!dateHolidayReleases[currentDateKey]?.[normalize(name)];
                           return (
                             <button
                               key="휴무해제"
-                              onClick={() => toggleStatus(name, "휴무해제")}
+                              onClick={() => toggleStatus(name, isReleased ? "휴무" : "휴무해제")}
                               title={isReleased ? "클릭 시 엑셀 휴무 복원" : "엑셀 휴무 해제 (가용인원에 포함)"}
                               style={{
                                 ...S.statusBtn,
