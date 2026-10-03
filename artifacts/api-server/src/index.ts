@@ -25,8 +25,21 @@ async function ensureTables() {
         roster jsonb NOT NULL DEFAULT '[]',
         updated_at timestamptz DEFAULT now()
       );
+      CREATE TABLE IF NOT EXISTS device_access_settings (
+        id integer PRIMARY KEY,
+        enabled boolean NOT NULL DEFAULT false,
+        updated_at timestamptz NOT NULL DEFAULT now()
+      );
+      INSERT INTO device_access_settings (id, enabled)
+      VALUES (1, false)
+      ON CONFLICT (id) DO NOTHING;
+      CREATE TABLE IF NOT EXISTS user_device_bindings (
+        user_name text PRIMARY KEY,
+        device_id text NOT NULL,
+        registered_at timestamptz NOT NULL DEFAULT now()
+      );
     `);
-    logger.info("DB 테이블 확인 완료 (roster_store)");
+    logger.info("DB 테이블 확인 완료 (roster_store, device_access_settings, user_device_bindings)");
   } catch (err) {
     logger.error({ err }, "DB 테이블 생성 오류");
   }

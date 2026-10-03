@@ -7,6 +7,13 @@ import {
   authenticate, clearUser, getStoredUser,
   checkName, getUserList, addUser, removeUser,
 } from "./auth";
+import {
+  checkDeviceAccess,
+  getDeviceAccessState,
+  releaseDevice,
+  setDeviceAccessEnabled,
+  type DeviceAccessState,
+} from "./deviceAccess";
 
 const BASE_URL = import.meta.env.BASE_URL;
 const base = BASE_URL.replace(/\/$/, "");
@@ -196,6 +203,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [shake, setShake] = useState(false);
+  const [checkingDevice, setCheckingDevice] = useState(false);
 
   function triggerShake(msg: string) {
     setError(msg);
@@ -203,7 +211,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
     setTimeout(() => setShake(false), 450);
   }
 
-  function handleNameNext() {
+  async function handleNameNext() {
     const result = checkName(name);
     if (result === "unknown") {
       triggerShake("등록되지 않은 사용자입니다.");
@@ -212,6 +220,13 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
       setStep("password");
     } else {
       // 일반 사용자 — 바로 로그인
+      setCheckingDevice(true);
+      const access = await checkDeviceAccess(name.trim());
+      setCheckingDevice(false);
+      if (!access.allowed) {
+        triggerShake(access.reason ?? "이 기기에서는 로그인할 수 없습니다.");
+        return;
+      }
       const user = authenticate(name);
       if (user) onLogin(user);
       else triggerShake("접근 권한이 없습니다.");
@@ -284,14 +299,16 @@ function LoginScreen({ onLogin }: { onLogin: (user: AuthUser) => void }) {
               autoFocus
               value={name}
               onChange={e => { setName(e.target.value); setError(""); }}
-              onKeyDown={e => e.key === "Enter" && handleNameNext()}
+              onKeyDown={e => e.key === "Enter" && void handleNameNext()}
               placeholder="이름"
               style={inputStyle(!!error)}
             />
             {error && (
               <p style={{ margin: "0 0 10px", fontSize: "0.82rem", color: C.red, textAlign: "center" }}>{error}</p>
             )}
-            <button onClick={handleNameNext} style={btnStyle}>다음</button>
+            <button disabled={checkingDevice} onClick={() => void handleNameNext()} style={btnStyle}>
+              {checkingDevice ? "기기 확인 중…" : "다음"}
+            </button>
           </>
         ) : (
           <>
@@ -355,6 +372,22 @@ function UserManagementPage() {
   const [newName, setNewName] = useState("");
   const [addError, setAddError] = useState("");
   const [addOk, setAddOk] = useState(false);
+  const [deviceAccess, setDeviceAccess] = useState<DeviceAccessState>({ enabled: false, bindings: [] });
+  const [deviceAccessError, setDeviceAccessError] = useState("");
+  const [deviceAccessBusy, setDeviceAccessBusy] = useState(false);
+
+  async function refreshDeviceAccess() {
+    try {
+      setDeviceAccess(await getDeviceAccessState());
+      setDeviceAccessError("");
+    } catch (err) {
+      setDeviceAccessError(err instanceof Error ? err.message : "기기 제한 상태를 불러오지 못했습니다.");
+    }
+  }
+
+  useEffect(() => {
+    void refreshDeviceAccess();
+  }, []);
 
   if (user?.role !== "admin") {
     setLocation(`${base}/`);
@@ -377,6 +410,31 @@ function UserManagementPage() {
   function handleRemove(name: string) {
     removeUser(name);
     setUsers(getUserList());
+  }
+
+  async function handleDeviceAccessToggle() {
+    setDeviceAccessBusy(true);
+    try {
+      await setDeviceAccessEnabled(!deviceAccess.enabled);
+      await refreshDeviceAccess();
+    } catch (err) {
+      setDeviceAccessError(err instanceof Error ? err.message : "기기 제한 설정을 저장하지 못했습니다.");
+    } finally {
+      setDeviceAccessBusy(false);
+    }
+  }
+
+  async function handleDeviceRelease(name: string) {
+    if (!confirm(`${name}님의 등록 기기 연결을 해제할까요?\n다음 로그인 기기가 새로 등록됩니다.`)) return;
+    setDeviceAccessBusy(true);
+    try {
+      await releaseDevice(name);
+      await refreshDeviceAccess();
+    } catch (err) {
+      setDeviceAccessError(err instanceof Error ? err.message : "기기 연결을 해제하지 못했습니다.");
+    } finally {
+      setDeviceAccessBusy(false);
+    }
   }
 
   return (
@@ -403,6 +461,60 @@ function UserManagementPage() {
       </div>
 
       <div style={{ padding: "20px 18px", display: "flex", flexDirection: "column", gap: 16 }}>
+        {/* 일반 사용자 기기 제한 */}
+        <div style={{
+          background: "white", borderRadius: 18,
+          padding: "20px", border: `1px solid ${C.border}`,
+          boxShadow: "0 2px 10px rgba(100,110,180,0.07)",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: "0.9rem", color: C.textPrimary }}>
+                일반 사용자 기기 1대 제한
+              </div>
+              <div style={{ marginTop: 5, fontSize: "0.78rem", lineHeight: 1.45, color: C.textSecondary }}>
+                켜면 이름별 다음 로그인 기기 한 대가 등록됩니다. 관리자 계정은 제한되지 않습니다.
+              </div>
+            </div>
+            <button
+              disabled={deviceAccessBusy}
+              onClick={() => void handleDeviceAccessToggle()}
+              style={{
+                minWidth: 72, padding: "9px 12px", borderRadius: 12,
+                border: "none", cursor: "pointer", fontWeight: 800,
+                color: "white", background: deviceAccess.enabled ? C.green : C.textMuted,
+              }}
+            >{deviceAccess.enabled ? "사용 중" : "꺼짐"}</button>
+          </div>
+          {deviceAccessError && (
+            <p style={{ margin: "12px 0 0", fontSize: "0.8rem", color: C.red }}>{deviceAccessError}</p>
+          )}
+          {deviceAccess.bindings.length > 0 && (
+            <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 7 }}>
+              {deviceAccess.bindings.map(binding => (
+                <div key={binding.userName} style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  padding: "9px 11px", borderRadius: 10, background: "#f8fafc",
+                }}>
+                  <span style={{ flex: 1, fontWeight: 650, fontSize: "0.86rem", color: C.textPrimary }}>
+                    {binding.userName}
+                  </span>
+                  <span style={{ fontSize: "0.72rem", color: C.green, fontWeight: 700 }}>기기 등록됨</span>
+                  <button
+                    disabled={deviceAccessBusy}
+                    onClick={() => void handleDeviceRelease(binding.userName)}
+                    style={{
+                      padding: "5px 9px", borderRadius: 8, cursor: "pointer",
+                      border: `1px solid ${C.red}55`, color: C.red, background: C.redLight,
+                      fontSize: "0.74rem", fontWeight: 700,
+                    }}
+                  >연결 해제</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* 사용자 추가 */}
         <div style={{
           background: "white", borderRadius: 18,
@@ -1361,9 +1473,31 @@ function BottomTabBar() {
 // ───────────────────────────────────────────
 export default function App() {
   const [user, setUser] = useState<AuthUser | null>(() => getStoredUser());
+  const [checkingStoredDevice, setCheckingStoredDevice] = useState(() => getStoredUser()?.role === "user");
+
+  useEffect(() => {
+    if (user?.role !== "user") {
+      setCheckingStoredDevice(false);
+      return;
+    }
+    let cancelled = false;
+    void checkDeviceAccess(user.name).then(access => {
+      if (cancelled) return;
+      if (!access.allowed) {
+        clearUser();
+        setUser(null);
+      }
+      setCheckingStoredDevice(false);
+    });
+    return () => { cancelled = true; };
+  }, [user?.name, user?.role]);
 
   function handleLogin(u: AuthUser) {
     setUser(u);
+  }
+
+  if (checkingStoredDevice) {
+    return <div style={{ minHeight: "100dvh", display: "grid", placeItems: "center", color: C.textSecondary }}>기기 확인 중…</div>;
   }
 
   function handleLogout() {
